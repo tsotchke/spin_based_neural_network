@@ -28,7 +28,7 @@ double compute_physics_loss(double ising_energy, double kitaev_energy, double sp
     }
 }
 
-// Helper function to compute Laplacian in 3D
+// Calculus functions
 double laplacian_3d(int*** lattice, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
     double laplacian = 0.0;
     laplacian += (lattice[(x+1)%size_x][y][z] + lattice[(x-1+size_x)%size_x][y][z] - 2*lattice[x][y][z]) / (dx*dx);
@@ -37,12 +37,85 @@ double laplacian_3d(int*** lattice, int x, int y, int z, int size_x, int size_y,
     return laplacian;
 }
 
+double discrete_curl_ising(IsingLattice* lattice, int x, int y, int z) {
+    double curl = 0.0;
+    int size_x = lattice->size_x;
+    int size_y = lattice->size_y;
+    int size_z = lattice->size_z;
+    
+    // x-component
+    curl += lattice->spins[(x+1) % size_x][y][z] - lattice->spins[(x-1+size_x) % size_x][y][z];
+    // y-component
+    curl += lattice->spins[x][(y+1) % size_y][z] - lattice->spins[x][(y-1+size_y) % size_y][z];
+    // z-component
+    curl += lattice->spins[x][y][(z+1) % size_z] - lattice->spins[x][y][(z-1+size_z) % size_z];
+    
+    return curl;
+}
+
+double discrete_curl_kitaev(KitaevLattice* lattice, int x, int y, int z) {
+    double curl = 0.0;
+    int size_x = lattice->size_x;
+    int size_y = lattice->size_y;
+    int size_z = lattice->size_z;
+    
+    // x-component
+    curl += lattice->spins[(x+1) % size_x][y][z] - lattice->spins[(x-1+size_x) % size_x][y][z];
+    // y-component
+    curl += lattice->spins[x][(y+1) % size_y][z] - lattice->spins[x][(y-1+size_y) % size_y][z];
+    // z-component
+    curl += lattice->spins[x][y][(z+1) % size_z] - lattice->spins[x][y][(z-1+size_z) % size_z];
+    
+    return curl;
+}
+
+double divergence(int*** u_x, int*** u_y, Spin*** u_z, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
+    double div = 0.0;
+    div += (u_x[(x+1)%size_x][y][z] - u_x[(x-1+size_x)%size_x][y][z]) / (2*dx);
+    div += (u_y[x][(y+1)%size_y][z] - u_y[x][(y-1+size_y)%size_y][z]) / (2*dx);
+    div += (u_z[x][y][(z+1)%size_z].sx - u_z[x][y][(z-1+size_z)%size_z].sx) / (2*dx);
+    return div;
+}
+
+double gradient_x(int*** field, int x, int y, int z, int size_x, double dx) {
+    return (field[(x+1)%size_x][y][z] - field[(x-1+size_x)%size_x][y][z]) / (2*dx);
+}
+
+double gradient_y(int*** field, int x, int y, int z, int size_y, double dx) {
+    return (field[x][(y+1)%size_y][z] - field[x][(y-1+size_y)%size_y][z]) / (2*dx);
+}
+
+double gradient_z(int*** field, int x, int y, int z, int size_z, double dx) {
+    return (field[x][y][(z+1)%size_z] - field[x][y][(z-1+size_z)%size_z]) / (2*dx);
+}
+
+// Spin calculus functions
 double laplacian_3d_spin(Spin*** lattice, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
     double lap = 0.0;
     lap += (lattice[(x+1)%size_x][y][z].sx + lattice[(x-1+size_x)%size_x][y][z].sx - 2*lattice[x][y][z].sx) / (dx*dx);
     lap += (lattice[x][(y+1)%size_y][z].sy + lattice[x][(y-1+size_y)%size_y][z].sy - 2*lattice[x][y][z].sy) / (dx*dx);
     lap += (lattice[x][y][(z+1)%size_z].sz + lattice[x][y][(z-1+size_z)%size_z].sz - 2*lattice[x][y][z].sz) / (dx*dx);
     return lap;
+}
+
+double divergence_spin(Spin*** u_x, Spin*** u_y, Spin*** u_z, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
+    double div = 0.0;
+    div += (u_x[(x+1)%size_x][y][z].sx - u_x[(x-1+size_x)%size_x][y][z].sx) / (2*dx);
+    div += (u_y[x][(y+1)%size_y][z].sy - u_y[x][(y-1+size_y)%size_y][z].sy) / (2*dx);
+    div += (u_z[x][y][(z+1)%size_z].sz - u_z[x][y][(z-1+size_z)%size_z].sz) / (2*dx);
+    return div;
+}
+
+double gradient_x_spin(Spin*** field, int x, int y, int z, int size_x, double dx) {
+    return (field[(x+1)%size_x][y][z].sx - field[(x-1+size_x)%size_x][y][z].sx) / (2*dx);
+}
+
+double gradient_y_spin(Spin*** field, int x, int y, int z, int size_y, double dx) {
+    return (field[x][(y+1)%size_y][z].sy - field[x][(y-1+size_y)%size_y][z].sy) / (2*dx);
+}
+
+double gradient_z_spin(Spin*** field, int x, int y, int z, int size_z, double dx) {
+    return (field[x][y][(z+1)%size_z].sz - field[x][y][(z-1+size_z)%size_z].sz) / (2*dx);
 }
 
 double schrodinger_loss(double ising_energy, double kitaev_energy, double spin_energy, 
@@ -88,40 +161,6 @@ double schrodinger_loss(double ising_energy, double kitaev_energy, double spin_e
     // Scale and normalize the loss
     double scaled_loss = total_loss * scale_factor / (size_x * size_y * size_z);
     return log(1 + scaled_loss);
-}
-
-// Calculate curl-like quantity for Ising lattice
-double discrete_curl_ising(IsingLattice* lattice, int x, int y, int z) {
-    double curl = 0.0;
-    int size_x = lattice->size_x;
-    int size_y = lattice->size_y;
-    int size_z = lattice->size_z;
-    
-    // x-component
-    curl += lattice->spins[(x+1) % size_x][y][z] - lattice->spins[(x-1+size_x) % size_x][y][z];
-    // y-component
-    curl += lattice->spins[x][(y+1) % size_y][z] - lattice->spins[x][(y-1+size_y) % size_y][z];
-    // z-component
-    curl += lattice->spins[x][y][(z+1) % size_z] - lattice->spins[x][y][(z-1+size_z) % size_z];
-    
-    return curl;
-}
-
-// Calculate curl-like quantity for Kitaev lattice
-double discrete_curl_kitaev(KitaevLattice* lattice, int x, int y, int z) {
-    double curl = 0.0;
-    int size_x = lattice->size_x;
-    int size_y = lattice->size_y;
-    int size_z = lattice->size_z;
-    
-    // x-component
-    curl += lattice->spins[(x+1) % size_x][y][z] - lattice->spins[(x-1+size_x) % size_x][y][z];
-    // y-component
-    curl += lattice->spins[x][(y+1) % size_y][z] - lattice->spins[x][(y-1+size_y) % size_y][z];
-    // z-component
-    curl += lattice->spins[x][y][(z+1) % size_z] - lattice->spins[x][y][(z-1+size_z) % size_z];
-    
-    return curl;
 }
 
 double maxwell_loss(double ising_energy, double kitaev_energy, double spin_energy,
@@ -172,47 +211,6 @@ double maxwell_loss(double ising_energy, double kitaev_energy, double spin_energ
     
     double scale_factor = 1e-40; // This may need adjustment
     return loss * scale_factor;
-}
-
-double divergence(int*** u_x, int*** u_y, Spin*** u_z, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
-    double div = 0.0;
-    div += (u_x[(x+1)%size_x][y][z] - u_x[(x-1+size_x)%size_x][y][z]) / (2*dx);
-    div += (u_y[x][(y+1)%size_y][z] - u_y[x][(y-1+size_y)%size_y][z]) / (2*dx);
-    div += (u_z[x][y][(z+1)%size_z].sx - u_z[x][y][(z-1+size_z)%size_z].sx) / (2*dx);
-    return div;
-}
-
-double gradient_x(int*** field, int x, int y, int z, int size_x, double dx) {
-    return (field[(x+1)%size_x][y][z] - field[(x-1+size_x)%size_x][y][z]) / (2*dx);
-}
-
-double gradient_y(int*** field, int x, int y, int z, int size_y, double dx) {
-    return (field[x][(y+1)%size_y][z] - field[x][(y-1+size_y)%size_y][z]) / (2*dx);
-}
-
-double gradient_z(int*** field, int x, int y, int z, int size_z, double dx) {
-    return (field[x][y][(z+1)%size_z] - field[x][y][(z-1+size_z)%size_z]) / (2*dx);
-}
-
-// Helper functions for Spin*** lattice
-double divergence_spin(Spin*** u_x, Spin*** u_y, Spin*** u_z, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
-    double div = 0.0;
-    div += (u_x[(x+1)%size_x][y][z].sx - u_x[(x-1+size_x)%size_x][y][z].sx) / (2*dx);
-    div += (u_y[x][(y+1)%size_y][z].sy - u_y[x][(y-1+size_y)%size_y][z].sy) / (2*dx);
-    div += (u_z[x][y][(z+1)%size_z].sz - u_z[x][y][(z-1+size_z)%size_z].sz) / (2*dx);
-    return div;
-}
-
-double gradient_x_spin(Spin*** field, int x, int y, int z, int size_x, double dx) {
-    return (field[(x+1)%size_x][y][z].sx - field[(x-1+size_x)%size_x][y][z].sx) / (2*dx);
-}
-
-double gradient_y_spin(Spin*** field, int x, int y, int z, int size_y, double dx) {
-    return (field[x][(y+1)%size_y][z].sy - field[x][(y-1+size_y)%size_y][z].sy) / (2*dx);
-}
-
-double gradient_z_spin(Spin*** field, int x, int y, int z, int size_z, double dx) {
-    return (field[x][y][(z+1)%size_z].sz - field[x][y][(z-1+size_z)%size_z].sz) / (2*dx);
 }
 
 double navier_stokes_loss(double ising_energy, double kitaev_energy, double spin_energy,
@@ -317,7 +315,7 @@ double heat_loss(double ising_energy, double kitaev_energy, double spin_energy,
     
     double total_loss = 0.0;
     
-    // We'll use the Ising lattice as our temperature field
+    // Ising lattice as temperature field
     for (int x = 0; x < size_x; x++) {
         for (int y = 0; y < size_y; y++) {
             for (int z = 0; z < size_z; z++) {
@@ -354,7 +352,7 @@ double wave_loss(double ising_energy, double kitaev_energy, double spin_energy,
     
     double total_loss = 0.0;
     
-    // We'll use the Ising lattice as our wave field
+    // Ising lattice as wave field
     for (int x = 0; x < size_x; x++) {
         for (int y = 0; y < size_y; y++) {
             for (int z = 0; z < size_z; z++) {
