@@ -9,131 +9,377 @@
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
-double compute_physics_loss(double ising_energy, double kitaev_energy, double spin_energy, double dt, double dx, const char* loss_type) {
-    double loss = 0.0;
-
-    if (strcmp(loss_type, "heat") == 0) {
-        loss = heat_loss(ising_energy, kitaev_energy, spin_energy, dt, dx);
-    } else if (strcmp(loss_type, "wave") == 0) {
-        loss = wave_loss(ising_energy, kitaev_energy, spin_energy, dt, dx);
+double compute_physics_loss(double ising_energy, double kitaev_energy, double spin_energy,
+                            IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
+                            double dt, double dx, const char* loss_type) {
+    if (strcmp(loss_type, "maxwell") == 0) {
+        return maxwell_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx);
+    } else if (strcmp(loss_type, "heat") == 0) {
+        return heat_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx);
     } else if (strcmp(loss_type, "schrodinger") == 0) {
-        loss = schrodinger_loss(ising_energy, kitaev_energy, spin_energy, dt, dx);
-    } else if (strcmp(loss_type, "navier-stokes") == 0) {
-        loss = navier_stokes_loss(ising_energy, kitaev_energy, spin_energy, dt, dx);
-    } else if (strcmp(loss_type, "maxwell") == 0) {
-        loss = maxwell_loss(ising_energy, kitaev_energy, spin_energy, dt, dx);
+        return schrodinger_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx);
+    } else if (strcmp(loss_type, "navier_stokes") == 0) {
+        return navier_stokes_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx);
+    } else if (strcmp(loss_type, "wave") == 0) {
+        return wave_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx);
     } else {
-        fprintf(stderr, "Unknown loss type: %s\n", loss_type);
-        loss = 0.0;
+        // Default to Heat loss if an unknown type is specified
+        return heat_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx);
     }
-
-    return loss;
 }
 
-double schrodinger_loss(double ising_energy, double kitaev_energy, double spin_energy, double dt, double dx) {
+// Helper function to compute Laplacian in 3D
+double laplacian_3d(int*** lattice, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
+    double laplacian = 0.0;
+    laplacian += (lattice[(x+1)%size_x][y][z] + lattice[(x-1+size_x)%size_x][y][z] - 2*lattice[x][y][z]) / (dx*dx);
+    laplacian += (lattice[x][(y+1)%size_y][z] + lattice[x][(y-1+size_y)%size_y][z] - 2*lattice[x][y][z]) / (dx*dx);
+    laplacian += (lattice[x][y][(z+1)%size_z] + lattice[x][y][(z-1+size_z)%size_z] - 2*lattice[x][y][z]) / (dx*dx);
+    return laplacian;
+}
+
+double laplacian_3d_spin(Spin*** lattice, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
+    double lap = 0.0;
+    lap += (lattice[(x+1)%size_x][y][z].sx + lattice[(x-1+size_x)%size_x][y][z].sx - 2*lattice[x][y][z].sx) / (dx*dx);
+    lap += (lattice[x][(y+1)%size_y][z].sy + lattice[x][(y-1+size_y)%size_y][z].sy - 2*lattice[x][y][z].sy) / (dx*dx);
+    lap += (lattice[x][y][(z+1)%size_z].sz + lattice[x][y][(z-1+size_z)%size_z].sz - 2*lattice[x][y][z].sz) / (dx*dx);
+    return lap;
+}
+
+double schrodinger_loss(double ising_energy, double kitaev_energy, double spin_energy, 
+                        IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
+                        double dt, double dx) {
     double scale_factor = 1e-55;
+    int size_x = ising_lattice->size_x;
+    int size_y = ising_lattice->size_y;
+    int size_z = ising_lattice->size_z;
     
-    double scaled_ising = scale_energy(ising_energy);
-    double scaled_kitaev = scale_energy(kitaev_energy);
-    double scaled_spin = scale_energy(spin_energy);
+    double total_loss = 0.0;
     
-    double psi_real = scaled_ising;
-    double psi_imag = scaled_kitaev;
-    double V = scaled_spin;
+    for (int x = 0; x < size_x; x++) {
+        for (int y = 0; y < size_y; y++) {
+            for (int z = 0; z < size_z; z++) {
+                // Use Ising lattice for real part and Kitaev lattice for imaginary part of wavefunction
+                double psi_real = ising_lattice->spins[x][y][z];
+                double psi_imag = kitaev_lattice->spins[x][y][z];
+                
+                // Use spin lattice for potential
+                double V = sqrt(spin_lattice->spins[x][y][z].sx * spin_lattice->spins[x][y][z].sx +
+                                spin_lattice->spins[x][y][z].sy * spin_lattice->spins[x][y][z].sy +
+                                spin_lattice->spins[x][y][z].sz * spin_lattice->spins[x][y][z].sz);
 
-    double d2psi_dx2_real = (psi_real - 2.0 * psi_real + psi_real) / (dx * dx);
-    double d2psi_dx2_imag = (psi_imag - 2.0 * psi_imag + psi_imag) / (dx * dx);
+                // Compute Laplacian for real and imaginary parts
+                double d2psi_dx2_real = laplacian_3d(ising_lattice->spins, x, y, z, size_x, size_y, size_z, dx);
+                double d2psi_dx2_imag = laplacian_3d(kitaev_lattice->spins, x, y, z, size_x, size_y, size_z, dx);
 
-    double dpsi_dt_real = (psi_imag - psi_real) / dt;
-    double dpsi_dt_imag = -(psi_real - psi_imag) / dt;
+                // Compute time derivatives (this is a simplification; you might want to store previous state for better accuracy)
+                double dpsi_dt_real = (psi_imag - psi_real) / dt;
+                double dpsi_dt_imag = -(psi_real - psi_imag) / dt;
 
-    double residual_real = dpsi_dt_real + (HBAR / (2.0 * M)) * d2psi_dx2_imag + (V / HBAR) * psi_real;
-    double residual_imag = dpsi_dt_imag - (HBAR / (2.0 * M)) * d2psi_dx2_real + (V / HBAR) * psi_imag;
+                // Compute Schrödinger equation residuals
+                double residual_real = dpsi_dt_real + (HBAR / (2.0 * M)) * d2psi_dx2_imag + (V / HBAR) * psi_real;
+                double residual_imag = dpsi_dt_imag - (HBAR / (2.0 * M)) * d2psi_dx2_real + (V / HBAR) * psi_imag;
 
-    double loss = (residual_real * residual_real + residual_imag * residual_imag) * scale_factor;
-
-    return log(1 + loss);
+                // Add to total loss
+                total_loss += (residual_real * residual_real + residual_imag * residual_imag);
+            }
+        }
+    }
+    
+    // Scale and normalize the loss
+    double scaled_loss = total_loss * scale_factor / (size_x * size_y * size_z);
+    return log(1 + scaled_loss);
 }
 
-double maxwell_loss(double ising_energy, double kitaev_energy, double spin_energy, double dt, double dx) {
-    double scale_factor = 1e-40;
+// Calculate curl-like quantity for Ising lattice
+double discrete_curl_ising(IsingLattice* lattice, int x, int y, int z) {
+    double curl = 0.0;
+    int size_x = lattice->size_x;
+    int size_y = lattice->size_y;
+    int size_z = lattice->size_z;
     
-    double scaled_ising = scale_energy(ising_energy);
-    double scaled_kitaev = scale_energy(kitaev_energy);
-    double scaled_spin = scale_energy(spin_energy);
+    // x-component
+    curl += lattice->spins[(x+1) % size_x][y][z] - lattice->spins[(x-1+size_x) % size_x][y][z];
+    // y-component
+    curl += lattice->spins[x][(y+1) % size_y][z] - lattice->spins[x][(y-1+size_y) % size_y][z];
+    // z-component
+    curl += lattice->spins[x][y][(z+1) % size_z] - lattice->spins[x][y][(z-1+size_z) % size_z];
     
-    double E = scaled_ising;
-    double B = scaled_kitaev;
-    double J = scaled_spin;
-
-    double dEdt = (E - E) / dt;
-    double dBdx = (B - B) / dx;
-    double dBdt = (B - B) / dt;
-    double dEdx = (E - E) / dx;
-
-    double faraday_loss = pow(dEdt + dBdx, 2);
-    double ampere_loss = pow(dBdt - dEdx - MU0 * J, 2);
-
-    return (faraday_loss + ampere_loss) * scale_factor;
+    return curl;
 }
 
-double navier_stokes_loss(double ising_energy, double kitaev_energy, double spin_energy, double dt, double dx) {
-    double scale_factor = 1e-40;
+// Calculate curl-like quantity for Kitaev lattice
+double discrete_curl_kitaev(KitaevLattice* lattice, int x, int y, int z) {
+    double curl = 0.0;
+    int size_x = lattice->size_x;
+    int size_y = lattice->size_y;
+    int size_z = lattice->size_z;
     
-    double scaled_ising = scale_energy(ising_energy);
-    double scaled_kitaev = scale_energy(kitaev_energy);
-    double scaled_spin = scale_energy(spin_energy);
+    // x-component
+    curl += lattice->spins[(x+1) % size_x][y][z] - lattice->spins[(x-1+size_x) % size_x][y][z];
+    // y-component
+    curl += lattice->spins[x][(y+1) % size_y][z] - lattice->spins[x][(y-1+size_y) % size_y][z];
+    // z-component
+    curl += lattice->spins[x][y][(z+1) % size_z] - lattice->spins[x][y][(z-1+size_z) % size_z];
     
-    double u = scaled_ising;
-    double v = scaled_kitaev;
-    double p = scaled_spin;
-
-    double dudt = (u - u) / dt;
-    double dvdt = (v - v) / dt;
-    double dudx = (u - u) / dx;
-    double dvdy = (v - v) / dx;
-    double d2udx2 = (u - 2.0 * u + u) / (dx * dx);
-    double d2vdy2 = (v - 2.0 * v + v) / (dx * dx);
-    double dpdx = (p - p) / dx;
-    double dpdy = (p - p) / dx;
-
-    double continuity_loss = pow(dudx + dvdy, 2);
-    double momentum_x_loss = pow(dudt + u * dudx + v * dvdy + (1.0 / RHO) * dpdx - NU * (d2udx2 + d2vdy2), 2);
-    double momentum_y_loss = pow(dvdt + u * dvdy + v * dvdy + (1.0 / RHO) * dpdy - NU * (d2udx2 + d2vdy2) - G, 2);
-
-    return (continuity_loss + momentum_x_loss + momentum_y_loss) * scale_factor;
+    return curl;
 }
 
-double heat_loss(double ising_energy, double kitaev_energy, double spin_energy, double dt, double dx) {
-    double scale_factor = 1e-40;
+double maxwell_loss(double ising_energy, double kitaev_energy, double spin_energy,
+                    IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
+                    double dt, double dx) {
+    int size_x = ising_lattice->size_x;
+    int size_y = ising_lattice->size_y;
+    int size_z = ising_lattice->size_z;
     
-    double scaled_ising = scale_energy(ising_energy);
-    double scaled_kitaev = scale_energy(kitaev_energy);
-    double scaled_spin = scale_energy(spin_energy);
+    double volume = size_x * size_y * size_z * dx * dx * dx;
+    double total_energy = ising_energy + kitaev_energy + spin_energy;
     
-    double T1 = scaled_ising;
-    double T2 = scaled_kitaev;
-    double T3 = scaled_spin;
-
-    double dTdt = (T2 - T1) / dt;
-    double d2Tdx2 = (T3 - 2.0 * T2 + T1) / (dx * dx);
-
-    return pow(dTdt - ALPHA * d2Tdx2, 2) * scale_factor;
+    // Estimate field strengths based on total energy
+    double field_strength = sqrt(2 * fabs(total_energy) / (EPSILON0 * volume));
+    double B_strength = field_strength / 299792458.0; // c in m/s
+    
+    double loss = 0.0;
+    
+    for (int x = 0; x < size_x; x++) {
+        for (int y = 0; y < size_y; y++) {
+            for (int z = 0; z < size_z; z++) {
+                // Estimate local E and B field based on spin configuration
+                double E_local = field_strength * ising_lattice->spins[x][y][z];
+                double B_local = B_strength * kitaev_lattice->spins[x][y][z];
+                
+                // Calculate discrete curl-like quantities
+                double curl_E = discrete_curl_ising(ising_lattice, x, y, z);
+                double curl_B = discrete_curl_kitaev(kitaev_lattice, x, y, z);
+                
+                // Estimate time derivatives (this is a rough approximation)
+                double dEdt = (E_local - field_strength * ising_lattice->spins[x][y][z]) / dt;
+                double dBdt = (B_local - B_strength * kitaev_lattice->spins[x][y][z]) / dt;
+                
+                // Estimate current density from spin lattice
+                double J_magnitude = sqrt(spin_lattice->spins[x][y][z].sx * spin_lattice->spins[x][y][z].sx +
+                                          spin_lattice->spins[x][y][z].sy * spin_lattice->spins[x][y][z].sy +
+                                          spin_lattice->spins[x][y][z].sz * spin_lattice->spins[x][y][z].sz) / dx;
+                
+                // Calculate Faraday and Ampère residuals
+                double faraday_residual = curl_E + dBdt;
+                double ampere_residual = curl_B - MU0 * (J_magnitude + EPSILON0 * dEdt);
+                
+                // Add to total loss
+                loss += faraday_residual * faraday_residual + ampere_residual * ampere_residual;
+            }
+        }
+    }
+    
+    double scale_factor = 1e-40; // This may need adjustment
+    return loss * scale_factor;
 }
 
-double wave_loss(double ising_energy, double kitaev_energy, double spin_energy, double dt, double dx) {
+double divergence(int*** u_x, int*** u_y, Spin*** u_z, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
+    double div = 0.0;
+    div += (u_x[(x+1)%size_x][y][z] - u_x[(x-1+size_x)%size_x][y][z]) / (2*dx);
+    div += (u_y[x][(y+1)%size_y][z] - u_y[x][(y-1+size_y)%size_y][z]) / (2*dx);
+    div += (u_z[x][y][(z+1)%size_z].sx - u_z[x][y][(z-1+size_z)%size_z].sx) / (2*dx);
+    return div;
+}
+
+double gradient_x(int*** field, int x, int y, int z, int size_x, double dx) {
+    return (field[(x+1)%size_x][y][z] - field[(x-1+size_x)%size_x][y][z]) / (2*dx);
+}
+
+double gradient_y(int*** field, int x, int y, int z, int size_y, double dx) {
+    return (field[x][(y+1)%size_y][z] - field[x][(y-1+size_y)%size_y][z]) / (2*dx);
+}
+
+double gradient_z(int*** field, int x, int y, int z, int size_z, double dx) {
+    return (field[x][y][(z+1)%size_z] - field[x][y][(z-1+size_z)%size_z]) / (2*dx);
+}
+
+// Helper functions for Spin*** lattice
+double divergence_spin(Spin*** u_x, Spin*** u_y, Spin*** u_z, int x, int y, int z, int size_x, int size_y, int size_z, double dx) {
+    double div = 0.0;
+    div += (u_x[(x+1)%size_x][y][z].sx - u_x[(x-1+size_x)%size_x][y][z].sx) / (2*dx);
+    div += (u_y[x][(y+1)%size_y][z].sy - u_y[x][(y-1+size_y)%size_y][z].sy) / (2*dx);
+    div += (u_z[x][y][(z+1)%size_z].sz - u_z[x][y][(z-1+size_z)%size_z].sz) / (2*dx);
+    return div;
+}
+
+double gradient_x_spin(Spin*** field, int x, int y, int z, int size_x, double dx) {
+    return (field[(x+1)%size_x][y][z].sx - field[(x-1+size_x)%size_x][y][z].sx) / (2*dx);
+}
+
+double gradient_y_spin(Spin*** field, int x, int y, int z, int size_y, double dx) {
+    return (field[x][(y+1)%size_y][z].sy - field[x][(y-1+size_y)%size_y][z].sy) / (2*dx);
+}
+
+double gradient_z_spin(Spin*** field, int x, int y, int z, int size_z, double dx) {
+    return (field[x][y][(z+1)%size_z].sz - field[x][y][(z-1+size_z)%size_z].sz) / (2*dx);
+}
+
+double navier_stokes_loss(double ising_energy, double kitaev_energy, double spin_energy,
+                          IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
+                          double dt, double dx) {
+    // All variable declarations at the beginning of the function
     double scale_factor = 1e-40;
-    
-    double scaled_ising = scale_energy(ising_energy);
-    double scaled_kitaev = scale_energy(kitaev_energy);
-    double scaled_spin = scale_energy(spin_energy);
-    
-    double u1 = scaled_ising;
-    double u2 = scaled_kitaev;
-    double u3 = scaled_spin;
+    int size_x = ising_lattice->size_x;
+    int size_y = ising_lattice->size_y;
+    int size_z = ising_lattice->size_z;
+    double RHO_BASE = 1.0;  // Base fluid density
+    double NU_BASE = 1e-6;  // Base kinematic viscosity
+    double G = 9.81;        // Gravitational acceleration
+    double total_energy, RHO, NU, total_loss;
+    int x, y, z;
+    double u, v, w, p, e;
+    double div_u, dudt, dvdt, dwdt;
+    double dudx, dudy, dudz, dvdx, dvdy, dvdz, dwdx, dwdy, dwdz;
+    double dpdx, dpdy, dpdz;
+    double lap_u, lap_v, lap_w;
+    double continuity_residual, momentum_x_residual, momentum_y_residual, momentum_z_residual, energy_residual;
 
-    double d2udt2 = (u3 - 2.0 * u2 + u1) / (dt * dt);
-    double d2udx2 = (u3 - 2.0 * u2 + u1) / (dx * dx);
+    // Calculations start here
+    total_energy = fabs(ising_energy) + fabs(kitaev_energy) + fabs(spin_energy);
+    RHO = RHO_BASE * (1.0 + 0.1 * tanh(total_energy));  // Density increases with total energy
+    NU = NU_BASE * exp(-total_energy / 1e6);            // Viscosity decreases with total energy
+    
+    total_loss = 0.0;
+    
+    for (x = 0; x < size_x; x++) {
+        for (y = 0; y < size_y; y++) {
+            for (z = 0; z < size_z; z++) {
+                // Velocity components
+                u = ising_lattice->spins[x][y][z];
+                v = kitaev_lattice->spins[x][y][z];
+                w = spin_lattice->spins[x][y][z].sx;
+                
+                // Pressure
+                p = spin_lattice->spins[x][y][z].sy;
+                
+                // Energy density (simplified representation)
+                e = (ising_energy * u*u + kitaev_energy * v*v + spin_energy * w*w) / (size_x * size_y * size_z);
+                
+                // Compute derivatives
+                div_u = divergence(ising_lattice->spins, kitaev_lattice->spins, spin_lattice->spins, x, y, z, size_x, size_y, size_z, dx);
+                
+                dudt = (u - ising_lattice->spins[x][y][z]) / dt;
+                dvdt = (v - kitaev_lattice->spins[x][y][z]) / dt;
+                dwdt = (w - spin_lattice->spins[x][y][z].sx) / dt;
 
-    return pow(d2udt2 - C * C * d2udx2, 2) * scale_factor;
+                dudx = gradient_x(ising_lattice->spins, x, y, z, size_x, dx);
+                dudy = gradient_y(ising_lattice->spins, x, y, z, size_y, dx);
+                dudz = gradient_z(ising_lattice->spins, x, y, z, size_z, dx);
+
+                dvdx = gradient_x(kitaev_lattice->spins, x, y, z, size_x, dx);
+                dvdy = gradient_y(kitaev_lattice->spins, x, y, z, size_y, dx);
+                dvdz = gradient_z(kitaev_lattice->spins, x, y, z, size_z, dx);
+
+                dwdx = gradient_x_spin(spin_lattice->spins, x, y, z, size_x, dx);
+                dwdy = gradient_y_spin(spin_lattice->spins, x, y, z, size_y, dx);
+                dwdz = gradient_z_spin(spin_lattice->spins, x, y, z, size_z, dx);
+
+                dpdx = gradient_x_spin(spin_lattice->spins, x, y, z, size_x, dx);
+                dpdy = gradient_y_spin(spin_lattice->spins, x, y, z, size_y, dx);
+                dpdz = gradient_z_spin(spin_lattice->spins, x, y, z, size_z, dx);
+
+                lap_u = laplacian_3d(ising_lattice->spins, x, y, z, size_x, size_y, size_z, dx);
+                lap_v = laplacian_3d(kitaev_lattice->spins, x, y, z, size_x, size_y, size_z, dx);
+                lap_w = laplacian_3d_spin(spin_lattice->spins, x, y, z, size_x, size_y, size_z, dx);
+                
+                // Compute Navier-Stokes equation residuals
+                continuity_residual = div_u;
+                momentum_x_residual = dudt + u*dudx + v*dudy + w*dudz + (1.0/RHO)*dpdx - NU*lap_u + e*dudx/RHO;
+                momentum_y_residual = dvdt + u*dvdx + v*dvdy + w*dvdz + (1.0/RHO)*dpdy - NU*lap_v + e*dvdy/RHO;
+                momentum_z_residual = dwdt + u*dwdx + v*dwdy + w*dwdz + (1.0/RHO)*dpdz - NU*lap_w - G + e*dwdz/RHO;
+                
+                // Energy equation residual (simplified)
+                energy_residual = (e - (ising_energy + kitaev_energy + spin_energy) / (size_x * size_y * size_z)) / dt 
+                                  + u*dudx + v*dvdy + w*dwdz;
+                
+                // Add to total loss
+                total_loss += continuity_residual*continuity_residual +
+                              momentum_x_residual*momentum_x_residual +
+                              momentum_y_residual*momentum_y_residual +
+                              momentum_z_residual*momentum_z_residual +
+                              energy_residual*energy_residual;
+            }
+        }
+    }
+    
+    // Scale and normalize the loss
+    return total_loss * scale_factor / (size_x * size_y * size_z);
+}
+
+double heat_loss(double ising_energy, double kitaev_energy, double spin_energy,
+                 IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
+                 double dt, double dx) {
+    double scale_factor = 1e-40;
+    int size_x = ising_lattice->size_x;
+    int size_y = ising_lattice->size_y;
+    int size_z = ising_lattice->size_z;
+    
+    double total_loss = 0.0;
+    
+    // We'll use the Ising lattice as our temperature field
+    for (int x = 0; x < size_x; x++) {
+        for (int y = 0; y < size_y; y++) {
+            for (int z = 0; z < size_z; z++) {
+                // Current temperature
+                double T = ising_lattice->spins[x][y][z];
+                
+                // Compute Laplacian of temperature
+                double d2Tdx2 = laplacian_3d(ising_lattice->spins, x, y, z, size_x, size_y, size_z, dx);
+                
+                // Compute time derivative (this is a simplification; you might want to store previous state for better accuracy)
+                double dTdt = (kitaev_lattice->spins[x][y][z] - T) / dt;
+                
+                // Compute heat equation residual
+                double residual = dTdt - ALPHA * d2Tdx2;
+                
+                // Add to total loss
+                total_loss += residual * residual;
+            }
+        }
+    }
+    
+    // Scale and normalize the loss
+    double scaled_loss = total_loss * scale_factor / (size_x * size_y * size_z);
+    return scaled_loss;
+}
+
+double wave_loss(double ising_energy, double kitaev_energy, double spin_energy,
+                 IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
+                 double dt, double dx) {
+    double scale_factor = 1e-40;
+    int size_x = ising_lattice->size_x;
+    int size_y = ising_lattice->size_y;
+    int size_z = ising_lattice->size_z;
+    
+    double total_loss = 0.0;
+    
+    // We'll use the Ising lattice as our wave field
+    for (int x = 0; x < size_x; x++) {
+        for (int y = 0; y < size_y; y++) {
+            for (int z = 0; z < size_z; z++) {
+                // Current wave amplitude
+                double u = ising_lattice->spins[x][y][z];
+                
+                // Compute Laplacian of wave field
+                double d2udx2 = laplacian_3d(ising_lattice->spins, x, y, z, size_x, size_y, size_z, dx);
+                
+                // Compute second-order time derivative
+                // (this is a simplification; ideally, you'd want to store two previous time steps)
+                double u_prev = kitaev_lattice->spins[x][y][z];
+                double u_next = spin_lattice->spins[x][y][z].sx; // Using sx component as an example
+                double d2udt2 = (u_next - 2.0 * u + u_prev) / (dt * dt);
+                
+                // Compute wave equation residual
+                double residual = d2udt2 - C * C * d2udx2;
+                
+                // Add to total loss
+                total_loss += residual * residual;
+            }
+        }
+    }
+    
+    // Scale and normalize the loss
+    double scaled_loss = total_loss * scale_factor / (size_x * size_y * size_z);
+    return scaled_loss;
 }

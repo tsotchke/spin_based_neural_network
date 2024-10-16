@@ -237,7 +237,7 @@ int main(int argc, char *argv[]) {
         predicted_energy = fmax(-max_possible_energy, fmin(max_possible_energy, predicted_energy));
 
         // Compute physics loss
-        double physics_loss = compute_physics_loss(ising_energy, kitaev_energy, spin_energy, dt, dx, loss_type);
+        double physics_loss = compute_physics_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx, loss_type);
 
         // Apply physics-based correction to the prediction
         double physics_correction_factor = 1.0 / (1.0 + physics_loss);
