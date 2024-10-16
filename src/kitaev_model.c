@@ -1,6 +1,6 @@
-#include "kitaev_model.h"
 #include <stdlib.h>
 #include <string.h>
+#include "kitaev_model.h"
 
 // Function to initialize the 3D Kitaev lattice
 KitaevLattice* initialize_kitaev_lattice(int size_x, int size_y, int size_z, double jx, double jy, double jz, const char* initial_state) {

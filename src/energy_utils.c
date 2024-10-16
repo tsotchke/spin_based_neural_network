@@ -1,6 +1,6 @@
-#include "energy_utils.h"
 #include <math.h>
 #include <float.h>
+#include "energy_utils.h"
 
 double scale_energy(double energy) {
     if (fabs(energy) < MIN_ENERGY) {

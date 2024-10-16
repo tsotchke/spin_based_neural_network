@@ -1,7 +1,7 @@
-#include "neural_network.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include "neural_network.h"
 
 NeuralNetwork* create_neural_network(int input_size, int num_hidden_layers, int neurons_per_layer, int output_size, int activation_function) {
     NeuralNetwork *nn = malloc(sizeof(NeuralNetwork));

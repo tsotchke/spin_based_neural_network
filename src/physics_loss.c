@@ -31,7 +31,7 @@ double compute_physics_loss(double ising_energy, double kitaev_energy, double sp
 }
 
 double schrodinger_loss(double ising_energy, double kitaev_energy, double spin_energy, double dt, double dx) {
-    double scale_factor = 1e-60;
+    double scale_factor = 1e-55;
     
     double scaled_ising = scale_energy(ising_energy);
     double scaled_kitaev = scale_energy(kitaev_energy);
