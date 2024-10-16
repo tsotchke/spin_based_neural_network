@@ -2,10 +2,10 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
-#include "reinforcement_learning.h"
 #include "ising_model.h"
 #include "kitaev_model.h"
 #include "spin_models.h"
+#include "reinforcement_learning.h"
 
 double epsilon = INITIAL_EPSILON;
 

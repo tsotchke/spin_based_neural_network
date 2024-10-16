@@ -91,13 +91,13 @@ make
 2. **Run with 500 iterations and verbose output, using the Schrödinger loss function:**
 
     ```bash
-    ./spin_based_neural_computation -i 500 -v --loss-type schrodinger
+    ./spin_based_neural_computation -i 500 -v --loss-type schrodinger  --activation sigmoid
     ```
 
 3. **Specify lattice size and coupling constants for a Kitaev model simulation:**
 
     ```bash
-    ./spin_based_neural_computation --lattice-size 15 15 15 --jx 0.5 --jy 1.0 --jz -0.8 --activation sigmoid
+    ./spin_based_neural_computation --lattice-size 15 15 15 --jx 0.5 --jy 1.0 --jz -0.8
     ```
 
 4. **Use the Navier-Stokes loss function with Tanh activation, saving output to a custom log file:**
@@ -151,4 +151,4 @@ If you use this project in your research, please cite as follows:
 This project is licensed under the MIT License.
 
 ## Conclusion
-The **Spin-Based Neural Computation Framework** provides a versatile platform for studying quantum systems, complex spin interactions, and energy-based learning model approaches to neural networks, making it ideal for researchers exploring quantum computing, spintronics, mathematical physics, complexity, and AI. By integrating reinforcement learning and comprehensive spin models, enabling exploration of quantum-inspired neural networks and physics-informed learning. It encourages insightful exploration into physical systems and computational physics.
+The **Spin-Based Neural Computation Framework** provides a versatile platform for studying quantum systems, complex spin interactions, and energy-based learning model approaches to neural networks, making it ideal for researchers exploring quantum computing, spintronics, mathematical physics, complexity, and AI. By integrating reinforcement learning and comprehensive spin models, enabling exploration of quantum-inspired neural networks and physics-informed learning, it encourages insightful exploration into physical systems and computational physics.

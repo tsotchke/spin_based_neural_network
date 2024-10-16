@@ -1,7 +1,6 @@
 #ifndef PHYSICS_LOSS_H
 #define PHYSICS_LOSS_H
 
-
 #define ALPHA 1.0e-7                  // m^2/s (thermal diffusivity)
 #define C 299792458.0                 // m/s (speed of light in vacuum)
 #define HBAR 1.0545718e-34            // J·s (reduced Planck constant)

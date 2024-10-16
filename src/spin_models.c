@@ -1,7 +1,7 @@
-#include "spin_models.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include "spin_models.h"
 
 // Function to create a new spin lattice with given dimensions
 SpinLattice* initialize_spin_lattice(int size_x, int size_y, int size_z, const char* initial_state) {
