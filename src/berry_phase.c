@@ -475,18 +475,28 @@ double calculate_winding_number(MajoranaChain *chain) {
         h_y[i] = 2.0 * delta * sin(k);
     }
     
-    // Check if h vector ever passes through the origin
+    // Check if h vector ever passes through or near the origin
     bool passes_origin = false;
     double min_distance_to_origin = 1e10;
     
+    // Calculate minimum distance to origin over all k-points
     for (int i = 0; i <= num_k_points; i++) {
         double distance = sqrt(h_y[i]*h_y[i] + h_z[i]*h_z[i]);
         min_distance_to_origin = fmin(min_distance_to_origin, distance);
         
+        // Check if the vector passes very close to the origin (numerical precision issues)
         if (distance < 1e-8) {
             passes_origin = true;
             break;
         }
+    }
+    
+    // For the Kitaev chain, we need to also check if the origin is enclosed
+    // This is related to whether we're in a topological phase
+    if (fabs(mu) < 2.0 * fabs(t)) {
+        // In the topological phase, the h-vector encloses the origin
+        // even if it doesn't pass directly through it
+        passes_origin = true;
     }
     
     // Calculate winding using the angle change method

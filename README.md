@@ -14,6 +14,7 @@ With the recent implementation of topological quantum features based on Majorana
 - **Reinforcement Learning Integration**: Dynamically optimize spin configurations using reinforcement learning, enabling robust energy minimization.
 - **Customizable Parameters and Loss Functions**: Tailor simulations with specific lattice dimensions, couplings, activation functions, and physics-based loss functions.
 - **Extensive Logging**: Ensure reproducibility with detailed logs, supporting research and analysis.
+- **Multiple Build Options**: Optimized builds for different hardware capabilities, including ARM NEON acceleration.
 
 ## Key Components
 
@@ -45,7 +46,7 @@ The project is organized for clarity and usability:
 
 ```
 spin_based_neural_network/
-├── bin/                      # Binary executables directory
+├── bin/                       # Binary executables directory
 │   ├── spin_based_neural_computation          # Universal build with runtime NEON detection
 │   ├── spin_based_neural_computation_arm      # ARM-specific build with NEON enabled
 │   ├── spin_based_neural_computation_generic  # Generic build with NEON disabled
@@ -85,18 +86,16 @@ spin_based_neural_network/
 │   └── toric_code.h           # Toric code interface
 ├── docs/
 │   ├── topological_features.md # Overview of topological features
-│   ├── berry_phase.md         # Berry phase documentation
-│   ├── majorana_zero_modes.md # Majorana modes documentation
-│   ├── topological_entropy.md # Entropy calculations documentation
-│   └── toric_code.md          # Toric code documentation
-├── examples/
-│   └── run_topological_examples.sh # Examples of different topological phases
-├── Makefile                  # Build configuration
-└── README.md                 # Project overview
+│   ├── berry_phase.md          # Berry phase documentation
+│   ├── majorana_zero_modes.md  # Majorana modes documentation
+│   ├── topological_entropy.md  # Entropy calculations documentation
+│   └── toric_code.md           # Toric code documentation
+├── Makefile                    # Build configuration
+└── README.md                   # Project overview
 ```
 
 ## Installation
-The framework is written in C and has no external dependencies, ensuring compatibility across a variety of systems. Compile with a standard C compiler, such as `gcc`, for easy setup:
+The framework is written in C and has no external dependencies (with the exception of SDL2 for the visualization), ensuring compatibility across a variety of systems. Compile with a standard C compiler, such as `gcc`, for easy setup:
 
 ### Build Options
 
@@ -259,7 +258,7 @@ bin/topo_example
 
 11. **Run All Topological Examples**:
     ```bash
-    ./examples/run_topological_examples.sh
+    ./run_topological_examples.sh
     ```
 
 ### Available Activation Functions and Loss Types
@@ -292,6 +291,10 @@ The **Spin-Based Neural Computation Framework** is designed for high performance
 
 The `matrix_neon.c` module contains advanced optimizations for critical computational paths, particularly for matrix operations and eigenvalue calculations that dominate performance in topological simulations.
 
+## Release Information
+
+The current release is version 0.3.0, which focuses on topological quantum computing capabilities. For details on what's included in this release, see the [RELEASE_NOTES.md](RELEASE_NOTES.md) file. For a history of changes, see the [CHANGELOG.md](CHANGELOG.md).
+
 ## Citation
 If you use this project in your research, please cite as follows:
 
@@ -299,6 +302,7 @@ If you use this project in your research, please cite as follows:
 @software{SpinBasedNeuralComputation,
   author = {tsotchke},
   title = {Spin-Based Neural Computation Framework: Simulations of Topological Quantum Computing},
+  version = {0.3.0},
   year = {2025},
   url = {https://github.com/tsotchke/spin_based_neural_network}
 }

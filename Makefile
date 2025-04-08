@@ -53,5 +53,14 @@ topo_example: src/topological_example.c $(BIN_DIR)
 visualization: src/visualization.c src/visualization_main.c $(BIN_DIR)
 	$(CC) $(CFLAGS_COMMON) $(SDL_CFLAGS) -O2 -o $(BIN_DIR)/visualization src/visualization.c src/visualization_main.c $(LDFLAGS) $(SDL_LDFLAGS)
 
+# Test sources
+TEST_SRC = tests/test_topological_entropy.c
+TEST_DEPS = src/topological_entropy.c src/kitaev_model.c src/matrix_neon.c
+
+# Build and run tests
+test: $(BIN_DIR)
+	$(CC) $(CFLAGS_COMMON) -O2 -DUSE_NEON_IF_AVAILABLE -o $(BIN_DIR)/test_topological_entropy $(TEST_SRC) $(TEST_DEPS) $(LDFLAGS)
+	$(BIN_DIR)/test_topological_entropy
+
 clean:
 	rm -rf $(BIN_DIR)
