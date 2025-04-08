@@ -283,9 +283,10 @@ double navier_stokes_loss(double ising_energy, double kitaev_energy, double spin
                 
                 // Compute Navier-Stokes equation residuals
                 continuity_residual = div_u;
-                momentum_x_residual = dudt + u*dudx + v*dudy + w*dudz + (1.0/RHO)*dpdx - NU*lap_u + e*dudx/RHO;
-                momentum_y_residual = dvdt + u*dvdx + v*dvdy + w*dvdz + (1.0/RHO)*dpdy - NU*lap_v + e*dvdy/RHO;
-                momentum_z_residual = dwdt + u*dwdx + v*dwdy + w*dwdz + (1.0/RHO)*dpdz - NU*lap_w - G + e*dwdz/RHO;
+                // Include pressure effects in momentum equations
+                momentum_x_residual = dudt + u*dudx + v*dudy + w*dudz + (1.0/RHO)*dpdx - NU*lap_u + e*dudx/RHO + p/(RHO*size_x);
+                momentum_y_residual = dvdt + u*dvdx + v*dvdy + w*dvdz + (1.0/RHO)*dpdy - NU*lap_v + e*dvdy/RHO + p/(RHO*size_y);
+                momentum_z_residual = dwdt + u*dwdx + v*dwdy + w*dwdz + (1.0/RHO)*dpdz - NU*lap_w - G + e*dwdz/RHO + p/(RHO*size_z);
                 
                 // Energy equation residual (simplified)
                 energy_residual = (e - (ising_energy + kitaev_energy + spin_energy) / (size_x * size_y * size_z)) / dt 
