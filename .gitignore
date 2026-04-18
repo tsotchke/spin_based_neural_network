@@ -2,3 +2,16 @@
 .DS_Store
 *.log
 memory-bank/
+
+# Build artifacts
+build/
+*.o
+*.a
+*.dylib
+*.so
+*.dll
+
+# Editor / tooling noise
+.clangd/
+.cache/
+compile_commands.json

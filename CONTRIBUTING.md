@@ -102,16 +102,41 @@ To set up your development environment:
 
 ## Testing Guidelines
 
-- **Test Coverage**:
-  - Add tests for new features
-  - Ensure tests cover both normal and edge cases
-  - Include validation against known analytical solutions where possible
+v0.4 introduced a TAP-style harness at `tests/harness.h` and a 109-test
+suite across 17 files. See `docs/testing.md` for the full reference.
 
-- **Test Types**:
-  - Unit tests for individual functions
-  - Integration tests for module interactions
-  - Performance tests for critical paths
-  - Numerical stability tests for computational functions
+**Running tests:**
+
+```sh
+make test           # build and run every test suite
+./build/test_<suite>  # run a single suite directly
+```
+
+**Adding a new test file:**
+
+1. Create `tests/test_<module>.c` and include `harness.h`.
+2. Add a `test_<module>` target in the Makefile alongside the other
+   `test_*` rules.
+3. Append `test_<module>` to the dependency list of the aggregate
+   `test:` target and its recipe.
+4. `make clean && make test` to verify.
+
+**Benchmarks:** run `./scripts/run_benchmarks.sh` to rebuild and run
+the 4 v0.4 benchmark suites; results land as JSON under
+`benchmarks/results/`. See `docs/benchmarks.md` for the schema.
+
+**Test Coverage:**
+- Add tests for new features; v0.4 covers 18 of 18 library modules.
+- Cover physically meaningful properties (e.g. `B⁸ = I` for braiding,
+  closed X-loops have no syndrome) rather than only shape checks.
+- Include validation against known analytical solutions where possible.
+
+**Test Types:**
+- Unit tests for individual functions
+- Integration tests for module interactions (e.g. toric code ↔ Kitaev
+  lattice)
+- Performance tests for critical paths (see `benchmarks/`)
+- Numerical stability tests for computational functions
 
 ## Documentation Guidelines
 

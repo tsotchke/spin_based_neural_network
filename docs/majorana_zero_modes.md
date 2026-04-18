@@ -192,34 +192,61 @@ int detect_zero_modes(MajoranaChain *chain, double threshold) {
 
 ### 3.5 Braiding Operations
 
-Braiding Majorana zero modes is a key operation for topological quantum computation. The implementation follows the braid group representation:
+Braiding Majorana zero modes is a key operation for topological quantum
+computation. v0.4 provides two implementations.
+
+#### Hilbert-space braiding (v0.4, default)
+
+The physically-faithful braiding unitary acts on the fermion-parity
+Hilbert space built by Jordan-Wigner mapping [7] of `N` Majorana operators
+to `N/2` complex fermions and hence a `2^(N/2)`-dimensional state vector.
+The Ising-anyon braiding operator for modes `i ≠ j` is [4,5,6]:
+
+```
+B_{ij} = exp(π γ_i γ_j / 4) = (1 + γ_i γ_j) / √2
+```
+
+Since `(γ_i γ_j)^2 = -I`, this yields the characteristic order-8 statistics
+`B^4 = -I`, `B^8 = +I`.
 
 ```c
-void braid_majorana_modes(MajoranaChain *chain, int mode1, int mode2) {
-    if (!chain || mode1 < 0 || mode2 < 0 || 
-        mode1 >= chain->num_operators || mode2 >= chain->num_operators) {
-        fprintf(stderr, "Error: Invalid mode indices for braiding\n");
-        return;
-    }
-    
-    // Exchange Majorana operators with appropriate transformation
-    // For MZMs, this is a unitary transformation: γᵢ → γⱼ, γⱼ → -γᵢ
-    
+/* Initialize a 2^(N/2)-dimensional state vector in the fermion vacuum. */
+MajoranaHilbertState *psi = initialize_majorana_hilbert_state(num_majoranas);
+
+/* Apply a single Majorana operator via Jordan-Wigner. */
+apply_majorana_op_to_state(op_index, psi);
+
+/* Apply the braiding unitary B_{ij} to the state. */
+apply_braid_unitary(psi, i, j);
+
+/* Inspect and clean up. */
+double n2 = majorana_state_norm_squared(psi);   /* 1.0 for a unit state */
+free_majorana_hilbert_state(psi);
+```
+
+Verified properties (see `tests/test_majorana.c`):
+
+- `γ_i^2 = I` (apply the same operator twice → identity)
+- `{γ_i, γ_j} = 0` for `i ≠ j` (anti-commutation)
+- `||B ψ||^2 = ||ψ||^2` (unitarity)
+- `B^4 |ψ⟩ = -|ψ⟩`, `B^8 |ψ⟩ = |ψ⟩` (order-8 statistics)
+- Braiding preserves fermion parity
+
+#### Legacy operator-space braiding (v0.3, retained)
+
+The v0.3 path acts on the array of `2N` Majorana-operator placeholders
+directly:
+
+```c
+/* Legacy operator-permutation braiding — kept for back-compat. */
+void braid_majorana_operators_legacy(MajoranaChain *chain, int mode1, int mode2) {
     double _Complex temp = chain->operators[mode1];
     chain->operators[mode1] = chain->operators[mode2];
-    chain->operators[mode2] = -temp;  // Note the minus sign for non-Abelian statistics
-    
-    // In a real device, this would correspond to adiabatically moving the MZMs
-    // For simulation, we just update the operator representations
-    
-    // Debug output if requested
-    if (getenv("MAJORANA_DEBUG")) {
-        printf("DEBUG: Braided Majorana modes %d and %d\n", mode1, mode2);
-        printf("       New values: operators[%d] = %.3f%+.3fi, operators[%d] = %.3f%+.3fi\n", 
-               mode1, creal(chain->operators[mode1]), cimag(chain->operators[mode1]),
-               mode2, creal(chain->operators[mode2]), cimag(chain->operators[mode2]));
-    }
+    chain->operators[mode2] = -temp;
 }
+
+/* braid_majorana_modes() delegates to the legacy path for source
+ * compatibility with v0.3 demo scripts. */
 ```
 
 ## 4. Winding Number Calculation
@@ -365,7 +392,7 @@ int main() {
 
 ```bash
 # Simulate a Majorana chain with 5 physical sites
-./spin_based_neural_computation --majorana-chain-length 5 --calculate-invariants --verbose
+./build/spin_based_neural_computation --majorana-chain-length 5 --calculate-invariants --verbose
 ```
 
 ## 8. Performance Considerations
@@ -401,3 +428,11 @@ Ongoing development for the Majorana zero modes implementation includes:
 [5] D. A. Ivanov, "Non-Abelian Statistics of Half-Quantum Vortices in p-Wave Superconductors," Physical Review Letters, vol. 86, no. 2, pp. 268-271, 2001.
 
 [6] S. Das Sarma, M. Freedman, and C. Nayak, "Majorana zero modes and topological quantum computation," npj Quantum Information, vol. 1, p. 15001, 2015.
+
+[7] P. Jordan and E. Wigner, "Über das Paulische Äquivalenzverbot," Zeitschrift für Physik, vol. 47, no. 9-10, pp. 631-651, 1928.
+
+[8] C. Nayak, S. H. Simon, A. Stern, M. Freedman, and S. Das Sarma, "Non-Abelian anyons and topological quantum computation," Reviews of Modern Physics, vol. 80, no. 3, pp. 1083-1159, 2008.
+
+[9] A. Stern, "Non-Abelian states of matter," Nature, vol. 464, no. 7286, pp. 187-193, 2010.
+
+[10] A. Kitaev, "Anyons in an exactly solved model and beyond," Annals of Physics, vol. 321, no. 1, pp. 2-111, 2006.

@@ -13,12 +13,14 @@
 #include "physics_loss.h"
 #include "disordered_model.h"
 #include "neural_network.h"
+#include "nn_backend.h"
 #include "energy_utils.h"
 #include "majorana_modes.h"
 #include "topological_entropy.h"
 #include "toric_code.h"
 #include "berry_phase.h"
 #include "ising_chain_qubits.h"
+#include "training_config.h"
 
 #define TRAINING_ITERATIONS 1000
 #define PREDICTION_INTERVAL 10
@@ -26,7 +28,7 @@
 #define RANDOM_FACTOR 0.1
 
 void print_usage() {
-    printf("Usage: ./spin_based_neural_computation [OPTIONS]\n");
+    printf("Usage: spin_based_neural_computation [OPTIONS]\n");
     printf("Options:\n");
     printf("  -i, --iterations N         Number of iterations to run (default: 100)\n");
     printf("  -v, --verbose              Verbose output (optional)\n");
@@ -46,6 +48,11 @@ void print_usage() {
     printf("  --use-error-correction     Use toric code error correction\n");
     printf("  --debug-entropy            Show debug messages for entropy calculations\n");
     printf("  --debug-quantum            Show debug messages for quantum operations\n");
+    printf("  --nn-backend BACKEND       Neural network backend: legacy | engine (default: legacy)\n");
+    printf("  --cadence-decoder N        Run toric-code decoder feedback every N iters (0 = off)\n");
+    printf("  --decoder-error-rate P     Per-qubit error rate for decoder feedback (default 0.03)\n");
+    printf("  --cadence-invariants N     Compute topological invariants every N iters (0 = off)\n");
+    printf("  --lambda-logical L         Physics-loss weight on decoder logical-error flag (default 1.0)\n");
     printf("  --log LOG_FILE             Specify log file name\n");
     printf("  -h, --help                 Display this help message\n");
 }
@@ -84,6 +91,8 @@ int main(int argc, char *argv[]) {
     int use_error_correction = 0;
     int debug_entropy = 0;
     int debug_quantum = 0;
+    char nn_backend_str[16] = "legacy";
+    training_config_t tcfg = training_config_defaults();
 
     static struct option long_options[] = {
         {"iterations", required_argument, 0, 'i'},
@@ -104,6 +113,11 @@ int main(int argc, char *argv[]) {
         {"use-error-correction", no_argument, 0, 0},
         {"debug-entropy", no_argument, 0, 0},
         {"debug-quantum", no_argument, 0, 0},
+        {"nn-backend", required_argument, 0, 0},
+        {"cadence-decoder", required_argument, 0, 0},
+        {"decoder-error-rate", required_argument, 0, 0},
+        {"cadence-invariants", required_argument, 0, 0},
+        {"lambda-logical", required_argument, 0, 0},
         {"log", required_argument, 0, 0},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
@@ -153,6 +167,17 @@ int main(int argc, char *argv[]) {
                 } else if (strcmp("debug-quantum", long_options[option_index].name) == 0) {
                     debug_quantum = 1;
                     setenv("DEBUG_QUANTUM", "1", 1); // Set environment variable
+                } else if (strcmp("nn-backend", long_options[option_index].name) == 0) {
+                    strncpy(nn_backend_str, optarg, sizeof(nn_backend_str) - 1);
+                    nn_backend_str[sizeof(nn_backend_str) - 1] = '\0';
+                } else if (strcmp("cadence-decoder", long_options[option_index].name) == 0) {
+                    tcfg.cadence_decoder = atoi(optarg);
+                } else if (strcmp("decoder-error-rate", long_options[option_index].name) == 0) {
+                    tcfg.decoder_error_rate = atof(optarg);
+                } else if (strcmp("cadence-invariants", long_options[option_index].name) == 0) {
+                    tcfg.cadence_invariants = atoi(optarg);
+                } else if (strcmp("lambda-logical", long_options[option_index].name) == 0) {
+                    tcfg.lambda_logical = atof(optarg);
                 }
                 break;
             default: print_usage(); return 1;
@@ -198,7 +223,22 @@ int main(int argc, char *argv[]) {
     int neurons_per_layer = 256; // Increased from 128
     int output_size = 1; // Predicting total energy
     int activation_function = parse_activation_function(activation_function_str);
-    NeuralNetwork *nn = create_neural_network(input_size, hidden_layers, neurons_per_layer, output_size, activation_function);
+    int backend_parse_ok = 1;
+    nn_backend_kind_t nn_backend = nn_backend_parse(nn_backend_str, &backend_parse_ok);
+    if (!backend_parse_ok) {
+        fprintf(stderr, "Warning: unknown --nn-backend '%s'; falling back to legacy\n",
+                nn_backend_str);
+    }
+    if (verbose) {
+        printf("Neural network backend: %s\n", nn_backend_name(nn_backend));
+    }
+    spin_nn_t *wrapped_nn = spin_nn_create(nn_backend, input_size, hidden_layers,
+                                            neurons_per_layer, output_size, activation_function);
+    if (!wrapped_nn) {
+        fprintf(stderr, "Error: failed to create neural network\n");
+        return 1;
+    }
+    NeuralNetwork *nn = spin_nn_legacy_handle(wrapped_nn); /* v0.3 code paths below still use NeuralNetwork* directly */
 
     // Training data arrays
     double **training_inputs = malloc(TRAINING_ITERATIONS * sizeof(double*));
@@ -288,6 +328,30 @@ int main(int argc, char *argv[]) {
 
         // Compute physics loss
         double physics_loss = compute_physics_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx, loss_type);
+
+        /* v0.4 P0.1: in-loop topological feedback. At the configured cadences
+         * we sample a toric code from the Kitaev lattice and run the greedy
+         * decoder; logical-error flags and residual invariants fold into the
+         * physics loss as soft penalties. Cheap when cadence is modest. */
+        double logical_flag = 0.0;
+        if (tcfg.cadence_decoder > 0 && (iter % tcfg.cadence_decoder) == 0) {
+            ToricCode *tc_loop = initialize_toric_code(toric_code_size_x, toric_code_size_y);
+            if (tc_loop) {
+                calculate_stabilizers(tc_loop, kitaev_lattice);
+                apply_random_errors(tc_loop, tcfg.decoder_error_rate);
+                toric_code_decode_greedy(tc_loop);
+                if (toric_code_has_logical_error(tc_loop)) logical_flag = 1.0;
+                free_toric_code(tc_loop);
+            }
+        }
+        if (tcfg.cadence_invariants > 0 && (iter % tcfg.cadence_invariants) == 0) {
+            /* cheap invariants probe; result is advisory only in v0.4, not
+             * folded into loss yet (full fold arrives with v0.5 pillar P1.2). */
+            TopologicalInvariants *probe =
+                calculate_all_invariants(kitaev_lattice, NULL);
+            if (probe) free_topological_invariants(probe);
+        }
+        physics_loss += tcfg.lambda_logical * logical_flag;
 
         // Apply physics-based correction to the prediction
         double physics_correction_factor = 1.0 / (1.0 + physics_loss);
@@ -554,7 +618,7 @@ int main(int argc, char *argv[]) {
     free_ising_lattice(ising_lattice);
     free_kitaev_lattice(kitaev_lattice);
     free_spin_lattice(spin_lattice);
-    free_neural_network(nn);
+    spin_nn_free(wrapped_nn); /* also frees the underlying legacy nn */
     fclose(log_file);
 
     return 0;
