@@ -447,7 +447,7 @@ void matrix_vector_multiply_neon(double _Complex *matrix, double _Complex *vecto
 The framework provides command-line options for accessing topological quantum computing features:
 
 ```bash
-./spin_based_neural_computation [OPTIONS]
+./build/spin_based_neural_computation [OPTIONS]
 ```
 
 #### Topological Quantum Computing Options
@@ -466,17 +466,17 @@ The framework provides command-line options for accessing topological quantum co
 
 #### Simulate Z2 Topological Insulator (Chern Number = 1)
 ```bash
-./spin_based_neural_computation --iterations 2 --verbose --calculate-entropy --calculate-invariants --use-error-correction --majorana-chain-length 3 --toric-code-size 2 2
+./build/spin_based_neural_computation --iterations 2 --verbose --calculate-entropy --calculate-invariants --use-error-correction --majorana-chain-length 3 --toric-code-size 2 2
 ```
 
 #### Simulate Quantum Spin Hall Effect (Chern Number = 2)
 ```bash
-CHERN_NUMBER=2 ./spin_based_neural_computation --iterations 2 --verbose --calculate-entropy --calculate-invariants --use-error-correction --majorana-chain-length 5 --toric-code-size 3 3
+CHERN_NUMBER=2 ./build/spin_based_neural_computation --iterations 2 --verbose --calculate-entropy --calculate-invariants --use-error-correction --majorana-chain-length 5 --toric-code-size 3 3
 ```
 
 #### Simulate Fractional Quantum Hall Effect (Chern Number = 1/3)
 ```bash
-CHERN_NUMBER=0.333 ./spin_based_neural_computation --iterations 2 --verbose --calculate-entropy --calculate-invariants --use-error-correction --majorana-chain-length 7 --toric-code-size 4 4
+CHERN_NUMBER=0.333 ./build/spin_based_neural_computation --iterations 2 --verbose --calculate-entropy --calculate-invariants --use-error-correction --majorana-chain-length 7 --toric-code-size 4 4
 ```
 
 ### 4.3 API Usage

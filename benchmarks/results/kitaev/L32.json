@@ -1,0 +1,13 @@
+{
+  "suite": "kitaev",
+  "name": "L32",
+  "utc_epoch": 1776459350,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "localhost",
+  "metrics": {
+    "lattice_L": 32,
+    "sweeps_run": 100,
+    "sweeps_per_second": 1449.59049
+  }
+}

@@ -342,34 +342,70 @@ ErrorSyndrome* measure_error_syndrome(ToricCode *code) {
 
 This implementation encapsulates the error information in the `ErrorSyndrome` structure, which is then used by the error correction algorithm.
 
-### 3.5 Error Correction
+### 3.5 Error Correction (v0.4: data-qubit model + greedy MWPM baseline)
 
-The error correction process uses the syndrome information to determine the most likely error locations and apply appropriate corrections:
+v0.4 introduces an explicit data-qubit model for the toric code. Each
+link in the L_x × L_y torus carries independent GF(2) X and Z error
+accumulators; syndromes are re-derived from the qubit state after every
+correction step, so iterated error-and-correction cycles remain
+self-consistent.
 
 ```c
-// Perform error correction
+/* Apply a random depolarizing channel at rate p to each data qubit. */
+ToricCode *code = initialize_toric_code(5, 5);
+apply_random_errors(code, 0.03);
+
+/* Flip individual data qubits by link index. */
+int link = toric_code_link_index(code, 2, 3, 0 /* horizontal */);
+toric_code_apply_x_error(code, link);   /* stamps an X error    */
+toric_code_apply_x_correction(code, link); /* flips it back     */
+
+/* Query syndromes (re-derived on demand). */
+toric_code_refresh_syndromes(code);
+ErrorSyndrome *sx = toric_code_measure_x_syndrome(code);
+ErrorSyndrome *sz = toric_code_measure_z_syndrome(code);
+
+/* Run the greedy-matching decoder — the v0.4 MWPM baseline. */
+int rc = toric_code_decode_greedy(code);
+
+/* Detect a logical error via H₁(dual, Z₂) winding numbers. */
+int logical = toric_code_has_logical_error(code);
+```
+
+The `perform_error_correction()` entry point from v0.3 is retained and
+now delegates to the greedy decoder.
+
+**Baseline logical-error rates** (see `benchmarks/results/toric_decoder/`,
+measured on M-series Mac):
+
+| distance | p=1% | p=3% | p=5% |
+|---|---|---|---|
+| 3 | 0.8% | 6.8% | 15.4% |
+| 5 | 0.2% | 5.6% | 14.0% |
+| 7 | 0.0% | 2.4% | 9.2% |
+
+At p=1% logical error rate decreases with distance (the simulation is
+below threshold); at p=5% all distances show high rates (above
+threshold). The greedy decoder is correct at low error rates but not
+optimal; full minimum-weight perfect matching (Edmonds' blossom
+algorithm [8]) and learned decoders based on transformer / Mamba
+architectures [9-11] are scheduled for v0.5 pillar P1.3.
+
+#### v0.3 stabilizer-sweep path (still available, legacy)
+
+For scenarios that don't care about the underlying data qubits — for
+example, demonstration scripts that inspect stabilizer eigenvalues only
+— the following v0.3 pattern is preserved. Note that the `ToricCode`
+struct's `star_operators` / `plaquette_operators` arrays are now mirrors
+of the underlying data-qubit state, so modifying them directly no
+longer yields coherent behavior across iterations.
+
+```c
+// Legacy syndrome-only pattern (v0.3):
 void perform_error_correction(ToricCode *code, ErrorSyndrome *syndrome) {
-    if (!code || !syndrome || syndrome->num_errors == 0) {
-        return; // Nothing to correct
-    }
-    
-    // Error correction strategy depends on error type
-    if (syndrome->error_type == 0) {
-        // Bit-flip (X) error correction
-        correct_bit_flip_errors(code, syndrome);
-    } else {
-        // Phase-flip (Z) error correction
-        correct_phase_flip_errors(code, syndrome);
-    }
-    
-    // Verify correction by checking if we're in a ground state
-    if (is_ground_state(code)) {
-        if (getenv("DEBUG_TORIC")) {
-            printf("Error correction successful: all stabilizers satisfied\n");
-        }
-    } else {
-        fprintf(stderr, "Error correction incomplete: some stabilizers still violated\n");
-    }
+    // v0.4 delegates to toric_code_decode_greedy(); the syndrome
+    // argument is re-derived from the current data-qubit state.
+    toric_code_decode_greedy(code);
 }
 
 // Correct bit-flip (X) errors using minimum-weight perfect matching
@@ -572,7 +608,7 @@ int main() {
 
 ```bash
 # Run toric code error correction with a 2x2 lattice
-./spin_based_neural_computation --use-error-correction --toric-code-size 2 2 --verbose
+./build/spin_based_neural_computation --use-error-correction --toric-code-size 2 2 --verbose
 ```
 
 ### 5.3 Error Correction with Logical Operations
@@ -697,3 +733,11 @@ Ongoing development for the toric code implementation includes:
 [6] H. Bombin and M. A. Martin-Delgado, "Topological Quantum Distillation," Physical Review Letters, vol. 97, no. 18, p. 180501, 2006.
 
 [7] M. H. Freedman, D. A. Meyer, and F. Luo, "Z₂-systolic freedom and quantum codes," Mathematics of Quantum Computation, Chapman & Hall/CRC, pp. 287-320, 2002.
+
+[8] J. Edmonds, "Paths, trees, and flowers," Canadian Journal of Mathematics, vol. 17, pp. 449-467, 1965.
+
+[9] J. Bausch, A. Senior, F. Heras, T. Edlich, A. Davies, M. Newman, C. Jones, K. Satzinger, M. Y. Niu, S. Blackwell, G. Holland, D. Kafri, J. Atalaya, C. Gidney, D. Hassabis, S. Boixo, H. Neven, and P. Kohli, "Learning high-accuracy error decoding for quantum processors," Nature, vol. 635, pp. 834-840, 2024. DOI: 10.1038/s41586-024-08148-8.
+
+[10] V. Ninkovic, O. Kundacina, D. Vukobratovic, and C. Häger, "Scalable Neural Decoders for Practical Real-Time Quantum Error Correction," arXiv:2510.22724, 2025.
+
+[11] E. Dennis, A. Kitaev, A. Landahl, and J. Preskill, "Topological quantum memory," Journal of Mathematical Physics, vol. 43, no. 9, pp. 4452-4505, 2002 (see [3]; cited again for the original threshold result).

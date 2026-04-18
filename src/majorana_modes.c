@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include <complex.h>
 #include "majorana_modes.h"
@@ -147,24 +148,179 @@ double detect_majorana_zero_modes(MajoranaChain *chain, KitaevWireParameters *pa
     }
 }
 
-// Perform braiding operation on Majorana modes
-void braid_majorana_modes(MajoranaChain *chain, int mode1, int mode2) {
-    if (!chain || mode1 < 0 || mode1 >= chain->num_operators || 
+/*
+ * Legacy operator-permutation "braiding": kept for back-compat with older
+ * demos / docs. This is NOT the true Ising-anyon braiding unitary — it just
+ * permutes the operator array with a sign. For real physics use
+ * apply_braid_unitary() on a MajoranaHilbertState.
+ */
+void braid_majorana_operators_legacy(MajoranaChain *chain, int mode1, int mode2) {
+    if (!chain || mode1 < 0 || mode1 >= chain->num_operators ||
         mode2 < 0 || mode2 >= chain->num_operators) {
         fprintf(stderr, "Error: Invalid parameters for braiding\n");
         return;
     }
 
-    // Braiding two Majorana modes implements the transformation:
-    // γ_i → γ_j
-    // γ_j → -γ_i
-    
-    // Save the first operator
     double _Complex temp = chain->operators[mode1];
-    
-    // Apply the braiding transformation
     chain->operators[mode1] = chain->operators[mode2];
     chain->operators[mode2] = -temp;
+}
+
+void braid_majorana_modes(MajoranaChain *chain, int mode1, int mode2) {
+    braid_majorana_operators_legacy(chain, mode1, mode2);
+}
+
+/* ------------------------------------------------------------------ */
+/* Real Majorana braiding on a fermionic Fock-space state vector.     */
+/*                                                                    */
+/* For N Majorana operators γ_0, ..., γ_{N-1} with N even, pair them  */
+/* into N/2 complex fermions and work in the 2^(N/2)-dim occupation   */
+/* basis. Jordan-Wigner:                                              */
+/*   γ_{2k}   = Z_0 Z_1 ... Z_{k-1} X_k                               */
+/*   γ_{2k+1} = Z_0 Z_1 ... Z_{k-1} Y_k                               */
+/* Braiding unitary:                                                  */
+/*   B_{ij}   = exp(π γ_i γ_j / 4) = (1 + γ_i γ_j) / √2               */
+/* satisfying (γ_i γ_j)^2 = -1, hence B^4 = -I, B^8 = I (Ising anyon) */
+/* ------------------------------------------------------------------ */
+
+MajoranaHilbertState* initialize_majorana_hilbert_state(int num_majoranas) {
+    if (num_majoranas <= 0 || (num_majoranas & 1)) {
+        fprintf(stderr, "Error: num_majoranas must be positive and even (got %d)\n",
+                num_majoranas);
+        return NULL;
+    }
+    int num_fermion_modes = num_majoranas / 2;
+    if (num_fermion_modes > 20) {
+        fprintf(stderr, "Error: num_fermion_modes=%d too large (2^%d states)\n",
+                num_fermion_modes, num_fermion_modes);
+        return NULL;
+    }
+
+    MajoranaHilbertState *state = malloc(sizeof(*state));
+    if (!state) return NULL;
+
+    state->num_fermion_modes = num_fermion_modes;
+    state->hilbert_dim = 1 << num_fermion_modes;
+    state->amplitudes = calloc((size_t)state->hilbert_dim, sizeof(double _Complex));
+    if (!state->amplitudes) { free(state); return NULL; }
+
+    state->amplitudes[0] = 1.0 + 0.0 * _Complex_I; /* fermion vacuum |0..0> */
+    return state;
+}
+
+void free_majorana_hilbert_state(MajoranaHilbertState *state) {
+    if (!state) return;
+    free(state->amplitudes);
+    free(state);
+}
+
+void majorana_hilbert_state_set_vacuum(MajoranaHilbertState *state) {
+    if (!state) return;
+    memset(state->amplitudes, 0, (size_t)state->hilbert_dim * sizeof(double _Complex));
+    state->amplitudes[0] = 1.0 + 0.0 * _Complex_I;
+}
+
+void majorana_state_copy(const MajoranaHilbertState *src, MajoranaHilbertState *dst) {
+    if (!src || !dst || src->hilbert_dim != dst->hilbert_dim) return;
+    memcpy(dst->amplitudes, src->amplitudes,
+           (size_t)src->hilbert_dim * sizeof(double _Complex));
+}
+
+double majorana_state_norm_squared(const MajoranaHilbertState *state) {
+    if (!state) return 0.0;
+    double s = 0.0;
+    for (int n = 0; n < state->hilbert_dim; n++) {
+        double re = creal(state->amplitudes[n]);
+        double im = cimag(state->amplitudes[n]);
+        s += re * re + im * im;
+    }
+    return s;
+}
+
+double _Complex majorana_states_inner_product(const MajoranaHilbertState *a,
+                                              const MajoranaHilbertState *b) {
+    if (!a || !b || a->hilbert_dim != b->hilbert_dim) return 0.0;
+    double _Complex s = 0.0;
+    for (int n = 0; n < a->hilbert_dim; n++) {
+        s += conj(a->amplitudes[n]) * b->amplitudes[n];
+    }
+    return s;
+}
+
+void apply_majorana_op_to_state(int op_index, MajoranaHilbertState *state) {
+    if (!state) return;
+    int num_majoranas = 2 * state->num_fermion_modes;
+    if (op_index < 0 || op_index >= num_majoranas) {
+        fprintf(stderr, "Error: op_index=%d out of range [0,%d)\n",
+                op_index, num_majoranas);
+        return;
+    }
+
+    int k = op_index >> 1;       /* fermion mode */
+    int is_y = op_index & 1;     /* γ_{2k+1} = Z-string * Y_k; otherwise X_k */
+    int dim = state->hilbert_dim;
+    int mask_k = 1 << k;
+    /* Mask of all modes < k (for Jordan-Wigner Z-string parity) */
+    int mask_lower = mask_k - 1;
+
+    double _Complex *psi = state->amplitudes;
+    double _Complex *out = calloc((size_t)dim, sizeof(double _Complex));
+    if (!out) return;
+
+    /* Action on basis |b>:
+     *   Z-string on modes < k: multiply by (-1)^(popcount(b & mask_lower))
+     *   X_k : flip bit k, no extra phase
+     *   Y_k : flip bit k; phase +i if bit k was 0, -i if bit k was 1.
+     * Populate `out[b_new] += phase * psi[b_old]`.
+     */
+    for (int b = 0; b < dim; b++) {
+        double _Complex amp = psi[b];
+        if (amp == 0.0) continue;
+
+        int pop = __builtin_popcount(b & mask_lower);
+        double _Complex phase = (pop & 1) ? -1.0 : 1.0;
+
+        if (is_y) {
+            int bit_k = (b >> k) & 1;
+            phase *= bit_k ? (-_Complex_I) : _Complex_I;
+        }
+
+        int b_new = b ^ mask_k;
+        out[b_new] += phase * amp;
+    }
+
+    memcpy(psi, out, (size_t)dim * sizeof(double _Complex));
+    free(out);
+}
+
+void apply_braid_unitary(MajoranaHilbertState *state, int i, int j) {
+    if (!state || i == j) {
+        fprintf(stderr, "Error: braid requires distinct modes (i=%d, j=%d)\n", i, j);
+        return;
+    }
+    int num_majoranas = 2 * state->num_fermion_modes;
+    if (i < 0 || i >= num_majoranas || j < 0 || j >= num_majoranas) {
+        fprintf(stderr, "Error: braid modes out of range\n");
+        return;
+    }
+
+    /* B_{ij}|ψ⟩ = (|ψ⟩ + γ_i γ_j |ψ⟩) / √2
+     * Apply γ_j then γ_i to a scratch copy, add to original, scale.
+     */
+    int dim = state->hilbert_dim;
+    double _Complex *save = malloc((size_t)dim * sizeof(double _Complex));
+    if (!save) return;
+    memcpy(save, state->amplitudes, (size_t)dim * sizeof(double _Complex));
+
+    apply_majorana_op_to_state(j, state);
+    apply_majorana_op_to_state(i, state);
+
+    const double inv_sqrt2 = 1.0 / sqrt(2.0);
+    for (int n = 0; n < dim; n++) {
+        state->amplitudes[n] = (save[n] + state->amplitudes[n]) * inv_sqrt2;
+    }
+
+    free(save);
 }
 
 // Compute the energy of a Kitaev wire

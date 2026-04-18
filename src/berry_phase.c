@@ -366,14 +366,15 @@ double calculate_chern_number(BerryPhaseData *berry_data) {
         }
     }
     
-    // Check for environment variable to override Chern number
+#ifdef SPIN_NN_TESTING
     char *chern_env = getenv("CHERN_NUMBER");
     if (chern_env != NULL) {
         double env_chern = atof(chern_env);
-        printf("Using Chern number %f from environment variable\n", env_chern);
+        printf("Using Chern number %f from environment variable (SPIN_NN_TESTING)\n", env_chern);
         chern = env_chern;
-    } else {
-        // Normalize to an integer Chern number (typically ±1 for topological phases)
+    } else
+#endif
+    {
         chern = (chern > 0.5) ? 1.0 : ((chern < -0.5) ? -1.0 : 0.0);
     }
     
@@ -521,16 +522,19 @@ double calculate_winding_number(MajoranaChain *chain) {
     // Calculate theoretical topological phase
     bool in_topological_phase = (fabs(mu) < 2.0 * fabs(t));
     
-    // Check for environment variable to override winding number
-    char *winding_env = getenv("WINDING_NUMBER");
     double actual_winding;
-    
+#ifdef SPIN_NN_TESTING
+    /* Test-only override: force a specific winding number for regression
+     * testing. Release builds (no SPIN_NN_TESTING) always run the
+     * numerically-computed value through the rounding below. */
+    char *winding_env = getenv("WINDING_NUMBER");
     if (winding_env != NULL) {
         double env_winding = atof(winding_env);
-        printf("Using winding number %.2f from environment variable\n", env_winding);
+        printf("Using winding number %.2f from environment variable (SPIN_NN_TESTING)\n", env_winding);
         actual_winding = env_winding;
-    } else {
-        // Only perform minimal rounding for numerical stability when not using environment override
+    } else
+#endif
+    {
         double rounded_winding = round(winding);
         if (fabs(winding - rounded_winding) < 0.1) {
             actual_winding = rounded_winding;

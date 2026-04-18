@@ -290,23 +290,36 @@ double calculate_chern_number(BerryPhaseData *berry_data) {
         }
     }
     
-    // Check for environment variable override
+#ifdef SPIN_NN_TESTING
+    // Test-only override: force a specific Chern number value for
+    // regression testing. Release builds (no SPIN_NN_TESTING) always run
+    // the calculated value through the integer normalisation below.
     char *chern_env = getenv("CHERN_NUMBER");
     if (chern_env != NULL) {
         double env_chern = atof(chern_env);
-        printf("Using Chern number %f from environment variable\n", env_chern);
+        printf("Using Chern number %f from environment variable (SPIN_NN_TESTING)\n", env_chern);
         chern = env_chern;
-    } else {
+    } else
+#endif
+    {
         // Normalize to an integer Chern number (typically ±1 for topological phases)
         chern = (chern > 0.5) ? 1.0 : ((chern < -0.5) ? -1.0 : 0.0);
     }
-    
+
     // Store the result
     berry_data->chern_number = chern;
-    
+
     return chern;
 }
 ```
+
+> **v0.4 note — `CHERN_NUMBER` test override.** In v0.3 the
+> `CHERN_NUMBER` environment variable bypassed the actual Chern-number
+> calculation in every build. In v0.4 this is a test-only feature,
+> gated behind `#ifdef SPIN_NN_TESTING`. Release builds always run the
+> calculation. Test builds opt in with `-DSPIN_NN_TESTING` via
+> `CFLAGS` when they need deterministic invariant values for regression
+> testing.
 
 ### 3.6 TKNN Invariant Calculation
 
@@ -483,13 +496,13 @@ int main() {
 
 ```bash
 # Calculate topological invariants for a Z2 topological insulator
-./spin_based_neural_computation --calculate-invariants --verbose
+./build/spin_based_neural_computation --calculate-invariants --verbose
 
 # Calculate topological invariants for a quantum spin Hall state
-CHERN_NUMBER=2 ./spin_based_neural_computation --calculate-invariants --verbose
+CHERN_NUMBER=2 ./build/spin_based_neural_computation --calculate-invariants --verbose
 
 # Calculate topological invariants for a fractional quantum Hall state
-CHERN_NUMBER=0.333 ./spin_based_neural_computation --calculate-invariants --verbose
+CHERN_NUMBER=0.333 ./build/spin_based_neural_computation --calculate-invariants --verbose
 ```
 
 ### 6.3 Computing All Topological Invariants

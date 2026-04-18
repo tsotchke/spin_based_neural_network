@@ -1,0 +1,13 @@
+{
+  "suite": "ising",
+  "name": "L8",
+  "utc_epoch": 1776459349,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "localhost",
+  "metrics": {
+    "lattice_L": 8,
+    "sweeps_run": 2000,
+    "sweeps_per_second": 65850.1251
+  }
+}

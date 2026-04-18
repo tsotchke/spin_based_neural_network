@@ -770,7 +770,7 @@ int main() {
 
 ```bash
 # Calculate topological entanglement entropy
-./spin_based_neural_computation --calculate-entropy --verbose
+./build/spin_based_neural_computation --calculate-entropy --verbose
 ```
 
 ### 6.3 Analyzing Multiple Topological Phases

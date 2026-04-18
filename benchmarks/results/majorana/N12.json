@@ -1,0 +1,14 @@
+{
+  "suite": "majorana",
+  "name": "N12",
+  "utc_epoch": 1776459351,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "localhost",
+  "metrics": {
+    "num_majoranas": 12,
+    "num_braids": 2000,
+    "hilbert_dim": 64,
+    "braids_per_second": 4566210.17
+  }
+}
