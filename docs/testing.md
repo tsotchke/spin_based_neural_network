@@ -1,9 +1,13 @@
 # Testing
 
 v0.4 introduces a lightweight TAP-style test harness at `tests/harness.h`
-and a 17-suite test battery covering 18 of 18 library modules
-(109 tests total). This document describes how to run, extend, and
-interpret the suite.
+and one suite per library module, plus per-pillar suites that land with
+v0.5+ work. Every `tests/test_*.c` is itself a `main()` binary built by
+the Makefile. This document describes how to run, extend, and interpret
+the suite. For the live list of suites and their Makefile targets, run
+`grep -E '^test_[a-z_]+:' Makefile | sort` — the table below covers the
+v0.4 core modules but does not track the pillar-specific additions that
+get appended over time.
 
 ## Running the suite
 
@@ -39,6 +43,11 @@ different format but is included in `make test` for historical
 continuity.
 
 ## Test coverage summary
+
+The table below enumerates v0.4 core-module suites. Pillar tests
+(`test_nqs*`, `test_mps*`, `test_theory_qpt_*`, etc.) land alongside
+their pillar code and are driven by `make test` through the same
+harness; see `tests/` for the complete list.
 
 | Suite | Tests | Covers | Notes |
 |---|---|---|---|
@@ -107,15 +116,18 @@ test_<module>: $(BIN_DIR)
 
 ## What counts as "100% coverage" here
 
-Every library module (`src/*.c` that compiles into the main binary) has
-at least one test suite. Per-function coverage is high but not
-exhaustive — the current criterion is that every public function
-declared in `include/*.h` is exercised by at least one test.
+Every library module (`src/*.c` or `src/<subdir>/*.c` that compiles
+into the main binary) has at least one test suite. Per-function
+coverage is high but not exhaustive — the current criterion is that
+every public function declared under `include/` is exercised by at
+least one test.
 
 The `main.c` driver, `topological_example.c` standalone demo, and the
 SDL2 `visualization*.c` files are excluded: they are not library units
 but binaries, and the math / data-flow portions of their logic live in
-the library modules that *are* tested.
+the library modules that *are* tested. Pillar modules (`src/nqs/`,
+`src/mps/`, and any future pillar subdirectory) each carry their own
+`tests/test_<pillar>*.c` files alongside this baseline.
 
 ## When to add to an existing suite vs. create a new one
 

@@ -36,7 +36,7 @@ BerryPhaseData* initialize_berry_phase_data(int kx, int ky, int kz) {
     }
     
     for (int i = 0; i < 3; i++) {
-        data->connection[i] = (double _Complex **)malloc(kx * sizeof(double _Complex *));
+        data->connection[i] = (double _Complex **)malloc((size_t)kx * sizeof(double _Complex *));
         if (!data->connection[i]) {
             fprintf(stderr, "Error: Memory allocation failed for Berry connection[%d]\n", i);
             for (int j = 0; j < i; j++) {
@@ -51,7 +51,8 @@ BerryPhaseData* initialize_berry_phase_data(int kx, int ky, int kz) {
         }
         
         for (int j = 0; j < kx; j++) {
-            data->connection[i][j] = (double _Complex *)malloc(ky * kz * sizeof(double _Complex));
+            size_t plane_elems = (size_t)ky * (size_t)kz;
+            data->connection[i][j] = (double _Complex *)malloc(plane_elems * sizeof(double _Complex));
             if (!data->connection[i][j]) {
                 fprintf(stderr, "Error: Memory allocation failed for Berry connection[%d][%d]\n", i, j);
                 for (int k = 0; k < j; k++) {
@@ -67,9 +68,9 @@ BerryPhaseData* initialize_berry_phase_data(int kx, int ky, int kz) {
                 free(data);
                 return NULL;
             }
-            
+
             // Initialize connection to zero
-            for (int k = 0; k < ky * kz; k++) {
+            for (size_t k = 0; k < plane_elems; k++) {
                 data->connection[i][j][k] = 0.0;
             }
         }
@@ -91,7 +92,7 @@ BerryPhaseData* initialize_berry_phase_data(int kx, int ky, int kz) {
     }
     
     for (int i = 0; i < 3; i++) {
-        data->curvature[i] = (double **)malloc(kx * sizeof(double *));
+        data->curvature[i] = (double **)malloc((size_t)kx * sizeof(double *));
         if (!data->curvature[i]) {
             fprintf(stderr, "Error: Memory allocation failed for Berry curvature[%d]\n", i);
             for (int j = 0; j < i; j++) {
@@ -113,7 +114,8 @@ BerryPhaseData* initialize_berry_phase_data(int kx, int ky, int kz) {
         }
         
         for (int j = 0; j < kx; j++) {
-            data->curvature[i][j] = (double *)malloc(ky * kz * sizeof(double));
+            size_t plane_elems = (size_t)ky * (size_t)kz;
+            data->curvature[i][j] = (double *)malloc(plane_elems * sizeof(double));
             if (!data->curvature[i][j]) {
                 fprintf(stderr, "Error: Memory allocation failed for Berry curvature[%d][%d]\n", i, j);
                 for (int k = 0; k < j; k++) {
@@ -136,9 +138,9 @@ BerryPhaseData* initialize_berry_phase_data(int kx, int ky, int kz) {
                 free(data);
                 return NULL;
             }
-            
+
             // Initialize curvature to zero
-            for (int k = 0; k < ky * kz; k++) {
+            for (size_t k = 0; k < plane_elems; k++) {
                 data->curvature[i][j][k] = 0.0;
             }
         }
@@ -732,8 +734,11 @@ TopologicalInvariants* calculate_all_invariants(KitaevLattice *lattice,
     return invariants;
 }
 
-// Get the eigenstate at a given k-point
+// Get the eigenstate at a given k-point.
+// band_index is reserved for the full diagonalisation path; the current
+// stub returns a uniform plane-wave state independent of the band.
 void get_eigenstate(KitaevLattice *lattice, double k[3], double _Complex *eigenstate, int band_index) {
+    (void)band_index;
     if (!lattice || !k || !eigenstate) {
         fprintf(stderr, "Error: Invalid parameters for get_eigenstate\n");
         return;

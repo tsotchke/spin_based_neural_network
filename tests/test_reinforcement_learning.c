@@ -7,7 +7,6 @@
  */
 #include "harness.h"
 #include "reinforcement_learning.h"
-
 static void test_reward_positive_when_energy_drops(void) {
     IsingLattice *i = initialize_ising_lattice(3, 3, 3, "all-up");
     KitaevLattice *k = initialize_kitaev_lattice(3, 3, 3, 1.0, 1.0, 1.0, "all-up");
@@ -17,7 +16,6 @@ static void test_reward_positive_when_energy_drops(void) {
     free_ising_lattice(i);
     free_kitaev_lattice(k);
 }
-
 static void test_reward_near_zero_when_energy_rises(void) {
     IsingLattice *i = initialize_ising_lattice(3, 3, 3, "all-up");
     KitaevLattice *k = initialize_kitaev_lattice(3, 3, 3, 1.0, 1.0, 1.0, "all-up");
@@ -30,7 +28,6 @@ static void test_reward_near_zero_when_energy_rises(void) {
     free_ising_lattice(i);
     free_kitaev_lattice(k);
 }
-
 static void test_optimize_spins_preserves_pm1(void) {
     IsingLattice *i = initialize_ising_lattice(3, 3, 3, "random");
     KitaevLattice *k = initialize_kitaev_lattice(3, 3, 3, 1.0, 1.0, 1.0, "random");
@@ -46,7 +43,6 @@ static void test_optimize_spins_preserves_pm1(void) {
     free_ising_lattice(i);
     free_kitaev_lattice(k);
 }
-
 static void test_state_strings_non_null_and_freeable(void) {
     IsingLattice *i = initialize_ising_lattice(2, 2, 2, "all-up");
     KitaevLattice *k = initialize_kitaev_lattice(2, 2, 2, 1.0, 1.0, 1.0, "all-down");
@@ -58,7 +54,6 @@ static void test_state_strings_non_null_and_freeable(void) {
     free_ising_lattice(i);
     free_kitaev_lattice(k);
 }
-
 int main(void) {
     TEST_RUN(test_reward_positive_when_energy_drops);
     TEST_RUN(test_reward_near_zero_when_energy_rises);

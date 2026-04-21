@@ -5,6 +5,102 @@ All notable changes to the Spin-Based Neural Computation Framework will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — v0.5 pillar landings
+
+### Added — pillar P2.1 (time-dependent NQS)
+- **Real-time tVMC integrator** (`nqs_tvmc_step_real_time`). For real
+  parameters θ, the complex tVMC projection equation `S · θ̇ = -i · F`
+  projects to `Re(S) · θ̇ = Im(F)`; the Fubini–Study metric is reused
+  from the holomorphic SR path. Forward-Euler conserves ⟨H⟩ to O(dt²).
+- **Heun (2nd-order) tVMC integrator** (`nqs_tvmc_step_heun`). One
+  extra MC sampling per step; drift drops from 0.052 to 0.013 at
+  dt = 0.02, T = 0.3 on TFIM N = 4.
+- Raw-parameter accessor `nqs_ansatz_params_raw` for multi-stage
+  time-steppers that need to snapshot / restore θ.
+
+### Added — pillar P1.2 (equivariant LLG)
+- **SO(3)-equivariant torque predictor** (`src/equivariant_gnn/`).
+  Pure-C tensor-product primitives; output τ transforms as a proper
+  rank-1 tensor under rotations (max residual 1.55e-15 over random
+  SO(3) samples). LLG adapter plugs τ into the integrator's
+  `field_fn` slot; 200 RK4 steps keep |m|=1 to machine precision.
+- **libirrep bridge NequIP layer** (`libirrep_bridge_nequip_*`).
+  Opaque wrappers around libirrep's NequIP layer via e3nn-style
+  multiset strings; gated behind `SPIN_NN_HAS_IRREP_NEQUIP` so the
+  bridge remains buildable against libirrep 1.0 (which predates
+  `nequip.h`). Full tower lands once libirrep ≥ 1.1 is vendored.
+
+### Added — pillar P2.9 (thermodynamic computing)
+- **Hopfield associative memory** (`src/thermodynamic/hopfield.c`).
+  Hebbian storage + zero-T sync updates + finite-T Metropolis sweep.
+  Reliable recall at K/N = 0.1 (below Amit–Gutfreund–Sompolinsky 0.138).
+- **CD-1 RBM generative model** (`src/thermodynamic/rbm_cd.c`).
+  Block-Gibbs sampling, mean-field statistics inside the gradient.
+  After 5000 epochs on a 4-bit 2-pattern dataset: sample hit-rate
+  0.996 vs chance 0.125.
+
+### Added — pillar P1.1 (NQS Hamiltonian coverage)
+- **XXZ Hamiltonian** (`NQS_HAM_XXZ` + `j_z_coupling`). Generic
+  local-energy kernel parametrises Jxy (off-diagonal) and Jz
+  (diagonal) separately; the existing Heisenberg path delegates with
+  Jxy = Jz. Cross-checked against MPS DMRG on N=4 chains for three
+  anisotropy regimes.
+
+### Added — pillar P1.2 (equivariant LLG) — extras
+- **Closed-form fitter** for the torque-net's five linear weights
+  (`torque_net_fit_weights`). Recovers planted synthetic weights to
+  machine precision (1.6e-16 residual) on a 3×3 periodic grid over
+  40 random configurations.
+
+### Added — pillar P2.7 (PINN groundwork)
+- **SIREN activation** for the legacy MLP (`ACTIVATION_SIREN`),
+  including the Sitzmann et al. 2020 weight-init scheme (first
+  layer U[−1/fan_in, 1/fan_in]; deeper layers scaled by 1/ω).
+
+### Added — pillar P3.0 (THQCP — thermodynamic hybrid quantum-classical processor)
+- **THQCP coupling scheduler** (`src/thqcp/coupling.c` + `include/thqcp/coupling.h`).
+  Three-phase state machine PHASE_ANNEAL → PHASE_QUANTUM → PHASE_FEEDBACK
+  on a p-bit annealing plane + defect-qubit coherent-window plane.
+  Open policies: PERIODIC, STAGNATION, NEVER. Theoretical grounding:
+  Sanchez-Forero 2024 adiabatic-response stochastic thermodynamics.
+- **Coherent qubit window** (`THQCP_WINDOW_COHERENT`). Exact 2-level
+  evolution under `H_q = h_z σ_z + h_x σ_x` with Born-rule projective
+  measurement; gives proper transverse-field-quantum-annealing
+  tunneling probability `P(flip) = (h_x²/Ω²) sin²(Ωτ)`. Stub model
+  retained as `THQCP_WINDOW_STUB` for ablation baselines.
+- Ferromagnetic Ising N=16 at β=[0.05, 6.0] over 400 sweeps reaches
+  exact ground state E = -120 in the anneal-only branch.
+
+### Added — cross-project integration
+- **Moonlab bridge** (`src/moonlab_bridge.c`). Gated behind
+  `SPIN_NN_HAS_MOONLAB`; forwards to libquantumsim's surface-code
+  + MWPM-decoder API. Provides ground-truth QEC reference for the
+  joint-trained neural decoder program.
+- **libirrep bridge live-path tests** — 6/6 live-mode tests
+  pass via `make IRREP_ENABLE=1` against libirrep 1.0.0. Torque net
+  ↔ libirrep SH-addition-theorem cross-check passes at residual
+  6.1e-17.
+- **Golden-vector suite** (`tests/test_downstream_compat/`) —
+  five fixed (h_in, edge_vec, weights) configs + expected TP
+  outputs for the libirrep 1.2 torque-net convergence target.
+  Both repositories vendor the same JSON files; any convention
+  drift fires simultaneously on both CI runs. 5/5 bit-exact
+  agreement on current tree.
+- **Cross-project integration docs** (`docs/cross_project_integration.md`).
+  External-collaborator onboarding: stack inventory, dependency DAG,
+  bridges provided, cross-validation axes, version compatibility.
+
+### Added — other
+- **Flow-matching per-site rates**
+  (`flow_matching_fit_rates_to_magnetisation`,
+  `flow_matching_sample_biased_rates`). Closed-form inversion of the
+  two-state CTMC relation `m(1) = b · (1 − e^{−c})` gives per-site
+  rates that hit a prescribed target magnetisation at t=1.
+
+### Tests
+- Suite grew from 277 → 316 tests; all pass. Plus 6 live-mode tests
+  with `IRREP_ENABLE=1` and 4 with `MOONLAB_ENABLE=1`.
+
 ## [0.4.0] - Foundation for v0.5 research pillars
 
 ### Added

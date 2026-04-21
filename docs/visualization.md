@@ -167,3 +167,129 @@ The visualizations are based on established mathematical models:
 - **Topological entanglement entropy**: S_topo = -log(D), where D is the total quantum dimension
 
 This visualization tool provides an intuitive window into the abstract mathematical concepts that underlie topological quantum computing, making them accessible for research, education, and exploration.
+
+## API Reference
+
+The viewer is an optional SDL2-backed binary. Build with
+`make visualization` (requires `pkg-config` + SDL2 headers). The
+`include/visualization.h` API is designed so that non-graphical code
+can push data into the viewer without depending on SDL2 symbols
+directly.
+
+### Opaque handle
+
+```c
+typedef struct VisualizationState VisualizationState;
+```
+
+`VisualizationState` is opaque — callers never see its internals. It
+carries the SDL2 window / renderer handles, the current mode, and the
+four per-mode data buffers.
+
+### Lifecycle
+
+```c
+VisualizationState *vis = init_visualization();   /* creates window + renderer; NULL on failure */
+/* ... set data, call update_visualization() in a loop ... */
+cleanup_visualization(vis);                        /* safe on NULL */
+```
+
+`init_visualization` pops a window on the current display. On headless
+hosts (no `DISPLAY` on Linux, no graphical session on macOS) the call
+returns `NULL`; callers should check and skip the viewer.
+
+### Main loop
+
+```c
+while (is_visualization_running(vis)) {
+    update_visualization(vis);
+}
+```
+
+- `update_visualization(vis)` renders one frame in the active mode and
+  pumps the SDL event queue (keyboard → mode switch, ESC → quit).
+- `is_visualization_running(vis)` returns `1` until the user presses
+  ESC or closes the window, then `0`.
+
+The viewer is single-threaded — call both functions from the same
+thread that invoked `init_visualization`.
+
+### Data setters
+
+Four setter functions push per-mode data. Each may be called while
+the viewer is running; the next `update_visualization` tick picks up
+the new data.
+
+```c
+void set_berry_curvature_data(VisualizationState *state,
+                              double *curvature,
+                              int resolution,
+                              double invariant);
+```
+
+- `curvature`: flat array of length `resolution × resolution`,
+  row-major, scalar Berry curvature per k-point (sign and magnitude
+  both meaningful).
+- `resolution`: integer — viewer draws a square grid of that side.
+- `invariant`: total Chern number (shown as a HUD label).
+
+```c
+void set_toric_code_data(VisualizationState *state,
+                         double *stabilizers,
+                         int size_x, int size_y);
+```
+
+- `stabilizers`: flat array of length `2 × size_x × size_y` — first
+  `size_x × size_y` values are star (vertex) stabilizers, next block
+  is plaquette stabilizers. Negative values render as error syndromes.
+
+```c
+void set_majorana_data(VisualizationState *state,
+                       double *positions,
+                       int num_modes);
+```
+
+- `positions`: flat array of length `num_modes`, representing
+  occupation / amplitude of each Majorana mode around the circle.
+  Brightness scales with magnitude.
+
+```c
+void set_topological_entropy(VisualizationState *state, double entropy);
+```
+
+- `entropy`: single scalar, displayed as a HUD label and used to
+  modulate the three-region particle density.
+
+### Typical integration pattern
+
+```c
+VisualizationState *vis = init_visualization();
+if (!vis) return 0;   /* headless — skip viewer */
+
+while (is_visualization_running(vis)) {
+    /* compute fresh data from the simulation */
+    set_berry_curvature_data(vis, curvature_buf, 64, chern_number);
+
+    update_visualization(vis);   /* renders + polls input */
+}
+cleanup_visualization(vis);
+```
+
+See `src/visualization_main.c` for the full driver that couples the
+viewer to the topological computation kernels.
+
+## Build
+
+The SDL2 build uses `pkg-config` to locate SDL2 headers and libs,
+falling back to a hardcoded search path list for macOS (Homebrew at
+`/opt/homebrew/include/SDL2`) and typical Linux install locations.
+Override with `SDL_CFLAGS` / `SDL_LDFLAGS` on the `make` command line
+if needed:
+
+```sh
+make visualization \
+    SDL_CFLAGS="-I/my/sdl2/include" \
+    SDL_LDFLAGS="-L/my/sdl2/lib -lSDL2"
+```
+
+The resulting binary is `build/visualization`.

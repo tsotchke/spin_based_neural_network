@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -350,6 +351,148 @@ int toric_code_decode_greedy(ToricCode *code) {
     if (greedy_pair_and_correct(code, code->vertex_syndrome, Ls, 1) != 0) return -1;
     if (greedy_pair_and_correct(code, code->plaquette_syndrome, Ls, 0) != 0) return -1;
 
+    toric_code_refresh_syndromes(code);
+    return 0;
+}
+
+/* ============================ MWPM ================================= */
+
+#define MWPM_ENUM_MAX 14   /* 13!! = 135135 matchings */
+
+/* Recursive enumeration of perfect matchings. Picks the first
+ * available index, pairs it with every other still-available index,
+ * recurses. Pruning: aborts branches whose partial weight already
+ * exceeds the best known total. */
+static void mwpm_enum(int *available, int K,
+                       int *current_pair, int *best_pair,
+                       int partial_weight, int *best_weight,
+                       const int *distances) {
+    int i = -1;
+    for (int k = 0; k < K; k++) if (available[k]) { i = k; break; }
+    if (i < 0) {
+        if (partial_weight < *best_weight) {
+            *best_weight = partial_weight;
+            memcpy(best_pair, current_pair, sizeof(int) * K);
+        }
+        return;
+    }
+    available[i] = 0;
+    for (int j = i + 1; j < K; j++) {
+        if (!available[j]) continue;
+        int new_weight = partial_weight + distances[i * K + j];
+        if (new_weight >= *best_weight) continue;       /* prune */
+        available[j] = 0;
+        current_pair[i] = j;
+        current_pair[j] = i;
+        mwpm_enum(available, K, current_pair, best_pair,
+                   new_weight, best_weight, distances);
+        available[j] = 1;
+    }
+    available[i] = 1;
+}
+
+/* 2-opt local search: repeatedly try swapping two edges (a-b) and (c-d)
+ * for (a-c) and (b-d) or (a-d) and (b-c), taking any swap that
+ * decreases total weight. Stops when no improvement. */
+static void mwpm_2opt(int *pair, int K, const int *distances) {
+    int improved = 1;
+    while (improved) {
+        improved = 0;
+        for (int a = 0; a < K; a++) {
+            int b = pair[a];
+            if (b < a) continue;      /* each edge considered once */
+            for (int c = a + 1; c < K; c++) {
+                if (c == b) continue;
+                int d = pair[c];
+                if (d < c) continue;
+                if (d == a) continue;
+                int cur = distances[a * K + b] + distances[c * K + d];
+                int opt1 = distances[a * K + c] + distances[b * K + d];
+                int opt2 = distances[a * K + d] + distances[b * K + c];
+                if (opt1 < cur && opt1 <= opt2) {
+                    pair[a] = c; pair[c] = a;
+                    pair[b] = d; pair[d] = b;
+                    improved = 1;
+                    break;
+                }
+                if (opt2 < cur) {
+                    pair[a] = d; pair[d] = a;
+                    pair[b] = c; pair[c] = b;
+                    improved = 1;
+                    break;
+                }
+            }
+            if (improved) break;
+        }
+    }
+}
+
+static int mwpm_pair_and_correct(ToricCode *code, int *syndrome_bits,
+                                  int num, int is_z_correction) {
+    int *flagged = malloc((size_t)num * sizeof(int));
+    if (!flagged) return -1;
+    int K = 0;
+    for (int i = 0; i < num; i++) if (syndrome_bits[i]) flagged[K++] = i;
+    if (K < 2) { free(flagged); return 0; }
+    if (K & 1)    { free(flagged); return -1; } /* impossible under depolarising */
+
+    /* Pairwise toroidal distances. */
+    int *distances = malloc((size_t)K * (size_t)K * sizeof(int));
+    if (!distances) { free(flagged); return -1; }
+    for (int i = 0; i < K; i++) for (int j = 0; j < K; j++) {
+        distances[i * K + j] = (i == j) ? 0
+                               : toroidal_distance(code, flagged[i], flagged[j], NULL, NULL);
+    }
+
+    /* Find the matching. */
+    int *pair = malloc((size_t)K * sizeof(int));
+    int *best = malloc((size_t)K * sizeof(int));
+    for (int i = 0; i < K; i++) pair[i] = best[i] = -1;
+
+    if (K <= MWPM_ENUM_MAX) {
+        int *available = malloc((size_t)K * sizeof(int));
+        for (int i = 0; i < K; i++) available[i] = 1;
+        int best_w = INT_MAX;
+        mwpm_enum(available, K, pair, best, 0, &best_w, distances);
+        free(available);
+        memcpy(pair, best, sizeof(int) * K);
+    } else {
+        /* Seed 2-opt from the greedy matching. */
+        int *remaining = malloc((size_t)K * sizeof(int));
+        for (int i = 0; i < K; i++) remaining[i] = 1;
+        while (1) {
+            int a = -1;
+            for (int i = 0; i < K; i++) if (remaining[i]) { a = i; break; }
+            if (a < 0) break;
+            int b = -1, best_d = INT_MAX;
+            for (int j = a + 1; j < K; j++) {
+                if (!remaining[j]) continue;
+                if (distances[a * K + j] < best_d) { best_d = distances[a * K + j]; b = j; }
+            }
+            if (b < 0) break;
+            pair[a] = b; pair[b] = a;
+            remaining[a] = remaining[b] = 0;
+        }
+        free(remaining);
+        mwpm_2opt(pair, K, distances);
+    }
+
+    /* Apply paths. */
+    for (int i = 0; i < K; i++) {
+        int j = pair[i];
+        if (j > i) apply_path_correction(code, flagged[i], flagged[j], is_z_correction);
+    }
+
+    free(pair); free(best); free(distances); free(flagged);
+    return 0;
+}
+
+int toric_code_decode_mwpm(ToricCode *code) {
+    if (!code) return -1;
+    toric_code_refresh_syndromes(code);
+    int Ls = code->size_x * code->size_y;
+    if (mwpm_pair_and_correct(code, code->vertex_syndrome, Ls, 1) != 0) return -1;
+    if (mwpm_pair_and_correct(code, code->plaquette_syndrome, Ls, 0) != 0) return -1;
     toric_code_refresh_syndromes(code);
     return 0;
 }

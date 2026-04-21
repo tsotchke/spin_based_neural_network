@@ -1,5 +1,6 @@
  #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <SDL2/SDL.h>
 
@@ -81,8 +82,16 @@ double* generate_sample_majorana_modes(int num_modes) {
 }
 
 int main(int argc, char* argv[]) {
-    // Seed random number generator
-    srand(time(NULL));
+    (void)argc; (void)argv;
+    /* Deterministic seed per REPRODUCIBILITY.md. Set SEED=<int> or
+     * SEED=time in the environment to override at run time. */
+    const char *seed_env = getenv("SEED");
+    unsigned long seed = 42UL;
+    if (seed_env && *seed_env) {
+        if (strcmp(seed_env, "time") == 0) seed = (unsigned long)time(NULL);
+        else                               seed = strtoul(seed_env, NULL, 0);
+    }
+    srand((unsigned int)seed);
     
     // Initialize SDL and visualization
     VisualizationState* vis = init_visualization();

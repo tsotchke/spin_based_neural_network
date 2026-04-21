@@ -11,7 +11,7 @@ set -e
 # Build the test-mode binary (includes -DSPIN_NN_TESTING)
 make arm_testing
 
-BIN=./bin/spin_based_neural_computation_arm_testing
+BIN=./build/spin_based_neural_computation_arm_testing
 
 echo "==== Example 1: Z2 Topological Insulator (Chern number = 1, Winding number = 1) ===="
 export CHERN_NUMBER=1

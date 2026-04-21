@@ -61,8 +61,8 @@ spin_based_neural_network/
 │   ├── spin_based_neural_computation_arm      # ARM-specific build with NEON enabled
 │   ├── spin_based_neural_computation_generic  # Generic build with NEON disabled
 │   ├── topo_example                           # Topological phases example
-│   ├── test_*                                 # 17 v0.4 test-suite binaries
-│   └── bench_*                                # 4 v0.4 benchmark binaries
+│   ├── test_*                                 # one binary per tests/test_*.c (see Makefile)
+│   └── bench_*                                # one binary per benchmarks/bench_*.c (see Makefile)
 ├── src/
 │   ├── main.c                   # Driver / CLI entry point
 │   ├── ising_model.c            # 3D Ising model
@@ -86,11 +86,11 @@ spin_based_neural_network/
 │   ├── topological_example.c    # Standalone topological-phases demo
 │   ├── visualization.c          # SDL2 viewer (4 modes)
 │   └── visualization_main.c     # Visualization entry point
-├── include/                     # 18 public headers (one per src module + training_config.h)
-├── tests/                       # 17 test suites, 109 tests (make test)
+├── include/                     # public headers (one per src module; count tracks src/)
+├── tests/                       # test_*.c suites (run all via `make test`)
 │   ├── harness.h
 │   └── test_*.c
-├── benchmarks/                  # 4 benchmark suites, JSON results
+├── benchmarks/                  # bench_*.c suites, JSON results
 │   ├── bench_common.h
 │   ├── bench_*.c
 │   └── results/                 # Per-suite JSON output
@@ -345,9 +345,10 @@ ships a 109-test suite plus 4-suite benchmark harness.
 - **Training-loop cadences.** `--cadence-decoder`, `--cadence-invariants`,
   `--lambda-logical` flags fold decoder logical-error signals into the
   physics loss as soft penalties during training.
-- **109-test suite** across 17 suites covering 18 of 18 library modules.
-  Run `make test`.
-- **4-suite benchmark harness** emitting JSON under
+- **Assert-based test suite** (`tests/test_*.c`, one binary per file,
+  driven by `harness.h`) covering every library module. Run all via
+  `make test`; see `docs/testing.md` for the per-module coverage map.
+- **Benchmark harness** (`benchmarks/bench_*.c`) emitting JSON under
   `benchmarks/results/`. Run `./scripts/run_benchmarks.sh`.
 
 See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the full details,

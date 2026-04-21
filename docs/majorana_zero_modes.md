@@ -193,21 +193,26 @@ int detect_zero_modes(MajoranaChain *chain, double threshold) {
 ### 3.5 Braiding Operations
 
 Braiding Majorana zero modes is a key operation for topological quantum
-computation. v0.4 provides two implementations.
+computation. v0.4 provides two API surfaces with **different argument
+types**: choose based on whether you want the physically-faithful
+non-Abelian unitary on a state vector (`MajoranaHilbertState`) or the
+v0.3 operator-permutation bookkeeping on a `MajoranaChain`.
 
-#### Hilbert-space braiding (v0.4, default)
+#### Physics-faithful API — `apply_braid_unitary` on `MajoranaHilbertState` (recommended)
 
-The physically-faithful braiding unitary acts on the fermion-parity
-Hilbert space built by Jordan-Wigner mapping [7] of `N` Majorana operators
-to `N/2` complex fermions and hence a `2^(N/2)`-dimensional state vector.
-The Ising-anyon braiding operator for modes `i ≠ j` is [4,5,6]:
+The Ising-anyon braiding unitary acts on the fermion-parity Hilbert
+space built by Jordan–Wigner mapping [7] of `N` Majorana operators to
+`N/2` complex fermions, giving a `2^(N/2)`-dimensional state vector.
+For modes `i ≠ j` [4,5,6]:
 
 ```
 B_{ij} = exp(π γ_i γ_j / 4) = (1 + γ_i γ_j) / √2
 ```
 
-Since `(γ_i γ_j)^2 = -I`, this yields the characteristic order-8 statistics
-`B^4 = -I`, `B^8 = +I`.
+Since `(γ_i γ_j)^2 = -I`, this yields the characteristic order-8
+statistics `B^4 = -I`, `B^8 = +I`. Use this path for any analysis that
+depends on non-Abelian statistics, fermion parity tracking, or
+topological-qubit simulation.
 
 ```c
 /* Initialize a 2^(N/2)-dimensional state vector in the fermion vacuum. */
@@ -232,22 +237,30 @@ Verified properties (see `tests/test_majorana.c`):
 - `B^4 |ψ⟩ = -|ψ⟩`, `B^8 |ψ⟩ = |ψ⟩` (order-8 statistics)
 - Braiding preserves fermion parity
 
-#### Legacy operator-space braiding (v0.3, retained)
+#### v0.3 back-compat alias — `braid_majorana_modes` on `MajoranaChain`
 
-The v0.3 path acts on the array of `2N` Majorana-operator placeholders
-directly:
+The v0.3 entry point `braid_majorana_modes(MajoranaChain *, int, int)`
+permutes the Majorana-operator placeholder array with a sign flip. This
+is **operator bookkeeping, not the physical braiding unitary** — it
+does not reproduce non-Abelian statistics and does not act on any state
+vector. It is retained so v0.3 CLI demos keep compiling and running
+unchanged; new code should use the Hilbert-space API above.
 
 ```c
-/* Legacy operator-permutation braiding — kept for back-compat. */
+/* v0.3 operator-permutation path — back-compat only.
+ * braid_majorana_modes() and braid_majorana_operators_legacy() both
+ * call into the same operator-array permutation. */
 void braid_majorana_operators_legacy(MajoranaChain *chain, int mode1, int mode2) {
     double _Complex temp = chain->operators[mode1];
     chain->operators[mode1] = chain->operators[mode2];
     chain->operators[mode2] = -temp;
 }
-
-/* braid_majorana_modes() delegates to the legacy path for source
- * compatibility with v0.3 demo scripts. */
 ```
+
+`braid_majorana_modes()` is declared in the public header as an alias
+for `braid_majorana_operators_legacy()`. The two names are
+interchangeable; the `_legacy` suffix is preferred in new code to make
+the non-physical nature of the call site explicit.
 
 ## 4. Winding Number Calculation
 
@@ -376,7 +389,9 @@ int main() {
     TopologicalInvariants *invariants = calculate_all_invariants(lattice, chain);
     printf("Winding number: %f\n", invariants->invariants[2]);
     
-    // Perform braiding operations
+    // Perform braiding operations (v0.3 operator-permutation path — see §3.5;
+    // for true Ising-anyon unitary braiding, use apply_braid_unitary()
+    // on a MajoranaHilbertState).
     braid_majorana_modes(chain, 0, chain->num_operators-1);
     
     // Clean up

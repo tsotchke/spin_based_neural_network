@@ -8,7 +8,6 @@
  */
 #include "harness.h"
 #include "kitaev_model.h"
-
 static void test_energy_all_up_isotropic(void) {
     int L = 4;
     double jx = 1.0, jy = 1.0, jz = 1.0;
@@ -18,7 +17,6 @@ static void test_energy_all_up_isotropic(void) {
     ASSERT_NEAR(compute_kitaev_energy(l), expected, 1e-12);
     free_kitaev_lattice(l);
 }
-
 static void test_energy_all_up_anisotropic(void) {
     int L = 3;
     double jx = 2.0, jy = -1.0, jz = 0.5;
@@ -28,7 +26,6 @@ static void test_energy_all_up_anisotropic(void) {
     ASSERT_NEAR(compute_kitaev_energy(l), expected, 1e-12);
     free_kitaev_lattice(l);
 }
-
 /* Flipping one spin from all-up: the energy of bonds touching that spin
  * inverts sign. In 3D interior site: 6 bonds. Interior energy change:
  * 2 * 6 * <j per bond>. For all three couplings equal to 1 and an interior
@@ -43,7 +40,6 @@ static void test_flip_interior_spin_anisotropy(void) {
     ASSERT_NEAR(e_after - e_before, -12.0, 1e-12);
     free_kitaev_lattice(l);
 }
-
 static void test_flip_random_spin_preserves_pm1(void) {
     int L = 4;
     KitaevLattice *l = initialize_kitaev_lattice(L, L, L, 1.0, 1.0, 1.0, "all-up");
@@ -58,7 +54,6 @@ static void test_flip_random_spin_preserves_pm1(void) {
             }
     free_kitaev_lattice(l);
 }
-
 /* Per-site interaction for Kitaev interior: on all-up isotropic lattice,
  * site (2,2,2) sees 6 neighbors × (jx+jy+jz)/3 contribution — actually the
  * function sums jx * S*Sx_neighbors + jy * S*Sy_neighbors + jz * S*Sz_neighbors
@@ -71,7 +66,6 @@ static void test_kitaev_interaction_interior(void) {
     ASSERT_NEAR(E, 6.0, 1e-12);
     free_kitaev_lattice(l);
 }
-
 /* At the corner (0,0,0), only +x, +y, +z neighbors exist; interaction =
  * 1*(jx + jy + jz) = 3. */
 static void test_kitaev_interaction_corner(void) {
@@ -82,7 +76,6 @@ static void test_kitaev_interaction_corner(void) {
     ASSERT_NEAR(E, 3.0, 1e-12);
     free_kitaev_lattice(l);
 }
-
 int main(void) {
     TEST_RUN(test_energy_all_up_isotropic);
     TEST_RUN(test_energy_all_up_anisotropic);

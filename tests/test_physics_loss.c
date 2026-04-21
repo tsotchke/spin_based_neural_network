@@ -9,7 +9,6 @@
  */
 #include "harness.h"
 #include "physics_loss.h"
-
 static double run_loss(const char *type) {
     IsingLattice  *ising  = initialize_ising_lattice(4, 4, 4, "random");
     KitaevLattice *kitaev = initialize_kitaev_lattice(4, 4, 4, 1.0, 1.0, -1.0, "random");
@@ -22,37 +21,31 @@ static double run_loss(const char *type) {
     free_spin_lattice(spin);
     return L;
 }
-
 static void test_heat_loss_finite(void) {
     double L = run_loss("heat");
     ASSERT_TRUE(L == L); /* not NaN */
     ASSERT_TRUE(L < 1e300 && L > -1e300);
 }
-
 static void test_schrodinger_loss_finite(void) {
     double L = run_loss("schrodinger");
     ASSERT_TRUE(L == L);
     ASSERT_TRUE(L < 1e300 && L > -1e300);
 }
-
 static void test_maxwell_loss_finite(void) {
     double L = run_loss("maxwell");
     ASSERT_TRUE(L == L);
     ASSERT_TRUE(L < 1e300 && L > -1e300);
 }
-
 static void test_navier_stokes_loss_finite(void) {
     double L = run_loss("navier_stokes");
     ASSERT_TRUE(L == L);
     ASSERT_TRUE(L < 1e300 && L > -1e300);
 }
-
 static void test_wave_loss_finite(void) {
     double L = run_loss("wave");
     ASSERT_TRUE(L == L);
     ASSERT_TRUE(L < 1e300 && L > -1e300);
 }
-
 /* Laplacian of a constant field should vanish. */
 static void test_laplacian_of_constant_is_zero(void) {
     IsingLattice *l = initialize_ising_lattice(5, 5, 5, "all-up");
@@ -62,7 +55,6 @@ static void test_laplacian_of_constant_is_zero(void) {
     ASSERT_NEAR(lap, 0.0, 1e-12);
     free_ising_lattice(l);
 }
-
 int main(void) {
     srand(13);
     TEST_RUN(test_heat_loss_finite);

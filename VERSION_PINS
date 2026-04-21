@@ -1,0 +1,57 @@
+# VERSION_PINS — known-good toolchain + dependency matrix
+#
+# Single-source-of-truth for "what version of X does this tree build
+# cleanly against?". Human-readable, intentionally shell-friendly.
+#
+# Format: one KEY=VALUE per line, '#' begins a comment. Blank lines ok.
+# Consumers: scripts/check_stack.sh may source this; CI reads it for
+# matrix expansion; docs/architecture_v0.4.md §1 references it.
+#
+# --- this tree --------------------------------------------------------
+
+SPIN_NN_VERSION=0.4.0
+
+# --- toolchain minimums ----------------------------------------------
+# Floor versions; anything older is unsupported.
+
+GCC_MIN=11.0
+CLANG_MIN=14.0
+MAKE_MIN=4.0
+STD_C=c11
+SDL2_MIN=2.24
+
+# --- optional cross-project siblings ---------------------------------
+# Soft deps: the default build compiles without any of these.  Enable
+# via `make <FLAG>=1 <ROOT>=<path>` — see DEVELOPMENT.md §"Enabling
+# optional bridges".
+
+LIBIRREP_MIN=1.2           # IRREP_ENABLE=1, IRREP_ROOT=... at build time
+MOONLAB_COMMIT_COMPAT=>=   # any MOONLAB_ROOT checkout exposing libquantumsim
+ESHKOL_ABI=0.1             # SPIN_NN_HAS_ESHKOL=1 builds
+QGTL_ABI=0.1               # SPIN_NN_HAS_QGTL=1 builds
+NOESIS_ABI=0.1             # SPIN_NN_HAS_NOESIS=1 builds
+QLLM_ABI=0.1               # SPIN_NN_HAS_QLLM=1 builds
+
+# --- compile-time invariants -----------------------------------------
+
+FP_IEEE_DOUBLE=required     # no -ffast-math, no -funsafe-math-optimizations
+NEON_RUNTIME_DETECT=yes     # `make universal` picks at runtime
+
+# --- tolerances of shipped numerical tests ---------------------------
+# See REPRODUCIBILITY.md for commentary.
+
+T1_1_TOL=8.88e-16
+T2_1_TOL=3.3e-16
+T1_6_TOL=1e-6
+T1_8_TOL=1e-13
+T1_9_TOL=5e-5
+
+# --- CI platforms ----------------------------------------------------
+# Mirror of .github/workflows/test.yml matrix.
+
+CI_PLATFORMS=ubuntu-latest,macos-latest
+
+# --- last verified ---------------------------------------------------
+
+LAST_VERIFIED=2026-04-18
+LAST_VERIFIED_COMMIT=c085990

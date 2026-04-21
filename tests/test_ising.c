@@ -13,7 +13,6 @@
  */
 #include "harness.h"
 #include "ising_model.h"
-
 /* All spins up on L^3: E = -3 L^3. */
 static void test_energy_all_up(void) {
     int L = 4;
@@ -22,7 +21,6 @@ static void test_energy_all_up(void) {
     ASSERT_NEAR(compute_ising_energy(l), -3.0 * L * L * L, 1e-12);
     free_ising_lattice(l);
 }
-
 /* All spins down on L^3: E = -3 L^3. */
 static void test_energy_all_down(void) {
     int L = 4;
@@ -31,7 +29,6 @@ static void test_energy_all_down(void) {
     ASSERT_NEAR(compute_ising_energy(l), -3.0 * L * L * L, 1e-12);
     free_ising_lattice(l);
 }
-
 /* Checkerboard (AFM) on even L: E = +3 L^3. */
 static void test_energy_checkerboard(void) {
     int L = 4;
@@ -44,7 +41,6 @@ static void test_energy_checkerboard(void) {
     ASSERT_NEAR(compute_ising_energy(l), +3.0 * L * L * L, 1e-12);
     free_ising_lattice(l);
 }
-
 /* Stripe along z: spin depends only on z. Two FM directions, one AFM. */
 static void test_energy_stripe_along_z(void) {
     int L = 4;
@@ -60,7 +56,6 @@ static void test_energy_stripe_along_z(void) {
     ASSERT_NEAR(compute_ising_energy(l), -1.0 * L * L * L, 1e-12);
     free_ising_lattice(l);
 }
-
 /* flip_random_spin_ising must never take an all-up L=2 state to higher
  * energy without the Metropolis acceptance (deterministic: ΔE > 0 always
  * flipping increases energy, so with rand controlled should reject). */
@@ -80,7 +75,6 @@ static void test_metropolis_does_not_increase_for_low_temperature_smoke(void) {
             }
     free_ising_lattice(l);
 }
-
 /* Per-site interaction energy: interior site on all-up lattice has 6 +1
  * neighbors; compute_ising_interaction sums spin*S_neigh over all six, so
  * for site (2,2,2) on an all-up 5^3 lattice the result is +6. */
@@ -92,7 +86,6 @@ static void test_interaction_interior_site_all_up(void) {
     ASSERT_NEAR(E, 6.0, 1e-12);
     free_ising_lattice(l);
 }
-
 /* Edge site on open-boundary interaction: (0,0,0) has 3 in-bounds neighbors. */
 static void test_interaction_corner_site_all_up(void) {
     int L = 5;
@@ -102,7 +95,6 @@ static void test_interaction_corner_site_all_up(void) {
     ASSERT_NEAR(E, 3.0, 1e-12);
     free_ising_lattice(l);
 }
-
 int main(void) {
     TEST_RUN(test_energy_all_up);
     TEST_RUN(test_energy_all_down);

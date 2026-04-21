@@ -1,0 +1,13 @@
+{
+  "suite": "nqs",
+  "name": "sampler_L4",
+  "utc_epoch": 1776484513,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "localhost",
+  "metrics": {
+    "L": 4,
+    "samples": 4096,
+    "samples_per_second": 10951871.8
+  }
+}

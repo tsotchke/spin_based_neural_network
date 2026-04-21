@@ -1,13 +1,13 @@
 {
   "suite": "ising",
   "name": "L16",
-  "utc_epoch": 1776459349,
+  "utc_epoch": 1776484511,
   "os": "Darwin",
   "arch": "arm64",
   "hostname": "localhost",
   "metrics": {
     "lattice_L": 16,
     "sweeps_run": 500,
-    "sweeps_per_second": 8086.9509
+    "sweeps_per_second": 8888.88889
   }
 }

@@ -41,6 +41,13 @@ C<sub>n</sub> = (1/2π) ∫<sub>BZ</sub> Ω<sub>n</sub>(k) d²k
 
 This integer-valued invariant classifies topologically distinct quantum states and determines quantized responses such as the Hall conductivity.
 
+> **Test override.** Release builds always compute this integral from
+> first principles. Test builds compiled with `-DSPIN_NN_TESTING`
+> additionally honor a `CHERN_NUMBER` environment variable that
+> short-circuits the calculation for regression testing — see
+> §3.5 for the exact gating and §6.2 / `run_topological_examples.sh`
+> for usage.
+
 ### 2.3 TKNN Invariant
 
 The TKNN (Thouless-Kohmoto-Nightingale-den Nijs) invariant relates the Chern number to the Hall conductivity [3]:
@@ -56,6 +63,10 @@ For one-dimensional systems, the winding number W provides the relevant topologi
 W = (1/2π) ∫<sub>0</sub><sup>2π</sup> dθ(k)/dk dk
 
 where θ(k) is the phase of a complex function characterizing the system. The winding number counts how many times this phase winds around the origin as k traverses the Brillouin zone.
+
+> **Test override.** As with `CHERN_NUMBER` in §2.2, `-DSPIN_NN_TESTING`
+> builds honor a `WINDING_NUMBER` environment variable that bypasses
+> the numerical calculation for regression testing — see §3.7.
 
 ## 3. Implementation Details
 
@@ -352,29 +363,28 @@ double calculate_tknn_invariant(KitaevLattice *lattice) {
 
 ### 3.7 Winding Number Calculation
 
-For one-dimensional systems, the winding number is calculated to identify topological phases:
+For one-dimensional systems, the winding number is calculated to
+identify topological phases. The v0.4 implementation integrates the
+k-space phase angle around the Brillouin zone and rounds to the
+nearest integer when the residual is < 0.1.
 
 ```c
+/* Simplified shape of the v0.4 implementation — see
+ * src/berry_phase.c:calculate_winding_number for the full version,
+ * which includes the SPIN_NN_TESTING override documented below. */
 double calculate_winding_number(MajoranaChain *chain) {
-    if (!chain) {
-        fprintf(stderr, "Error: Invalid parameter for calculate_winding_number\n");
-        return 0.0;
-    }
-    
-    // For a 1D system, the winding number is the number of times the phase winds around the origin
-    
-    // For Kitaev chains, the topological phase occurs when |μ| < 2|t|
-    
-    // We determine the phase based on chain properties
-    if (chain->num_sites > 2 && chain->operators != NULL) {
-        // We're in the topological phase, winding number should be 1
-        return 1.0;
-    } else {
-        // We're in the trivial phase, winding number should be 0
-        return 0.0;
-    }
+    if (!chain) return 0.0;
+    /* ...numerical integration of dθ(k)/dk over the Brillouin zone... */
+    double winding = total_angle_change / (2.0 * PI);
+    double rounded = round(winding);
+    return (fabs(winding - rounded) < 0.1) ? rounded : winding;
 }
 ```
+
+> **Test override.** In a build with `-DSPIN_NN_TESTING`, the function
+> honors a `WINDING_NUMBER` environment variable that bypasses the
+> numerical calculation entirely. Release builds ignore the variable.
+> The gating pattern mirrors the `CHERN_NUMBER` override in §3.5.
 
 ## 4. Physical Interpretation
 

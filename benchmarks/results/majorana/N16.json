@@ -1,7 +1,7 @@
 {
   "suite": "majorana",
   "name": "N16",
-  "utc_epoch": 1776459351,
+  "utc_epoch": 1776484512,
   "os": "Darwin",
   "arch": "arm64",
   "hostname": "localhost",
@@ -9,6 +9,6 @@
     "num_majoranas": 16,
     "num_braids": 200,
     "hilbert_dim": 256,
-    "braids_per_second": 1418439.75
+    "braids_per_second": 486618.004
   }
 }

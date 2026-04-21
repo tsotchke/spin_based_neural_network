@@ -7,12 +7,10 @@
  */
 #include "harness.h"
 #include "energy_utils.h"
-
 static void test_scale_zero_maps_to_min_energy(void) {
     double s = scale_energy(0.0);
     ASSERT_TRUE(fabs(s) <= 1.0);
 }
-
 static void test_scale_monotone_in_modest_range(void) {
     /* scale_energy is a sigmoid-flavored map; assert it's non-decreasing
      * across a small positive range. */
@@ -23,14 +21,12 @@ static void test_scale_monotone_in_modest_range(void) {
         prev = s;
     }
 }
-
 static void test_scale_bounds(void) {
     /* For large |energy| the scaled value should approach ±1 but never
      * exceed it. */
     ASSERT_TRUE(fabs(scale_energy(1e6))  <= 1.0);
     ASSERT_TRUE(fabs(scale_energy(-1e6)) <= 1.0);
 }
-
 static void test_round_trip_middle_region(void) {
     /* In a regime where neither tail saturates nor the MIN_ENERGY clamp
      * kicks in, scale -> unscale should recover the original value. */
@@ -41,7 +37,6 @@ static void test_round_trip_middle_region(void) {
         ASSERT_NEAR(r, inputs[i], 1e-6);
     }
 }
-
 int main(void) {
     TEST_RUN(test_scale_zero_maps_to_min_energy);
     TEST_RUN(test_scale_monotone_in_modest_range);

@@ -54,6 +54,8 @@ void print_usage() {
     printf("  --cadence-invariants N     Compute topological invariants every N iters (0 = off)\n");
     printf("  --lambda-logical L         Physics-loss weight on decoder logical-error flag (default 1.0)\n");
     printf("  --log LOG_FILE             Specify log file name\n");
+    printf("  --seed SEED                RNG seed. Integer for reproducibility,\n");
+    printf("                             or 'time' for wall-clock randomness (default: 42)\n");
     printf("  -h, --help                 Display this help message\n");
 }
 
@@ -71,8 +73,14 @@ void normalize_input(double *input, int size) {
 }
 
 int main(int argc, char *argv[]) {
-    srand(time(NULL));
-    
+    /* Deterministic-by-default seed. REPRODUCIBILITY.md forbids wall-clock
+     * seeding in tests; the demo binary honours the same discipline so
+     * `make universal && ./build/spin_based_neural_computation` is
+     * bit-reproducible unless the caller explicitly opts into
+     * `--seed time`. */
+    unsigned long rng_seed_value = 42UL;
+    int rng_seed_from_time = 0;
+
     int iterations = 100;
     int lattice_size_x = 10, lattice_size_y = 10, lattice_size_z = 10;
     double jx = 1.0, jy = 1.0, jz = -1.0;
@@ -119,6 +127,7 @@ int main(int argc, char *argv[]) {
         {"cadence-invariants", required_argument, 0, 0},
         {"lambda-logical", required_argument, 0, 0},
         {"log", required_argument, 0, 0},
+        {"seed", required_argument, 0, 0},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -178,14 +187,35 @@ int main(int argc, char *argv[]) {
                     tcfg.cadence_invariants = atoi(optarg);
                 } else if (strcmp("lambda-logical", long_options[option_index].name) == 0) {
                     tcfg.lambda_logical = atof(optarg);
+                } else if (strcmp("seed", long_options[option_index].name) == 0) {
+                    if (strcmp(optarg, "time") == 0) {
+                        rng_seed_from_time = 1;
+                    } else {
+                        char *end = NULL;
+                        unsigned long parsed = strtoul(optarg, &end, 0);
+                        if (end == optarg || *end != '\0') {
+                            fprintf(stderr, "Error: --seed expects an integer or 'time'; got '%s'\n", optarg);
+                            return 1;
+                        }
+                        rng_seed_value = parsed;
+                    }
                 }
                 break;
             default: print_usage(); return 1;
         }
     }
 
+    /* Apply the final RNG seed. Do this after option parsing so the
+     * printed value matches exactly what the run used. */
+    if (rng_seed_from_time) {
+        rng_seed_value = (unsigned long)time(NULL);
+    }
+    srand((unsigned int)rng_seed_value);
+
     if (verbose) {
         printf("Starting simulation with %d iterations\n", iterations);
+        printf("RNG seed: %lu%s\n", rng_seed_value,
+               rng_seed_from_time ? " (from wall clock)" : " (fixed)");
         if (debug_entropy) {
             printf("Debug mode enabled for entropy calculations\n");
         }

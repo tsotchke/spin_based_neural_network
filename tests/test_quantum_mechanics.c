@@ -6,7 +6,6 @@
  */
 #include "harness.h"
 #include "quantum_mechanics.h"
-
 static void test_apply_quantum_effects_preserves_spin_magnitude(void) {
     IsingLattice  *i = initialize_ising_lattice(3, 3, 3, "random");
     KitaevLattice *k = initialize_kitaev_lattice(3, 3, 3, 1.0, 1.0, 1.0, "random");
@@ -25,7 +24,6 @@ static void test_apply_quantum_effects_preserves_spin_magnitude(void) {
     free_kitaev_lattice(k);
     free_spin_lattice(s);
 }
-
 static void test_simulate_entanglement_runs_without_crash(void) {
     IsingLattice  *i = initialize_ising_lattice(3, 3, 3, "random");
     KitaevLattice *k = initialize_kitaev_lattice(3, 3, 3, 1.0, 1.0, 1.0, "random");
@@ -40,7 +38,6 @@ static void test_simulate_entanglement_runs_without_crash(void) {
     free_ising_lattice(i);
     free_kitaev_lattice(k);
 }
-
 /* At noise_level = 0 the implementation still applies "superposition"
  * resampling (alpha = sqrt(0.5)), so spins get randomized regardless of
  * the noise parameter. This documents the v0.3 behavior. A cleaner zero-
@@ -58,7 +55,6 @@ static void test_noise_input_validation(void) {
     free_kitaev_lattice(k);
     free_spin_lattice(s);
 }
-
 int main(void) {
     TEST_RUN(test_apply_quantum_effects_preserves_spin_magnitude);
     TEST_RUN(test_simulate_entanglement_runs_without_crash);

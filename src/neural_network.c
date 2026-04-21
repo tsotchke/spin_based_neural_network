@@ -4,22 +4,37 @@
 #include "neural_network.h"
 
 NeuralNetwork* create_neural_network(int input_size, int num_hidden_layers, int neurons_per_layer, int output_size, int activation_function) {
-    NeuralNetwork *nn = malloc(sizeof(NeuralNetwork));
+    if (input_size <= 0 || num_hidden_layers < 0 || neurons_per_layer <= 0 || output_size <= 0) {
+        fprintf(stderr, "Error: create_neural_network requires positive layer sizes (got in=%d hidden=%d neurons=%d out=%d)\n",
+                input_size, num_hidden_layers, neurons_per_layer, output_size);
+        return NULL;
+    }
+
+    /* calloc zero-inits so free_neural_network can safely walk the struct
+     * after any partial-allocation failure on the err: path. */
+    NeuralNetwork *nn = calloc(1, sizeof(NeuralNetwork));
     if (!nn) {
         fprintf(stderr, "Failed to allocate memory for NeuralNetwork.\n");
         return NULL;
     }
 
     nn->num_layers = num_hidden_layers + 2;
-    nn->layer_sizes = malloc(nn->num_layers * sizeof(int));
-    nn->W = malloc((nn->num_layers - 1) * sizeof(double *));
-    nn->b = malloc((nn->num_layers - 1) * sizeof(double *));
-    nn->mW = malloc((nn->num_layers - 1) * sizeof(double *));
-    nn->vW = malloc((nn->num_layers - 1) * sizeof(double *));
-    nn->mb = malloc((nn->num_layers - 1) * sizeof(double *));
-    nn->vb = malloc((nn->num_layers - 1) * sizeof(double *));
-    nn->a = malloc(nn->num_layers * sizeof(double *));
-    nn->z = malloc(nn->num_layers * sizeof(double *));
+    nn->activation_function = activation_function;
+
+    nn->layer_sizes = calloc((size_t)nn->num_layers,      sizeof(int));
+    nn->W           = calloc((size_t)nn->num_layers - 1,  sizeof(double *));
+    nn->b           = calloc((size_t)nn->num_layers - 1,  sizeof(double *));
+    nn->mW          = calloc((size_t)nn->num_layers - 1,  sizeof(double *));
+    nn->vW          = calloc((size_t)nn->num_layers - 1,  sizeof(double *));
+    nn->mb          = calloc((size_t)nn->num_layers - 1,  sizeof(double *));
+    nn->vb          = calloc((size_t)nn->num_layers - 1,  sizeof(double *));
+    nn->a           = calloc((size_t)nn->num_layers,      sizeof(double *));
+    nn->z           = calloc((size_t)nn->num_layers,      sizeof(double *));
+    if (!nn->layer_sizes || !nn->W || !nn->b || !nn->mW || !nn->vW
+                         || !nn->mb || !nn->vb || !nn->a || !nn->z) {
+        fprintf(stderr, "Error: create_neural_network failed to allocate layer arrays\n");
+        goto err;
+    }
 
     nn->layer_sizes[0] = input_size;
     for (int i = 1; i < nn->num_layers - 1; i++) {
@@ -28,45 +43,76 @@ NeuralNetwork* create_neural_network(int input_size, int num_hidden_layers, int 
     nn->layer_sizes[nn->num_layers - 1] = output_size;
 
     for (int i = 0; i < nn->num_layers; i++) {
-        nn->a[i] = calloc(nn->layer_sizes[i], sizeof(double));
-        nn->z[i] = calloc(nn->layer_sizes[i], sizeof(double));
+        nn->a[i] = calloc((size_t)nn->layer_sizes[i], sizeof(double));
+        nn->z[i] = calloc((size_t)nn->layer_sizes[i], sizeof(double));
+        if (!nn->a[i] || !nn->z[i]) {
+            fprintf(stderr, "Error: create_neural_network failed to allocate activation/pre-activation layer %d\n", i);
+            goto err;
+        }
     }
 
     for (int i = 0; i < nn->num_layers - 1; i++) {
-        int fan_in = nn->layer_sizes[i];
+        /* size_t cast before multiplication avoids int-overflow for wide layers
+         * (int mult overflows silently at fan_in * fan_out ≳ 2·10⁹). */
+        int fan_in  = nn->layer_sizes[i];
         int fan_out = nn->layer_sizes[i + 1];
-        nn->W[i] = malloc(fan_in * fan_out * sizeof(double));
-        nn->b[i] = calloc(fan_out, sizeof(double));
-        nn->mW[i] = calloc(fan_in * fan_out, sizeof(double));
-        nn->vW[i] = calloc(fan_in * fan_out, sizeof(double));
-        nn->mb[i] = calloc(fan_out, sizeof(double));
-        nn->vb[i] = calloc(fan_out, sizeof(double));
+        size_t w_elems = (size_t)fan_in * (size_t)fan_out;
 
-        double limit = sqrt(6.0 / (fan_in + fan_out));
-        for (int j = 0; j < fan_in * fan_out; j++) {
+        nn->W[i]  = malloc(w_elems * sizeof(double));
+        nn->b[i]  = calloc((size_t)fan_out, sizeof(double));
+        nn->mW[i] = calloc(w_elems, sizeof(double));
+        nn->vW[i] = calloc(w_elems, sizeof(double));
+        nn->mb[i] = calloc((size_t)fan_out, sizeof(double));
+        nn->vb[i] = calloc((size_t)fan_out, sizeof(double));
+        if (!nn->W[i] || !nn->b[i] || !nn->mW[i] || !nn->vW[i] || !nn->mb[i] || !nn->vb[i]) {
+            fprintf(stderr, "Error: create_neural_network failed to allocate weights/biases at layer %d\n", i);
+            goto err;
+        }
+
+        double limit;
+        if (activation_function == ACTIVATION_SIREN) {
+            /* SIREN init (Sitzmann et al. 2020). First layer uses
+             * U[-1/fan_in, 1/fan_in]; deeper layers U[-√6/fan_in / ω, √6/fan_in / ω]
+             * so that pre-activations stay in the linear regime of sin(·). */
+            if (i == 0) {
+                limit = 1.0 / (double)fan_in;
+            } else {
+                limit = sqrt(6.0 / (double)fan_in) / SIREN_OMEGA;
+            }
+        } else {
+            limit = sqrt(6.0 / (fan_in + fan_out));
+        }
+        for (size_t j = 0; j < w_elems; j++) {
             nn->W[i][j] = ((double)rand() / RAND_MAX) * 2 * limit - limit;
         }
     }
 
-    nn->activation_function = activation_function;
-
     return nn;
+
+err:
+    free_neural_network(nn);
+    return NULL;
 }
 
+/* Tolerates partial initialisation: the err: path in create_neural_network
+ * calls this on a struct that may have any subset of the array slots
+ * (nn->W / nn->a / ...) still NULL and any per-layer entry still NULL. */
 void free_neural_network(NeuralNetwork *nn) {
     if (!nn) return;
 
-    for (int i = 0; i < nn->num_layers; i++) {
-        free(nn->a[i]);
-        free(nn->z[i]);
+    if (nn->a) {
+        for (int i = 0; i < nn->num_layers; i++) free(nn->a[i]);
+    }
+    if (nn->z) {
+        for (int i = 0; i < nn->num_layers; i++) free(nn->z[i]);
     }
     for (int i = 0; i < nn->num_layers - 1; i++) {
-        free(nn->W[i]);
-        free(nn->b[i]);
-        free(nn->mW[i]);
-        free(nn->vW[i]);
-        free(nn->mb[i]);
-        free(nn->vb[i]);
+        if (nn->W)  free(nn->W[i]);
+        if (nn->b)  free(nn->b[i]);
+        if (nn->mW) free(nn->mW[i]);
+        if (nn->vW) free(nn->vW[i]);
+        if (nn->mb) free(nn->mb[i]);
+        if (nn->vb) free(nn->vb[i]);
     }
     free(nn->W);
     free(nn->b);
@@ -119,18 +165,43 @@ double* forward(NeuralNetwork *nn, double *input) {
     return nn->a[nn->num_layers - 1];
 }
 
+/*
+ * train: one forward + one backward pass of the legacy MLP.
+ *
+ * Allocation pattern: two transient buffers per call. `delta` holds the
+ * current layer's error vector; `prev_delta` holds the upstream layer's.
+ * On each loop iteration we free the old `delta` and promote `prev_delta`
+ * to `delta`, then at loop exit free the last `delta`. Net allocation
+ * across one train() call is 2*num_layers mallocs and frees. If either
+ * malloc fails, we free whatever buffers we already hold and return so
+ * the caller sees a no-op rather than a NULL-deref crash.
+ *
+ * Preallocating these buffers on the `nn` struct would eliminate the
+ * per-call alloc churn and is a natural v0.5 optimisation, but changes
+ * the public ABI of NeuralNetwork. Left as-is for v0.4 to avoid breaking
+ * out-of-tree consumers.
+ */
 void train(NeuralNetwork *nn, double *input, double *target, double learning_rate) {
     double* output = forward(nn, input);
-    
+
     int output_layer = nn->num_layers - 1;
-    double* delta = malloc(nn->layer_sizes[output_layer] * sizeof(double));
+    double* delta = malloc((size_t)nn->layer_sizes[output_layer] * sizeof(double));
+    if (!delta) {
+        fprintf(stderr, "Error: train() malloc failed for output-layer delta\n");
+        return;
+    }
 
     for (int j = 0; j < nn->layer_sizes[output_layer]; j++) {
         delta[j] = (output[j] - target[j]) * activation_derivative(nn->z[output_layer][j], nn->activation_function);
     }
 
     for (int l = output_layer - 1; l >= 0; l--) {
-        double* prev_delta = malloc(nn->layer_sizes[l] * sizeof(double));
+        double* prev_delta = malloc((size_t)nn->layer_sizes[l] * sizeof(double));
+        if (!prev_delta) {
+            fprintf(stderr, "Error: train() malloc failed for layer %d prev_delta\n", l);
+            free(delta);
+            return;
+        }
         for (int i = 0; i < nn->layer_sizes[l]; i++) {
             prev_delta[i] = 0;
             for (int j = 0; j < nn->layer_sizes[l + 1]; j++) {
@@ -145,7 +216,7 @@ void train(NeuralNetwork *nn, double *input, double *target, double learning_rat
                 nn->mW[l][index] = ADAM_BETA_1 * nn->mW[l][index] + (1 - ADAM_BETA_1) * delta[j] * nn->a[l][i];
                 nn->vW[l][index] = ADAM_BETA_2 * nn->vW[l][index] + (1 - ADAM_BETA_2) * pow(delta[j] * nn->a[l][i], 2);
                 nn->W[l][index] -= learning_rate * nn->mW[l][index] / (sqrt(nn->vW[l][index]) + ADAM_EPSILON);
-                
+
                 // Add L2 regularization
                 nn->W[l][index] -= learning_rate * L2_REG * nn->W[l][index];
             }
@@ -171,6 +242,8 @@ double activation_function(double x, int type) {
             return 1.0 / (1.0 + exp(-x));
         case ACTIVATION_TANH:
             return tanh(x);
+        case ACTIVATION_SIREN:
+            return sin(SIREN_OMEGA * x);
         default:
             return x;
     }
@@ -184,6 +257,10 @@ double activation_derivative(double x, int type) {
             return x * (1.0 - x);
         case ACTIVATION_TANH:
             return 1.0 - x * x;
+        case ACTIVATION_SIREN:
+            /* d/dz sin(ω·z) = ω · cos(ω·z). Called with the
+             * pre-activation z throughout the backward pass. */
+            return SIREN_OMEGA * cos(SIREN_OMEGA * x);
         default:
             return 1;
     }

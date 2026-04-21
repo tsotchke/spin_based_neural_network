@@ -118,9 +118,13 @@ double gradient_z_spin(Spin*** field, int x, int y, int z, int size_z, double dx
     return (field[x][y][(z+1)%size_z].sz - field[x][y][(z-1+size_z)%size_z].sz) / (2*dx);
 }
 
-double schrodinger_loss(double ising_energy, double kitaev_energy, double spin_energy, 
+double schrodinger_loss(double ising_energy, double kitaev_energy, double spin_energy,
                         IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
                         double dt, double dx) {
+    /* Energy scalars are reserved for a global-scale prefactor; current kernel
+     * uses only the lattice spin structure. Keeping them in the signature for
+     * dispatch-table compatibility with heat_loss / maxwell_loss etc. */
+    (void)ising_energy; (void)kitaev_energy; (void)spin_energy;
     double scale_factor = 1e-55;
     int size_x = ising_lattice->size_x;
     int size_y = ising_lattice->size_y;
@@ -309,6 +313,7 @@ double navier_stokes_loss(double ising_energy, double kitaev_energy, double spin
 double heat_loss(double ising_energy, double kitaev_energy, double spin_energy,
                  IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
                  double dt, double dx) {
+    (void)ising_energy; (void)kitaev_energy; (void)spin_energy; (void)spin_lattice;
     double scale_factor = 1e-40;
     int size_x = ising_lattice->size_x;
     int size_y = ising_lattice->size_y;
@@ -346,6 +351,7 @@ double heat_loss(double ising_energy, double kitaev_energy, double spin_energy,
 double wave_loss(double ising_energy, double kitaev_energy, double spin_energy,
                  IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
                  double dt, double dx) {
+    (void)ising_energy; (void)kitaev_energy; (void)spin_energy;
     double scale_factor = 1e-40;
     int size_x = ising_lattice->size_x;
     int size_y = ising_lattice->size_y;

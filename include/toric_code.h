@@ -70,6 +70,24 @@ void toric_code_apply_z_error(ToricCode *code, int link_index);
 void toric_code_apply_x_correction(ToricCode *code, int link_index);
 void toric_code_apply_z_correction(ToricCode *code, int link_index);
 
+/* Minimum-weight perfect-matching decoder.
+ *
+ * The standard optimal-matching baseline for the toric code: every
+ * syndrome defect is paired with exactly one other same-type defect
+ * such that the sum of the Manhattan (toroidal) distances between
+ * pairs is minimised, and the corresponding shortest paths are
+ * applied as data-qubit corrections.
+ *
+ * For defect counts K ≤ MWPM_ENUM_MAX the decoder enumerates all
+ * (K-1)!! perfect matchings — this is genuinely optimal. For larger
+ * K it seeds with the greedy matching then 2-opt swaps edge pairs
+ * until no further weight decrease is found. 2-opt is not provably
+ * optimal but comes within a small constant factor of MWPM on
+ * surface-code defect distributions and costs O(K²) per sweep.
+ *
+ * Returns 0 on success. */
+int toric_code_decode_mwpm(ToricCode *code);
+
 /* Recompute all syndromes from x_errors / z_errors. */
 void toric_code_refresh_syndromes(ToricCode *code);
 

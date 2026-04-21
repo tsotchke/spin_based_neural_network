@@ -7,7 +7,6 @@
  */
 #include "harness.h"
 #include "spin_models.h"
-
 /* spin_models.c uses spin-1/2 conventions — initial states are {+0.5, -0.5}
  * components on all axes, not unit vectors. The equivariant-LLG pillar in
  * v0.5 P1.2 will tighten this to proper unit-norm spins. */
@@ -23,7 +22,6 @@ static void test_init_all_up_has_components_half(void) {
             }
     free_spin_lattice(l);
 }
-
 static void test_init_all_down(void) {
     SpinLattice *l = initialize_spin_lattice(2, 2, 2, "all-down");
     ASSERT_TRUE(l != NULL);
@@ -36,7 +34,6 @@ static void test_init_all_down(void) {
             }
     free_spin_lattice(l);
 }
-
 static void test_compute_energy_runs_on_small_lattice(void) {
     SpinLattice *l = initialize_spin_lattice(3, 3, 3, "all-up");
     ASSERT_TRUE(l != NULL);
@@ -47,7 +44,6 @@ static void test_compute_energy_runs_on_small_lattice(void) {
     ASSERT_TRUE(E == E); /* not NaN */
     free_spin_lattice(l);
 }
-
 static void test_free_null_is_safe(void) {
     /* free_spin_lattice deliberately accepts only non-NULL lattices
      * in v0.3; skip this pattern — just sanity-check a round-trip. */
@@ -56,7 +52,6 @@ static void test_free_null_is_safe(void) {
     free_spin_lattice(l);
     ASSERT_TRUE(1);
 }
-
 int main(void) {
     TEST_RUN(test_init_all_up_has_components_half);
     TEST_RUN(test_init_all_down);

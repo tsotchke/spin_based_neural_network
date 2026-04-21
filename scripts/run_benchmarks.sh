@@ -15,6 +15,7 @@ echo "=== Running benchmarks ==="
 ./build/bench_kitaev
 ./build/bench_majorana_braid
 ./build/bench_toric_decoder
+./build/bench_nqs
 
 echo ""
 echo "=== Results ==="

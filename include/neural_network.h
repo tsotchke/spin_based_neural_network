@@ -18,6 +18,14 @@
 #define ACTIVATION_RELU 0
 #define ACTIVATION_SIGMOID 1
 #define ACTIVATION_TANH 2
+/* Sinusoidal (SIREN) activation — x → sin(ω·x). ω = 30 is the default
+ * from Sitzmann et al. 2020; high frequency helps PINN-style networks
+ * represent solutions of PDEs with spatially-varying gradients. The
+ * weight-initialization magic needed for signal-preserving SIRENs
+ * (first layer U[-1/fan_in, 1/fan_in], deeper layers scaled by 1/ω)
+ * is handled inside create_neural_network when SIREN is selected. */
+#define ACTIVATION_SIREN 3
+#define SIREN_OMEGA 30.0
 
 typedef struct NeuralNetwork {
     int num_layers;

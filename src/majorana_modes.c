@@ -275,6 +275,12 @@ void apply_majorana_op_to_state(int op_index, MajoranaHilbertState *state) {
      */
     for (int b = 0; b < dim; b++) {
         double _Complex amp = psi[b];
+        /* Exact-zero skip is safe here (not an FP-tolerance shortcut):
+         * γ_i acts on the occupation basis as a phase-tagged bit-flip —
+         * a permutation of basis vectors — so it preserves the support
+         * of a sparse state exactly. Fresh calloc'd state vectors and
+         * vectors evolved by γ_i alone therefore reliably trip this
+         * skip and avoid ~dim−K unneeded complex multiplies. */
         if (amp == 0.0) continue;
 
         int pop = __builtin_popcount(b & mask_lower);

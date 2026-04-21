@@ -51,9 +51,15 @@ spin_based_neural_network/
 │   ├── matrix_neon.c                    — ARM NEON SIMD kernels
 │   ├── visualization*.c                 — SDL2 viewer (4 modes)
 │   ├── main.c                           — driver
-│   └── topological_example.c            — standalone demo
-├── tests/    — 17 test suites, 109 tests total
-├── benchmarks/   — 4 suites, emits JSON under results/
+│   ├── topological_example.c            — standalone demo
+│   └── <pillar>/                        — v0.5+ pillar scaffolds (nqs/, mps/,
+│       equivariant_gnn/, llg/, neural_operator/, flow_matching/, qec_decoder/,
+│       fibonacci_anyons/, neuromorphic/, thermodynamic/, thqcp/) — each a
+│       self-contained module tree with its own header-and-source pair and
+│       matching tests/test_<pillar>*.c files. Interface-stable in v0.4;
+│       full implementations land incrementally in v0.5 and beyond.
+├── tests/    — one suite per library module + per-pillar suites (see `docs/testing.md`)
+├── benchmarks/   — `bench_*.c` suites, emit JSON under results/
 ├── scripts/  — run_benchmarks.sh, check_stack.sh
 └── docs/     — this file + per-feature deep dives
 ```

@@ -118,7 +118,10 @@ void optimize_spins_with_rl(IsingLattice *ising_lattice, KitaevLattice *kitaev_l
     }
 }
 
-// Helper function to decide if a spin should be flipped
+// Helper function to decide if a spin should be flipped.
+// Lattice/position arguments are accepted for future per-site policies
+// but not consulted by the current reward-proportional heuristic.
 int should_flip_spin(void *lattice, int x, int y, double reward) {
+    (void)lattice; (void)x; (void)y;
     return (((double)rand() / RAND_MAX) < reward * RL_LEARNING_RATE);
 }

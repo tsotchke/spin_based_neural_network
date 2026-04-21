@@ -1,7 +1,7 @@
 {
   "suite": "toric_decoder",
   "name": "d3_p005",
-  "utc_epoch": 1776459352,
+  "utc_epoch": 1776484512,
   "os": "Darwin",
   "arch": "arm64",
   "hostname": "localhost",
@@ -11,6 +11,6 @@
     "decodes_run": 500,
     "logical_errors": 77,
     "logical_error_rate": 0.154,
-    "decodes_per_second": 980392.161
+    "decodes_per_second": 425894.377
   }
 }

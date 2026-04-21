@@ -1074,9 +1074,10 @@ void calculate_density_matrix(KitaevLattice *lattice, double _Complex *density_m
 // Perform partial trace operation
 void partial_trace(double _Complex *full_density_matrix, 
                   double _Complex *reduced_density_matrix,
-                  int *subsystem_sites, 
-                  int subsystem_size, 
+                  int *subsystem_sites,
+                  int subsystem_size,
                   int full_system_size) {
+    (void)full_system_size;  /* reserved for future partial-trace paths */
     if (!full_density_matrix || !reduced_density_matrix || !subsystem_sites) return;
     
     // In a proper implementation, this would perform a partial trace

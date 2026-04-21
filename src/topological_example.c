@@ -236,8 +236,17 @@ void analyze_topological_order(KitaevLattice *lattice, const char *phase_name) {
 }
 
 int main(int argc, char *argv[]) {
+    (void)argc; (void)argv;
     setenv("DEBUG_ENTROPY", "1", 1); // Enable debug output
-    srand(time(NULL));
+    /* Deterministic seed per REPRODUCIBILITY.md. Set SEED=<int> or
+     * SEED=time in the environment to override at run time. */
+    const char *seed_env = getenv("SEED");
+    unsigned long seed = 42UL;
+    if (seed_env && *seed_env) {
+        if (strcmp(seed_env, "time") == 0) seed = (unsigned long)time(NULL);
+        else                               seed = strtoul(seed_env, NULL, 0);
+    }
+    srand((unsigned int)seed);
     
     printf("Demonstrating different topological orders by modifying system parameters\n");
     printf("=================================================================\n");

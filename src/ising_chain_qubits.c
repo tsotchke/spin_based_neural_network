@@ -25,7 +25,7 @@ IsingChainQubits* initialize_ising_chain_qubits(KitaevLattice *lattice,
     qubits->num_chains = num_chains;
     
     // Allocate memory for chains
-    qubits->chains = (MajoranaChain **)malloc(num_chains * sizeof(MajoranaChain *));
+    qubits->chains = (MajoranaChain **)malloc((size_t)num_chains * sizeof(MajoranaChain *));
     if (!qubits->chains) {
         fprintf(stderr, "Error: Memory allocation failed for chains\n");
         free(qubits);
@@ -33,7 +33,7 @@ IsingChainQubits* initialize_ising_chain_qubits(KitaevLattice *lattice,
     }
     
     // Allocate memory for chain positions
-    qubits->chain_positions = (int (*)[3])malloc(num_chains * sizeof(int[3]));
+    qubits->chain_positions = (int (*)[3])malloc((size_t)num_chains * sizeof(int[3]));
     if (!qubits->chain_positions) {
         fprintf(stderr, "Error: Memory allocation failed for chain_positions\n");
         free(qubits->chains);
@@ -42,7 +42,7 @@ IsingChainQubits* initialize_ising_chain_qubits(KitaevLattice *lattice,
     }
     
     // Allocate memory for chain orientations
-    qubits->chain_orientations = (int *)malloc(num_chains * sizeof(int));
+    qubits->chain_orientations = (int *)malloc((size_t)num_chains * sizeof(int));
     if (!qubits->chain_orientations) {
         fprintf(stderr, "Error: Memory allocation failed for chain_orientations\n");
         free(qubits->chain_positions);

@@ -1,0 +1,14 @@
+{
+  "suite": "nqs",
+  "name": "sr_step_L6",
+  "utc_epoch": 1776484513,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "localhost",
+  "metrics": {
+    "L": 6,
+    "samples_per_step": 128,
+    "steps_run": 10,
+    "sr_steps_per_second": 2110.59519
+  }
+}

@@ -2,6 +2,13 @@
 .DS_Store
 *.log
 memory-bank/
+.claude/
+
+# Private strategy / research-trajectory documents — must never land here
+docs/research_program.md
+docs/strategy/
+docs/private/
+*.private.md
 
 # Build artifacts
 build/

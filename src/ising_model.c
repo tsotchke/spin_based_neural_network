@@ -4,18 +4,58 @@
 #include <math.h>
 #include "ising_model.h"
 
-// Function to initialize the 3D Ising lattice
+// Function to initialize the 3D Ising lattice.
+// Returns NULL on invalid dimensions or allocation failure, matching the
+// idiom used by other `initialize_*` constructors in the codebase
+// (neural_network.c, toric_code.c, majorana_modes.c).
 IsingLattice* initialize_ising_lattice(int size_x, int size_y, int size_z, const char* initial_state) {
+    if (size_x <= 0 || size_y <= 0 || size_z <= 0) {
+        fprintf(stderr, "Error: Ising lattice dimensions must be positive (got %d x %d x %d)\n",
+                size_x, size_y, size_z);
+        return NULL;
+    }
+
     IsingLattice *lattice = malloc(sizeof(IsingLattice));
+    if (!lattice) {
+        fprintf(stderr, "Error: Memory allocation failed for IsingLattice\n");
+        return NULL;
+    }
     lattice->size_x = size_x;
     lattice->size_y = size_y;
     lattice->size_z = size_z;
-    lattice->spins = malloc(size_x * sizeof(int**));
+    lattice->spins = malloc((size_t)size_x * sizeof(int**));
+    if (!lattice->spins) {
+        fprintf(stderr, "Error: Memory allocation failed for Ising spin plane array\n");
+        free(lattice);
+        return NULL;
+    }
 
     for (int i = 0; i < size_x; i++) {
-        lattice->spins[i] = malloc(size_y * sizeof(int*));
+        lattice->spins[i] = malloc((size_t)size_y * sizeof(int*));
+        if (!lattice->spins[i]) {
+            fprintf(stderr, "Error: Memory allocation failed for Ising spin row array at i=%d\n", i);
+            for (int a = 0; a < i; a++) {
+                for (int b = 0; b < size_y; b++) free(lattice->spins[a][b]);
+                free(lattice->spins[a]);
+            }
+            free(lattice->spins);
+            free(lattice);
+            return NULL;
+        }
         for (int j = 0; j < size_y; j++) {
-            lattice->spins[i][j] = malloc(size_z * sizeof(int));
+            lattice->spins[i][j] = malloc((size_t)size_z * sizeof(int));
+            if (!lattice->spins[i][j]) {
+                fprintf(stderr, "Error: Memory allocation failed for Ising spin column at (%d,%d)\n", i, j);
+                for (int b = 0; b < j; b++) free(lattice->spins[i][b]);
+                free(lattice->spins[i]);
+                for (int a = 0; a < i; a++) {
+                    for (int b = 0; b < size_y; b++) free(lattice->spins[a][b]);
+                    free(lattice->spins[a]);
+                }
+                free(lattice->spins);
+                free(lattice);
+                return NULL;
+            }
             for (int k = 0; k < size_z; k++) {
                 if (strcmp(initial_state, "random") == 0) {
                     lattice->spins[i][j][k] = (rand() % 2) * 2 - 1; // Random +1 or -1
@@ -33,8 +73,10 @@ IsingLattice* initialize_ising_lattice(int size_x, int size_y, int size_z, const
     return lattice;
 }
 
-// Helper function to get a spin with periodic boundary conditions
-inline int get_spin(IsingLattice *lattice, int x, int y, int z) {
+// Helper function to get a spin with periodic boundary conditions.
+// Use `static inline` so the definition is always emitted per-TU when the
+// compiler chooses not to inline (e.g. under -O1 with sanitizers).
+static inline int get_spin(IsingLattice *lattice, int x, int y, int z) {
     int mod_x = (x + lattice->size_x) % lattice->size_x;
     int mod_y = (y + lattice->size_y) % lattice->size_y;
     int mod_z = (z + lattice->size_z) % lattice->size_z;
@@ -122,6 +164,84 @@ void free_ising_lattice(IsingLattice *lattice) {
     }
     free(lattice->spins);
     free(lattice);
+}
+
+/* ===================== Swendsen–Wang cluster update ================== */
+
+typedef struct { int *parent; int *rank; int n; } uf_t;
+
+static int uf_init(uf_t *u, int n) {
+    u->n = n;
+    u->parent = malloc((size_t)n * sizeof(int));
+    u->rank   = calloc((size_t)n, sizeof(int));
+    if (!u->parent || !u->rank) { free(u->parent); free(u->rank); return -1; }
+    for (int i = 0; i < n; i++) u->parent[i] = i;
+    return 0;
+}
+static int uf_find(uf_t *u, int x) {
+    while (u->parent[x] != x) { u->parent[x] = u->parent[u->parent[x]]; x = u->parent[x]; }
+    return x;
+}
+static void uf_union(uf_t *u, int a, int b) {
+    int ra = uf_find(u, a), rb = uf_find(u, b);
+    if (ra == rb) return;
+    if (u->rank[ra] < u->rank[rb]) { int t = ra; ra = rb; rb = t; }
+    u->parent[rb] = ra;
+    if (u->rank[ra] == u->rank[rb]) u->rank[ra]++;
+}
+static void uf_free(uf_t *u) { free(u->parent); free(u->rank); }
+
+static inline int sw_site_index(int x, int y, int z, int Ly, int Lz) {
+    return ((x * Ly) + y) * Lz + z;
+}
+
+int ising_swendsen_wang_step(IsingLattice *lattice, double beta) {
+    if (!lattice) return -1;
+    int Lx = lattice->size_x, Ly = lattice->size_y, Lz = lattice->size_z;
+    int N = Lx * Ly * Lz;
+
+    uf_t u;
+    if (uf_init(&u, N) != 0) return -1;
+
+    /* Bond activation probability p = 1 - exp(-2βJ), with J = 1 matching
+     * the single-spin routines' convention. */
+    double p = 1.0 - exp(-2.0 * beta);
+
+    /* Iterate over the three axis-aligned bond families with PBC. */
+    for (int x = 0; x < Lx; x++) {
+        for (int y = 0; y < Ly; y++) {
+            for (int z = 0; z < Lz; z++) {
+                int a = sw_site_index(x, y, z, Ly, Lz);
+                int s = lattice->spins[x][y][z];
+                int xn = (x + 1) % Lx;
+                if (Lx > 1 && lattice->spins[xn][y][z] == s
+                    && (rand() / (double)RAND_MAX) < p)
+                    uf_union(&u, a, sw_site_index(xn, y, z, Ly, Lz));
+                int yn = (y + 1) % Ly;
+                if (Ly > 1 && lattice->spins[x][yn][z] == s
+                    && (rand() / (double)RAND_MAX) < p)
+                    uf_union(&u, a, sw_site_index(x, yn, z, Ly, Lz));
+                int zn = (z + 1) % Lz;
+                if (Lz > 1 && lattice->spins[x][y][zn] == s
+                    && (rand() / (double)RAND_MAX) < p)
+                    uf_union(&u, a, sw_site_index(x, y, zn, Ly, Lz));
+            }
+        }
+    }
+
+    /* Decide per-cluster flip. */
+    int *flip = malloc((size_t)N * sizeof(int));
+    if (!flip) { uf_free(&u); return -1; }
+    for (int i = 0; i < N; i++) flip[i] = -1;
+    for (int x = 0; x < Lx; x++) for (int y = 0; y < Ly; y++) for (int z = 0; z < Lz; z++) {
+        int a = sw_site_index(x, y, z, Ly, Lz);
+        int r = uf_find(&u, a);
+        if (flip[r] == -1) flip[r] = (rand() & 1) ? 1 : 0;
+        if (flip[r]) lattice->spins[x][y][z] = -lattice->spins[x][y][z];
+    }
+    free(flip);
+    uf_free(&u);
+    return 0;
 }
 
 // Optional: Print the state of the 3D Ising lattice (one slice at a time)

@@ -8,7 +8,6 @@
  */
 #include "harness.h"
 #include "ising_chain_qubits.h"
-
 /* make_system allocates a Kitaev lattice large enough to host the chains
  * comfortably, then layers IsingChainQubits on top. Returns NULL (and the
  * caller skips) if the v0.3 init function couldn't place the chains — some
@@ -19,20 +18,18 @@ static IsingChainQubits *make_system(int num_chains, int chain_length) {
     KitaevLattice *lat = initialize_kitaev_lattice(
         L, L, L, 1.0, 1.0, 1.0, "all-up");
     KitaevWireParameters p = {
-        .coupling_strength = 1.0,
-        .chemical_potential = 0.5, /* topological phase */
-        .superconducting_gap = 1.0,
+.coupling_strength = 1.0,
+.chemical_potential = 0.5, /* topological phase */
+.superconducting_gap = 1.0,
     };
     return initialize_ising_chain_qubits(lat, num_chains, chain_length, &p);
 }
-
 static void test_initialize_and_free(void) {
     IsingChainQubits *q = make_system(2, 4);
     ASSERT_TRUE(q != NULL);
     ASSERT_EQ_INT(q->num_chains, 2);
     free_ising_chain_qubits(q);
 }
-
 static void test_encode_and_measure_zero(void) {
     IsingChainQubits *q = make_system(1, 4);
     ASSERT_TRUE(q != NULL);
@@ -42,7 +39,6 @@ static void test_encode_and_measure_zero(void) {
     ASSERT_TRUE(m == 0 || m == 1); /* measurement is valid */
     free_ising_chain_qubits(q);
 }
-
 static void test_x_gate_runs_without_crash(void) {
     IsingChainQubits *q = make_system(1, 4);
     ASSERT_TRUE(q != NULL);
@@ -54,7 +50,6 @@ static void test_x_gate_runs_without_crash(void) {
     ASSERT_TRUE(m == 0 || m == 1);
     free_ising_chain_qubits(q);
 }
-
 static void test_cnot_between_two_qubits(void) {
     IsingChainQubits *q = make_system(2, 4);
     ASSERT_TRUE(q != NULL);
@@ -69,7 +64,6 @@ static void test_cnot_between_two_qubits(void) {
     ASSERT_TRUE(m1 == 0 || m1 == 1);
     free_ising_chain_qubits(q);
 }
-
 static void test_z_gate_runs_without_crash(void) {
     IsingChainQubits *q = make_system(1, 4);
     ASSERT_TRUE(q != NULL);
@@ -80,7 +74,6 @@ static void test_z_gate_runs_without_crash(void) {
     ASSERT_TRUE(m == 0 || m == 1);
     free_ising_chain_qubits(q);
 }
-
 static void test_y_gate_runs_without_crash(void) {
     IsingChainQubits *q = make_system(1, 4);
     ASSERT_TRUE(q != NULL);
@@ -91,7 +84,6 @@ static void test_y_gate_runs_without_crash(void) {
     ASSERT_TRUE(m == 0 || m == 1);
     free_ising_chain_qubits(q);
 }
-
 static void test_add_chain_interaction_runs(void) {
     IsingChainQubits *q = make_system(2, 4);
     ASSERT_TRUE(q != NULL);
@@ -99,7 +91,6 @@ static void test_add_chain_interaction_runs(void) {
     /* No crash is success; implementation modifies internal state. */
     free_ising_chain_qubits(q);
 }
-
 int main(void) {
     TEST_RUN(test_initialize_and_free);
     TEST_RUN(test_encode_and_measure_zero);

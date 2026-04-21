@@ -1,13 +1,13 @@
 {
   "suite": "kitaev",
   "name": "L16",
-  "utc_epoch": 1776459350,
+  "utc_epoch": 1776484511,
   "os": "Darwin",
   "arch": "arm64",
   "hostname": "localhost",
   "metrics": {
     "lattice_L": 16,
     "sweeps_run": 500,
-    "sweeps_per_second": 11715.638
+    "sweeps_per_second": 10633.7729
   }
 }

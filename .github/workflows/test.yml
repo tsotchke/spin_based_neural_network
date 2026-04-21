@@ -1,0 +1,78 @@
+name: CI — build and test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Build + test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SDL2 (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev pkg-config
+
+      - name: Install SDL2 (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install sdl2 pkg-config
+
+      - name: Report toolchain versions
+        run: |
+          gcc --version || cc --version
+          make --version | head -1
+          pkg-config --modversion sdl2 || true
+
+      - name: Check optional-stack probes
+        run: sh scripts/check_stack.sh || true
+
+      - name: Build core targets
+        run: |
+          make universal
+          make topo_example
+
+      - name: Build and run full test suite
+        run: make test
+
+      - name: Build benchmarks (smoke build only)
+        run: make bench || true
+
+      - name: Upload build artefacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}
+          path: |
+            build/
+            !build/**/*.o
+          retention-days: 7
+
+  sanitize:
+    name: AddressSanitizer + UndefinedBehaviorSanitizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SDL2 and pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev pkg-config
+
+      - name: Build and run sanitizer-instrumented test suite
+        run: make test_asan

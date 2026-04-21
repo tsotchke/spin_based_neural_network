@@ -8,7 +8,6 @@
  */
 #include "harness.h"
 #include "disordered_model.h"
-
 static void test_zero_disorder_is_noop_ising(void) {
     IsingLattice *l = initialize_ising_lattice(3, 3, 3, "all-up");
     ASSERT_TRUE(l != NULL);
@@ -19,7 +18,6 @@ static void test_zero_disorder_is_noop_ising(void) {
                 ASSERT_EQ_INT(l->spins[x][y][z], 1);
     free_ising_lattice(l);
 }
-
 static void test_unit_disorder_flips_all_ising(void) {
     IsingLattice *l = initialize_ising_lattice(3, 3, 3, "all-up");
     ASSERT_TRUE(l != NULL);
@@ -32,7 +30,6 @@ static void test_unit_disorder_flips_all_ising(void) {
                 ASSERT_EQ_INT(l->spins[x][y][z], -1);
     free_ising_lattice(l);
 }
-
 static void test_zero_disorder_is_noop_kitaev(void) {
     KitaevLattice *l = initialize_kitaev_lattice(3, 3, 3, 1.0, 1.0, 1.0, "all-up");
     ASSERT_TRUE(l != NULL);
@@ -43,7 +40,6 @@ static void test_zero_disorder_is_noop_kitaev(void) {
                 ASSERT_EQ_INT(l->spins[x][y][z], 1);
     free_kitaev_lattice(l);
 }
-
 static void test_disorder_preserves_spin_magnitude(void) {
     IsingLattice *l = initialize_ising_lattice(4, 4, 4, "random");
     ASSERT_TRUE(l != NULL);
@@ -57,7 +53,6 @@ static void test_disorder_preserves_spin_magnitude(void) {
             }
     free_ising_lattice(l);
 }
-
 int main(void) {
     TEST_RUN(test_zero_disorder_is_noop_ising);
     TEST_RUN(test_unit_disorder_flips_all_ising);

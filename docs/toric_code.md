@@ -56,299 +56,167 @@ When an error occurs, the affected stabilizers yield -1 instead of +1 eigenvalue
 
 ### 3.1 Data Structures
 
-The toric code implementation utilizes the data structures defined in `toric_code.h`:
+The toric code data model in v0.4 is defined in `include/toric_code.h` as
+follows. The struct carries both the physical data-qubit accumulators
+introduced in v0.4 and legacy fields kept around so pre-v0.4 callers
+continue to compile unchanged:
 
 ```c
-// Data structure for toric code
 typedef struct {
-    int size_x;                 // X dimension of toric code
-    int size_y;                 // Y dimension of toric code
-    int **star_operators;       // Star (vertex) operators A_v
-    int **plaquette_operators;  // Plaquette operators B_p
-    int *logical_operators_x;   // Logical X operators
-    int *logical_operators_z;   // Logical Z operators
+    int size_x;                 /* L_x */
+    int size_y;                 /* L_y */
+    int num_links;              /* 2 * L_x * L_y data qubits */
+
+    /* Physical data-qubit error accumulators (GF(2)) */
+    int *x_errors;              /* size num_links, 0 or 1 */
+    int *z_errors;              /* size num_links, 0 or 1 */
+
+    /* Syndromes derived from current error state */
+    int *vertex_syndrome;       /* size L_x*L_y, 0 (ok) / 1 (flagged) */
+    int *plaquette_syndrome;    /* size L_x*L_y, 0 (ok) / 1 (flagged) */
+
+    /* Legacy fields — preserved so pre-v0.4 code keeps compiling.
+     * star_operators[i][0]  = vertex_syndrome[i]    mapped to ±1.
+     * plaquette_operators[i][0] = plaquette_syndrome[i] mapped to ±1.
+     * The other three legacy slots are held at +1. */
+    int **star_operators;
+    int **plaquette_operators;
+    int *logical_operators_x;
+    int *logical_operators_z;
 } ToricCode;
 
-// Error syndrome structure
 typedef struct {
-    int error_type;             // 0 for bit-flip, 1 for phase-flip
-    int *error_positions;       // Positions of errors
-    int num_errors;             // Number of errors
+    int error_type;             /* 0 = X-error syndrome (plaquettes),
+                                 * 1 = Z-error syndrome (vertices) */
+    int *error_positions;       /* flagged stabilizer indices (0..Lx*Ly) */
+    int num_errors;
 } ErrorSyndrome;
 ```
 
-The implementation provides a clean separation between the toric code lattice representation and the error detection/correction mechanisms. The `ToricCode` structure maintains the current state of the code, while the `ErrorSyndrome` structure captures detected errors for correction.
+Data qubits are indexed by `link_index(x, y, dir) = 2 * (x * L_y + y) + dir`,
+where `dir = 0` is the horizontal link from `(x,y)` to `(x+1, y)` and
+`dir = 1` is the vertical link from `(x,y)` to `(x, y+1)`. Helpers
+`toric_code_link_index`, `toric_code_vertex_links`, and
+`toric_code_plaquette_links` encapsulate the indexing arithmetic.
 
 ### 3.2 Toric Code Initialization
 
-The toric code is initialized with specified dimensions and properly allocated memory for all operators:
+`initialize_toric_code` allocates the struct plus flat `x_errors`,
+`z_errors`, `vertex_syndrome`, and `plaquette_syndrome` arrays, and
+zero-initialises them (no errors, all syndromes +1). The legacy
+`star_operators`/`plaquette_operators` arrays are still allocated (4
+`int` slots per stabilizer) and initialised to +1, and the legacy 1-D
+logical-operator arrays likewise, so pre-v0.4 readers see a consistent
+view.
 
 ```c
-// Initialize a toric code on a lattice
-ToricCode* initialize_toric_code(int size_x, int size_y) {
-    // Input validation
-    if (size_x < 2 || size_y < 2) {
-        fprintf(stderr, "Error: Toric code requires minimum dimensions of 2x2\n");
-        return NULL;
-    }
-    
-    // Allocate main structure
-    ToricCode *code = (ToricCode *)malloc(sizeof(ToricCode));
-    if (!code) {
-        fprintf(stderr, "Error: Memory allocation failed for ToricCode\n");
-        return NULL;
-    }
-    
-    // Initialize dimensions
-    code->size_x = size_x;
-    code->size_y = size_y;
-    
-    // Allocate star (vertex) operators
-    code->star_operators = (int **)malloc(size_x * sizeof(int *));
-    if (!code->star_operators) {
-        fprintf(stderr, "Error: Memory allocation failed for star operators\n");
-        free(code);
-        return NULL;
-    }
-    
-    for (int i = 0; i < size_x; i++) {
-        code->star_operators[i] = (int *)calloc(size_y, sizeof(int));
-        if (!code->star_operators[i]) {
-            // Clean up previously allocated memory
-            for (int j = 0; j < i; j++) {
-                free(code->star_operators[j]);
-            }
-            free(code->star_operators);
-            free(code);
-            fprintf(stderr, "Error: Memory allocation failed for star operators row\n");
-            return NULL;
-        }
-    }
-    
-    // Allocate plaquette operators similarly
-    code->plaquette_operators = (int **)malloc(size_x * sizeof(int *));
-    if (!code->plaquette_operators) {
-        // Clean up star operators
-        for (int i = 0; i < size_x; i++) {
-            free(code->star_operators[i]);
-        }
-        free(code->star_operators);
-        free(code);
-        fprintf(stderr, "Error: Memory allocation failed for plaquette operators\n");
-        return NULL;
-    }
-    
-    for (int i = 0; i < size_x; i++) {
-        code->plaquette_operators[i] = (int *)calloc(size_y, sizeof(int));
-        if (!code->plaquette_operators[i]) {
-            // Clean up previously allocated memory
-            for (int j = 0; j < i; j++) {
-                free(code->plaquette_operators[j]);
-            }
-            for (int j = 0; j < size_x; j++) {
-                free(code->star_operators[j]);
-            }
-            free(code->plaquette_operators);
-            free(code->star_operators);
-            free(code);
-            fprintf(stderr, "Error: Memory allocation failed for plaquette operators row\n");
-            return NULL;
-        }
-    }
-    
-    // Allocate logical operators
-    int max_dim = (size_x > size_y) ? size_x : size_y;
-    code->logical_operators_x = (int *)calloc(max_dim, sizeof(int));
-    code->logical_operators_z = (int *)calloc(max_dim, sizeof(int));
-    
-    if (!code->logical_operators_x || !code->logical_operators_z) {
-        // Clean up all previously allocated memory
-        for (int i = 0; i < size_x; i++) {
-            free(code->star_operators[i]);
-            free(code->plaquette_operators[i]);
-        }
-        free(code->star_operators);
-        free(code->plaquette_operators);
-        if (code->logical_operators_x) free(code->logical_operators_x);
-        if (code->logical_operators_z) free(code->logical_operators_z);
-        free(code);
-        fprintf(stderr, "Error: Memory allocation failed for logical operators\n");
-        return NULL;
-    }
-    
-    return code;
-}
+/* v0.4 public signature. */
+ToricCode *initialize_toric_code(int size_x, int size_y);
+void       free_toric_code(ToricCode *code);
+```
+
+Typical v0.4 caller pattern:
+
+```c
+ToricCode *code = initialize_toric_code(5, 5);
+apply_random_errors(code, 0.03);
+toric_code_decode_mwpm(code);
+int logical = toric_code_has_logical_error(code);
+free_toric_code(code);
 ```
 
 ### 3.3 Stabilizer Calculation and Measurement
 
-The core functionality of the toric code revolves around calculating and measuring stabilizers:
+Stabilizers in v0.4 are derived on demand from the data-qubit error
+arrays by `toric_code_refresh_syndromes`. A vertex stabilizer flags
+when the XOR (GF(2) sum) of `z_errors` on its four incident links is
+odd; a plaquette stabilizer flags when the XOR of `x_errors` on its
+four bounding links is odd.
 
 ```c
-// Calculate the stabilizers (star and plaquette operators)
-void calculate_stabilizers(ToricCode *code, KitaevLattice *lattice) {
-    if (!code || !lattice) {
-        fprintf(stderr, "Error: Invalid arguments for calculate_stabilizers\n");
-        return;
+void toric_code_refresh_syndromes(ToricCode *code) {
+    int Lx = code->size_x, Ly = code->size_y;
+
+    for (int vx = 0; vx < Lx; vx++) for (int vy = 0; vy < Ly; vy++) {
+        int links[4];
+        toric_code_vertex_links(code, vx, vy, links);
+        int parity = 0;
+        for (int j = 0; j < 4; j++) parity ^= code->z_errors[links[j]];
+        code->vertex_syndrome[vertex_index(code, vx, vy)] = parity;
     }
-    
-    // Map the Kitaev lattice spins to the toric code
-    map_toric_code_to_lattice(code, lattice);
-    
-    // Calculate star (vertex) operators: A_v = ∏_{j ∈ v} σ^x_j
-    for (int i = 0; i < code->size_x; i++) {
-        for (int j = 0; j < code->size_y; j++) {
-            // Get the four spins around vertex (i,j)
-            int north = get_spin(lattice, i, j, 0);         // North edge
-            int south = get_spin(lattice, i, j+1, 0);       // South edge
-            int east = get_spin(lattice, i+1, j, 1);        // East edge
-            int west = get_spin(lattice, i, j, 1);          // West edge
-            
-            // Apply X operator to all spins (σ^x flips the spin)
-            // Result is product of all flips (+1 if even number of flips, -1 if odd)
-            code->star_operators[i][j] = north * south * east * west;
-        }
+    for (int px = 0; px < Lx; px++) for (int py = 0; py < Ly; py++) {
+        int links[4];
+        toric_code_plaquette_links(code, px, py, links);
+        int parity = 0;
+        for (int j = 0; j < 4; j++) parity ^= code->x_errors[links[j]];
+        code->plaquette_syndrome[plaquette_index(code, px, py)] = parity;
     }
-    
-    // Calculate plaquette operators: B_p = ∏_{j ∈ p} σ^z_j
-    for (int i = 0; i < code->size_x; i++) {
-        for (int j = 0; j < code->size_y; j++) {
-            // Get the four spins around plaquette (i,j)
-            int top = get_spin(lattice, i, j, 0);           // Top edge
-            int bottom = get_spin(lattice, i, j+1, 0);      // Bottom edge
-            int right = get_spin(lattice, i+1, j, 1);       // Right edge
-            int left = get_spin(lattice, i, j, 1);          // Left edge
-            
-            // Apply Z operator to all spins (σ^z measures the spin)
-            // Result is product of spin values
-            code->plaquette_operators[i][j] = top * bottom * right * left;
-            
-            // Debug output if requested
-            if (getenv("DEBUG_TORIC")) {
-                printf("Plaquette[%d,%d] = %d (spins: %d,%d,%d,%d)\n", 
-                       i, j, code->plaquette_operators[i][j],
-                       top, bottom, right, left);
-            }
-        }
-    }
-    
-    // Calculate logical operators as well
-    calculate_logical_operators(code, lattice);
+    /* Mirror to legacy ±1 arrays in slot 0 for back-compat. */
 }
 ```
 
-This implementation carefully handles the periodic boundary conditions of the torus when accessing spins at the edges of the lattice.
+Every mutator (`toric_code_apply_x_error`, `toric_code_apply_z_error`,
+`apply_random_errors`, `toric_code_decode_greedy`,
+`toric_code_decode_mwpm`) calls `toric_code_refresh_syndromes` so the
+syndrome arrays stay in sync with the underlying qubit state. Periodic
+boundary conditions are handled by `wrap()` inside the link-indexing
+helpers.
+
+The pre-v0.4 `calculate_stabilizers(ToricCode*, KitaevLattice*)` entry
+point is retained: it seeds `x_errors` from the Kitaev lattice's spin
+pattern on horizontal links (`spin -1 → X-error bit 1`) and then calls
+`toric_code_refresh_syndromes`. Pre-v0.4 demos that visually inspect
+star/plaquette sign changes therefore still produce their expected
+output.
 
 ### 3.4 Error Detection and Syndrome Measurement
 
-The toric code detects errors by measuring stabilizers and identifying violations:
+v0.4 exposes three syndrome-extraction entry points, all of which
+return heap-allocated `ErrorSyndrome` structs (free with
+`free_error_syndrome`):
 
 ```c
-// Measure the error syndrome
-ErrorSyndrome* measure_error_syndrome(ToricCode *code) {
-    if (!code) {
-        fprintf(stderr, "Error: Invalid code for error syndrome measurement\n");
-        return NULL;
-    }
-    
-    // Allocate memory for error syndrome
-    ErrorSyndrome *syndrome = (ErrorSyndrome *)malloc(sizeof(ErrorSyndrome));
-    if (!syndrome) {
-        fprintf(stderr, "Error: Memory allocation failed for error syndrome\n");
-        return NULL;
-    }
-    
-    // Count star operator violations (indicating Z errors)
-    int star_violations = 0;
-    for (int i = 0; i < code->size_x; i++) {
-        for (int j = 0; j < code->size_y; j++) {
-            if (code->star_operators[i][j] == -1) {
-                star_violations++;
-            }
-        }
-    }
-    
-    // Count plaquette operator violations (indicating X errors)
-    int plaquette_violations = 0;
-    for (int i = 0; i < code->size_x; i++) {
-        for (int j = 0; j < code->size_y; j++) {
-            if (code->plaquette_operators[i][j] == -1) {
-                plaquette_violations++;
-            }
-        }
-    }
-    
-    // Determine dominant error type
-    if (star_violations > plaquette_violations) {
-        syndrome->error_type = 1; // Phase-flip (Z) errors
-        syndrome->num_errors = star_violations;
-        
-        // Allocate error positions array
-        syndrome->error_positions = (int *)malloc(star_violations * sizeof(int));
-        if (!syndrome->error_positions) {
-            fprintf(stderr, "Error: Memory allocation failed for error positions\n");
-            free(syndrome);
-            return NULL;
-        }
-        
-        // Record positions of star operator violations
-        int count = 0;
-        for (int i = 0; i < code->size_x; i++) {
-            for (int j = 0; j < code->size_y; j++) {
-                if (code->star_operators[i][j] == -1) {
-                    syndrome->error_positions[count++] = i + j * code->size_x;
-                }
-            }
-        }
-    } else {
-        syndrome->error_type = 0; // Bit-flip (X) errors
-        syndrome->num_errors = plaquette_violations;
-        
-        // Allocate error positions array
-        syndrome->error_positions = (int *)malloc(plaquette_violations * sizeof(int));
-        if (!syndrome->error_positions) {
-            fprintf(stderr, "Error: Memory allocation failed for error positions\n");
-            free(syndrome);
-            return NULL;
-        }
-        
-        // Record positions of plaquette operator violations
-        int count = 0;
-        for (int i = 0; i < code->size_x; i++) {
-            for (int j = 0; j < code->size_y; j++) {
-                if (code->plaquette_operators[i][j] == -1) {
-                    syndrome->error_positions[count++] = i + j * code->size_x;
-                }
-            }
-        }
-    }
-    
-    // Report syndrome information if in verbose mode
-    if (getenv("DEBUG_TORIC")) {
-        printf("Error syndrome: %d %s errors detected\n", 
-               syndrome->num_errors,
-               (syndrome->error_type == 0) ? "bit-flip (X)" : "phase-flip (Z)");
-        
-        printf("Error positions: ");
-        for (int i = 0; i < syndrome->num_errors; i++) {
-            printf("%d ", syndrome->error_positions[i]);
-        }
-        printf("\n");
-    }
-    
-    return syndrome;
-}
+/* v0.4: split by error channel. */
+ErrorSyndrome *sx = toric_code_measure_x_syndrome(code);  /* plaquettes */
+ErrorSyndrome *sz = toric_code_measure_z_syndrome(code);  /* vertices   */
+
+/* Legacy: combined, returns whichever channel has more flagged
+ * stabilizers (ties → plaquette/X). error_type is 0 for X, 1 for Z. */
+ErrorSyndrome *s  = measure_error_syndrome(code);
 ```
 
-This implementation encapsulates the error information in the `ErrorSyndrome` structure, which is then used by the error correction algorithm.
+All three call `toric_code_refresh_syndromes` first, so the returned
+lists always reflect the current data-qubit state. `error_positions`
+is a flat row-major index into the `L_x × L_y` grid
+(`index = x * L_y + y`).
 
-### 3.5 Error Correction (v0.4: data-qubit model + greedy MWPM baseline)
+The `measure_error_syndrome` path is retained so pre-v0.4 demos that
+assume one syndrome per call keep running; new code should prefer the
+split APIs because decoding requires both channels.
+
+### 3.5 Error Correction (v0.4: data-qubit model + greedy and MWPM decoders)
 
 v0.4 introduces an explicit data-qubit model for the toric code. Each
 link in the L_x × L_y torus carries independent GF(2) X and Z error
 accumulators; syndromes are re-derived from the qubit state after every
 correction step, so iterated error-and-correction cycles remain
 self-consistent.
+
+Two decoders are shipped:
+
+- `toric_code_decode_greedy` — repeatedly pairs the two closest flagged
+  stabilizers of a given type by toroidal taxicab distance, then applies
+  corrections along the shortest link path (primal lattice for vertex
+  syndromes / Z corrections, dual lattice for plaquette syndromes / X
+  corrections). Correct at low error rates, O(k²) per channel where k
+  is the number of flagged sites.
+- `toric_code_decode_mwpm` — optimal minimum-weight perfect matching
+  baseline. For K ≤ `MWPM_ENUM_MAX` (= 14) defects per channel the
+  decoder enumerates all (K−1)!! perfect matchings with partial-weight
+  pruning — genuinely optimal. For K > 14 it seeds from the greedy
+  matching and runs 2-opt edge swaps until no further weight decrease
+  is found. 2-opt is not provably optimal but comes within a small
+  constant factor of MWPM on surface-code defect distributions.
 
 ```c
 /* Apply a random depolarizing channel at rate p to each data qubit. */
@@ -357,26 +225,31 @@ apply_random_errors(code, 0.03);
 
 /* Flip individual data qubits by link index. */
 int link = toric_code_link_index(code, 2, 3, 0 /* horizontal */);
-toric_code_apply_x_error(code, link);   /* stamps an X error    */
-toric_code_apply_x_correction(code, link); /* flips it back     */
+toric_code_apply_x_error(code, link);       /* stamps an X error  */
+toric_code_apply_x_correction(code, link);  /* flips it back      */
 
 /* Query syndromes (re-derived on demand). */
 toric_code_refresh_syndromes(code);
 ErrorSyndrome *sx = toric_code_measure_x_syndrome(code);
 ErrorSyndrome *sz = toric_code_measure_z_syndrome(code);
+free_error_syndrome(sx);
+free_error_syndrome(sz);
 
-/* Run the greedy-matching decoder — the v0.4 MWPM baseline. */
-int rc = toric_code_decode_greedy(code);
+/* Decode. Prefer MWPM for accuracy; greedy is kept as a low-cost baseline. */
+int rc_mwpm   = toric_code_decode_mwpm(code);
+int rc_greedy = toric_code_decode_greedy(code);
 
 /* Detect a logical error via H₁(dual, Z₂) winding numbers. */
 int logical = toric_code_has_logical_error(code);
 ```
 
-The `perform_error_correction()` entry point from v0.3 is retained and
-now delegates to the greedy decoder.
+The `perform_error_correction(ToricCode *, ErrorSyndrome *)` entry
+point from v0.3 is retained and delegates to the greedy decoder; the
+`ErrorSyndrome` argument is effectively ignored (syndromes are
+re-derived from the data-qubit state internally).
 
-**Baseline logical-error rates** (see `benchmarks/results/toric_decoder/`,
-measured on M-series Mac):
+**Baseline logical-error rates** (greedy decoder; see
+`benchmarks/results/toric_decoder/`, measured on M-series Mac):
 
 | distance | p=1% | p=3% | p=5% |
 |---|---|---|---|
@@ -384,222 +257,98 @@ measured on M-series Mac):
 | 5 | 0.2% | 5.6% | 14.0% |
 | 7 | 0.0% | 2.4% | 9.2% |
 
-At p=1% logical error rate decreases with distance (the simulation is
-below threshold); at p=5% all distances show high rates (above
-threshold). The greedy decoder is correct at low error rates but not
-optimal; full minimum-weight perfect matching (Edmonds' blossom
-algorithm [8]) and learned decoders based on transformer / Mamba
-architectures [9-11] are scheduled for v0.5 pillar P1.3.
+At p=1% the logical error rate decreases with distance (below threshold);
+at p=5% all distances show high rates (above threshold). Learned
+decoders based on transformer / Mamba architectures [9–11] are
+scheduled for v0.5 pillar P1.3 and will be benchmarked head-to-head
+against the v0.4 MWPM baseline.
 
-#### v0.3 stabilizer-sweep path (still available, legacy)
+### 3.6 Logical Operations and Ground-State Verification
 
-For scenarios that don't care about the underlying data qubits — for
-example, demonstration scripts that inspect stabilizer eigenvalues only
-— the following v0.3 pattern is preserved. Note that the `ToricCode`
-struct's `star_operators` / `plaquette_operators` arrays are now mirrors
-of the underlying data-qubit state, so modifying them directly no
-longer yields coherent behavior across iterations.
+v0.4 exposes three query entry points that reason about the
+logical-qubit state rather than the stabilizer syndromes directly:
 
 ```c
-// Legacy syndrome-only pattern (v0.3):
-void perform_error_correction(ToricCode *code, ErrorSyndrome *syndrome) {
-    // v0.4 delegates to toric_code_decode_greedy(); the syndrome
-    // argument is re-derived from the current data-qubit state.
-    toric_code_decode_greedy(code);
-}
+/* +1 = clean state (no flagged syndromes AND no logical error). */
+int  is_ground_state(ToricCode *code);
 
-// Correct bit-flip (X) errors using minimum-weight perfect matching
-void correct_bit_flip_errors(ToricCode *code, ErrorSyndrome *syndrome) {
-    if (!code || !syndrome) return;
-    
-    // For each pair of error syndromes, find the shortest path
-    // and apply X corrections along that path
-    for (int i = 0; i < syndrome->num_errors; i += 2) {
-        if (i + 1 >= syndrome->num_errors) break; // Odd number of syndromes
-        
-        // Get coordinates of syndrome pair
-        int pos1 = syndrome->error_positions[i];
-        int pos2 = syndrome->error_positions[i+1];
-        
-        int x1 = pos1 % code->size_x;
-        int y1 = pos1 / code->size_x;
-        int x2 = pos2 % code->size_x;
-        int y2 = pos2 / code->size_x;
-        
-        // Calculate shortest path on the torus (considering periodic boundaries)
-        int dx = minimum_torus_distance(x1, x2, code->size_x);
-        int dy = minimum_torus_distance(y1, y2, code->size_y);
-        
-        // Apply X operators along the shortest path
-        apply_correction_path(code, x1, y1, x2, y2, 0); // 0 for X errors
-    }
-}
+/* 1 iff the accumulated errors form a non-contractible loop on the
+ * primal or dual lattice — i.e. a logical X or Z has been applied. */
+int  toric_code_has_logical_error(const ToricCode *code);
 
-// Helper function to find shortest distance on a torus
-int minimum_torus_distance(int a, int b, int size) {
-    int direct = abs(b - a);
-    int wrapped = size - direct;
-    return (direct < wrapped) ? direct : wrapped;
-}
+/* Ground-state degeneracy on a torus = 4 (two logical qubits). */
+int  calculate_ground_state_degeneracy(ToricCode *code);
 ```
 
-The implementation includes sophisticated handling of the toric topology, ensuring that correction paths correctly account for the periodic boundary conditions.
+`toric_code_has_logical_error` computes homology classes directly from
+`x_errors` and `z_errors`: the parities of intersections with a basis
+of primal 1-cycles detect the X-chain class in `H_1(dual, Z_2)`, and
+intersections with dual 1-cycles detect the Z-chain class in
+`H_1(primal, Z_2)`. Any non-zero winding signals that a logical
+operator has been applied.
 
-### 3.6 Logical Operations and Ground State Verification
-
-The toric code supports logical operations through string operators, and provides verification of ground state:
-
-```c
-// Calculate the ground state degeneracy
-int calculate_ground_state_degeneracy(ToricCode *code) {
-    if (!code) return 0;
-    
-    // For a toric code on a genus-g surface, degeneracy = 4^g
-    // For standard torus (g=1), degeneracy = 4
-    return 4;
-}
-
-// Check if the toric code is in a ground state
-int is_ground_state(ToricCode *code) {
-    if (!code) return 0;
-    
-    // Check if all stabilizers are satisfied (eigenvalue +1)
-    for (int i = 0; i < code->size_x; i++) {
-        for (int j = 0; j < code->size_y; j++) {
-            // Check star operators
-            if (code->star_operators[i][j] != 1) {
-                return 0; // Not in ground state
-            }
-            
-            // Check plaquette operators
-            if (code->plaquette_operators[i][j] != 1) {
-                return 0; // Not in ground state
-            }
-        }
-    }
-    
-    // All stabilizers satisfied, we're in a ground state
-    return 1;
-}
-
-// Apply a random error to the toric code
-void apply_random_errors(ToricCode *code, double error_rate) {
-    if (!code || error_rate <= 0.0 || error_rate >= 1.0) return;
-    
-    // Calculate total number of
-
-### 3.6 Logical Operations
-
-The toric code supports logical operations through string operators:
+To *apply* a logical operator explicitly (e.g. to test decoder
+robustness against pre-applied logicals), the caller flips data qubits
+along a non-contractible loop using `toric_code_apply_x_error` or
+`toric_code_apply_z_error` — there is no dedicated
+`apply_logical_x/z(n)` helper in the v0.4 API. A common pattern:
 
 ```c
-void apply_logical_x1(ToricCode *code) {
-    if (!code) return;
-    
-    // Apply X1 logical operator (σ^x string along a vertical non-contractible loop)
-    for (int j = 0; j < code->size_y; j++) {
-        int edge_idx = get_edge_index(code, 0, j, 1);  // Vertical edge at x=0
-        code->spins[edge_idx] *= -1;  // Apply σ^x
-    }
+/* Apply logical X̄₁: string of X errors along the horizontal row y = 0. */
+for (int x = 0; x < code->size_x; x++) {
+    int link = toric_code_link_index(code, x, 0, 0);
+    toric_code_apply_x_error(code, link);
 }
-
-void apply_logical_x2(ToricCode *code) {
-    if (!code) return;
-    
-    // Apply X2 logical operator (σ^x string along a horizontal non-contractible loop)
-    for (int i = 0; i < code->size_x; i++) {
-        int edge_idx = get_edge_index(code, i, 0, 0);  // Horizontal edge at y=0
-        code->spins[edge_idx] *= -1;  // Apply σ^x
-    }
-}
-
-void apply_logical_z1(ToricCode *code) {
-    if (!code) return;
-    
-    // Apply Z1 logical operator (σ^z string along a horizontal non-contractible loop)
-    for (int i = 0; i < code->size_x; i++) {
-        int edge_idx = get_edge_index(code, i, 0, 0);  // Horizontal edge at y=0
-        // Apply σ^z (for Pauli operators, this just flips the sign)
-        code->spins[edge_idx] *= -1;
-    }
-}
-
-void apply_logical_z2(ToricCode *code) {
-    if (!code) return;
-    
-    // Apply Z2 logical operator (σ^z string along a vertical non-contractible loop)
-    for (int j = 0; j < code->size_y; j++) {
-        int edge_idx = get_edge_index(code, 0, j, 1);  // Vertical edge at x=0
-        // Apply σ^z (for Pauli operators, this just flips the sign)
-        code->spins[edge_idx] *= -1;
-    }
-}
+assert(toric_code_has_logical_error(code));
 ```
 
 ## 4. Integration with Majorana Zero Modes
 
-Following the reference paper [1], our implementation connects the toric code with Majorana zero modes. Majorana fermions can be mapped to toric code qubits:
-
-```c
-void map_majorana_to_toric_code(MajoranaChain *chain, ToricCode *code) {
-    if (!chain || !code) return;
-    
-    // Each pair of Majorana modes forms a fermionic mode, which can be mapped to a qubit
-    int num_qubits = chain->num_sites - 1;  // For a chain with open boundary conditions
-    
-    // Map Majorana pairings to toric code qubits
-    // The mapping preserves the topological protection
-    for (int i = 0; i < num_qubits; i++) {
-        // Create operators for the toric code from Majorana operators
-        // Vertex operator A = γ₂ᵢγ₂ᵢ₊₁
-        // Plaquette operator B = γ₂ᵢ₊₁γ₂ᵢ₊₂
-        
-        // Store the mapping in appropriate locations in the toric code
-        int x = i % code->size_x;
-        int y = i / code->size_x;
-        
-        if (x < code->size_x && y < code->size_y) {
-            // Map Majorana operators to toric code stabilizers
-            // [Implementation details...]
-        }
-    }
-}
-```
+Following reference [1], Majorana chains and toric codes are
+conceptually related: pairs of Majorana modes can be mapped to
+qubits, with vertex operators `A_v = γ_{2i} γ_{2i+1}` and plaquette
+operators `B_p = γ_{2i+1} γ_{2i+2}`. A direct `map_majorana_to_toric_code`
+helper is *not shipped* in v0.4 — the two modules are linked indirectly
+via the shared `KitaevLattice` substrate (see `calculate_stabilizers`
+and `map_chain_to_lattice` in `majorana_modes.h`). Native Majorana →
+toric-code mapping is scheduled alongside the learned decoder work
+(v0.5 pillar P1.3).
 
 ## 5. Usage Examples
 
 ### 5.1 Basic Toric Code Simulation
 
 ```c
+#include <stdio.h>
 #include "toric_code.h"
 
-int main() {
-    // Create a 3x3 toric code
+int main(void) {
+    /* Create a 3x3 toric code (2 · 3 · 3 = 18 data qubits). */
     ToricCode *code = initialize_toric_code(3, 3);
-    
-    // Introduce errors by flipping spins
-    int edge_idx1 = get_edge_index(code, 1, 1, 0);
-    int edge_idx2 = get_edge_index(code, 1, 2, 0);
-    code->spins[edge_idx1] *= -1;
-    code->spins[edge_idx2] *= -1;
-    
-    // Detect errors
-    int num_errors = detect_errors(code);
-    printf("Number of errors detected: %d\n", num_errors);
-    printf("Error type: %s\n", (code->error_type == 1) ? "bit-flip" : 
-                             ((code->error_type == 2) ? "phase-flip" : "both"));
-    
-    // Apply error correction
-    apply_toric_code_correction(code);
-    
-    // Verify correction success
-    printf("After correction, system is in ground state: %s\n", 
-           code->in_ground_state ? "Yes" : "No");
-    printf("Ground state degeneracy: %d\n", code->ground_state_degeneracy);
-    
-    // Clean up
+
+    /* Stamp X errors on two specific links. */
+    int e1 = toric_code_link_index(code, 1, 1, 0);  /* horizontal link (1,1)->(2,1) */
+    int e2 = toric_code_link_index(code, 1, 2, 0);  /* horizontal link (1,2)->(2,2) */
+    toric_code_apply_x_error(code, e1);
+    toric_code_apply_x_error(code, e2);
+
+    /* Inspect current syndrome state. */
+    ErrorSyndrome *sx = toric_code_measure_x_syndrome(code);
+    ErrorSyndrome *sz = toric_code_measure_z_syndrome(code);
+    printf("Flagged plaquettes (X-channel): %d\n", sx->num_errors);
+    printf("Flagged vertices  (Z-channel): %d\n", sz->num_errors);
+    free_error_syndrome(sx);
+    free_error_syndrome(sz);
+
+    /* Run MWPM decoder and check the result. */
+    toric_code_decode_mwpm(code);
+    printf("Logical error after decoding: %d\n",
+           toric_code_has_logical_error(code));
+    printf("In ground state:              %d\n", is_ground_state(code));
+    printf("Ground-state degeneracy:      %d\n",
+           calculate_ground_state_degeneracy(code));
+
     free_toric_code(code);
-    
     return 0;
 }
 ```
@@ -611,27 +360,29 @@ int main() {
 ./build/spin_based_neural_computation --use-error-correction --toric-code-size 2 2 --verbose
 ```
 
-### 5.3 Error Correction with Logical Operations
+### 5.3 Error Correction with a Pre-Applied Logical
 
 ```c
-// Create a toric code
+/* Create a 4x4 toric code. */
 ToricCode *code = initialize_toric_code(4, 4);
 
-// Apply a logical X1 operation
-apply_logical_x1(code);
+/* Apply a logical X̄₁: string of X-errors along the horizontal row y = 0. */
+for (int x = 0; x < code->size_x; x++) {
+    int link = toric_code_link_index(code, x, 0, 0);
+    toric_code_apply_x_error(code, link);
+}
+assert(toric_code_has_logical_error(code));  /* non-contractible loop present */
 
-// Introduce random errors
-introduce_random_errors(code, 5);
+/* Sprinkle depolarizing noise on top. */
+apply_random_errors(code, 0.03);
 
-// Detect and correct errors
-int num_errors = detect_errors(code);
-printf("Number of errors detected: %d\n", num_errors);
-apply_toric_code_correction(code);
+/* Decode with MWPM. A competent decoder cannot tell a full logical from
+ * a stabilizer correction — the logical will persist after decoding. */
+toric_code_decode_mwpm(code);
+printf("Logical error after decoding: %d\n",
+       toric_code_has_logical_error(code));
 
-// Measure logical operators to determine final state
-int logical_x1 = measure_logical_x1(code);
-int logical_z1 = measure_logical_z1(code);
-printf("Logical X1: %d, Logical Z1: %d\n", logical_x1, logical_z1);
+free_toric_code(code);
 ```
 
 ## 6. Performance Considerations
@@ -661,52 +412,23 @@ P<sub>logical</sub> ~ (p/p<sub>th</sub>)<sup>d/2</sup>
 
 where p is the physical error rate and p<sub>th</sub> is the threshold error rate (approximately 11% for the toric code with perfect measurements).
 
-### 7.2 Surface Code Variant
+### 7.2 Surface Code Variant (planned, not in v0.4)
 
-The framework also supports the surface code variant, which is the planar version of the toric code with open boundary conditions:
+A planar surface-code variant (toric code with open boundary conditions
+and ground-state degeneracy 2) is not shipped in v0.4. Callers who want
+a planar code today can initialize a toric code and skip link updates
+across one row and one column to emulate boundaries, but boundary
+stabilizers are not correctly handled without code changes. Native
+support is scheduled alongside the learned QEC decoder (v0.5 pillar
+P1.3).
 
-```c
-ToricCode* initialize_surface_code(int size_x, int size_y) {
-    ToricCode *code = initialize_toric_code(size_x, size_y);
-    if (!code) return NULL;
-    
-    // Modify the code for open boundary conditions
-    code->ground_state_degeneracy = 2;  // For a planar geometry
-    
-    // Initialize boundary stabilizers appropriately
-    // [Implementation details...]
-    
-    return code;
-}
-```
+### 7.3 Non-Abelian Toric Codes (planned, not in v0.4)
 
-### 7.3 Non-Abelian Toric Codes
-
-The framework includes preliminary support for non-Abelian generalizations of the toric code, as suggested in the reference paper [1]:
-
-```c
-ToricCode* initialize_non_abelian_toric_code(int size_x, int size_y, char *group_type) {
-    ToricCode *code = initialize_toric_code(size_x, size_y);
-    if (!code) return NULL;
-    
-    // Modify the code for non-Abelian group structure
-    if (strcmp(group_type, "S3") == 0) {
-        // Symmetric group S3
-        code->ground_state_degeneracy = 6;  // |S3| = 6
-    } else if (strcmp(group_type, "D4") == 0) {
-        // Dihedral group D4
-        code->ground_state_degeneracy = 8;  // |D4| = 8
-    } else {
-        // Default to Z2 (standard toric code)
-        code->ground_state_degeneracy = 4;
-    }
-    
-    // Initialize non-Abelian stabilizers
-    // [Implementation details...]
-    
-    return code;
-}
-```
+Non-Abelian generalizations (e.g. S₃, D₄ stabilizer groups with
+`|G|²`-dim ground-state degeneracy) are not shipped in v0.4. Infrastructure
+for non-Abelian stabilizer measurement will land with the Fibonacci-anyon
+module (v0.5 pillar P1.3); until then, the toric code in this framework
+is strictly Z₂.
 
 ## 8. Future Directions
 

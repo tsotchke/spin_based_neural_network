@@ -16,6 +16,7 @@ static int _tests_passed = 0;
 static int _tests_failed = 0;
 static int _current_test_ok = 1;
 static const char *_current_test_name = "";
+static int _tests_skipped = 0;
 
 #define TEST_RUN(fn) do {                                                 \
     _current_test_ok = 1;                                                 \
@@ -29,6 +30,17 @@ static const char *_current_test_name = "";
         _tests_failed++;                                                  \
         printf("not ok %d - %s\n", _tests_run, _current_test_name);       \
     }                                                                     \
+} while (0)
+
+/* Mark the test suite as skipped and emit TAP "ok N # SKIP" directives.
+ * Use this in main() for tests that require an unavailable dependency
+ * (e.g. disabled bridge, missing external library) INSTEAD of silently
+ * returning 0 without running anything. Makes it visible in `make test`
+ * output that the suite was skipped, not that it trivially passed. */
+#define SKIP_SUITE(reason) do {                                           \
+    printf("# SKIP: %s\n", reason);                                       \
+    printf("1..0 # SKIP %s\n", reason);                                   \
+    return 0;                                                             \
 } while (0)
 
 #define TEST_FAIL(fmt, ...) do {                                          \

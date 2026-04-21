@@ -1,10 +1,22 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "kitaev_model.h"
 
-// Function to initialize the 3D Kitaev lattice
+// Function to initialize the 3D Kitaev lattice.
+// Returns NULL on invalid dimensions or allocation failure.
 KitaevLattice* initialize_kitaev_lattice(int size_x, int size_y, int size_z, double jx, double jy, double jz, const char* initial_state) {
+    if (size_x <= 0 || size_y <= 0 || size_z <= 0) {
+        fprintf(stderr, "Error: Kitaev lattice dimensions must be positive (got %d x %d x %d)\n",
+                size_x, size_y, size_z);
+        return NULL;
+    }
+
     KitaevLattice *lattice = malloc(sizeof(KitaevLattice));
+    if (!lattice) {
+        fprintf(stderr, "Error: Memory allocation failed for KitaevLattice\n");
+        return NULL;
+    }
     lattice->size_x = size_x;
     lattice->size_y = size_y;
     lattice->size_z = size_z;
@@ -12,11 +24,38 @@ KitaevLattice* initialize_kitaev_lattice(int size_x, int size_y, int size_z, dou
     lattice->jy = jy;
     lattice->jz = jz;
 
-    lattice->spins = malloc(size_x * sizeof(int**));
+    lattice->spins = malloc((size_t)size_x * sizeof(int**));
+    if (!lattice->spins) {
+        fprintf(stderr, "Error: Memory allocation failed for Kitaev spin plane array\n");
+        free(lattice);
+        return NULL;
+    }
     for (int i = 0; i < size_x; i++) {
-        lattice->spins[i] = malloc(size_y * sizeof(int*));
+        lattice->spins[i] = malloc((size_t)size_y * sizeof(int*));
+        if (!lattice->spins[i]) {
+            fprintf(stderr, "Error: Memory allocation failed for Kitaev row at i=%d\n", i);
+            for (int a = 0; a < i; a++) {
+                for (int b = 0; b < size_y; b++) free(lattice->spins[a][b]);
+                free(lattice->spins[a]);
+            }
+            free(lattice->spins);
+            free(lattice);
+            return NULL;
+        }
         for (int j = 0; j < size_y; j++) {
-            lattice->spins[i][j] = malloc(size_z * sizeof(int));
+            lattice->spins[i][j] = malloc((size_t)size_z * sizeof(int));
+            if (!lattice->spins[i][j]) {
+                fprintf(stderr, "Error: Memory allocation failed for Kitaev column at (%d,%d)\n", i, j);
+                for (int b = 0; b < j; b++) free(lattice->spins[i][b]);
+                free(lattice->spins[i]);
+                for (int a = 0; a < i; a++) {
+                    for (int b = 0; b < size_y; b++) free(lattice->spins[a][b]);
+                    free(lattice->spins[a]);
+                }
+                free(lattice->spins);
+                free(lattice);
+                return NULL;
+            }
             for (int k = 0; k < size_z; k++) {
                 if (strcmp(initial_state, "random") == 0) {
                     lattice->spins[i][j][k] = (rand() % 2) * 2 - 1; // Random +1 or -1
