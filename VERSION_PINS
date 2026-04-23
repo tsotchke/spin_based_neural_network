@@ -51,4 +51,4 @@ CI_PLATFORMS=ubuntu-latest,macos-latest
 # --- last verified ---------------------------------------------------
 
 LAST_VERIFIED=2026-04-23
-LAST_VERIFIED_COMMIT=2d828d0
+LAST_VERIFIED_COMMIT=64bb93d
