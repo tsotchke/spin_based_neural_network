@@ -259,13 +259,202 @@ static double local_energy_kitaev(const nqs_config_t *cfg,
     return diag + off;
 }
 
+/* -----------------------------------------------------------------------
+ * Kitaev–Heisenberg on the brick-wall honeycomb.
+ *
+ *   H = K · Σ_⟨ij⟩ σ^{γ_ij}_i σ^{γ_ij}_j
+ *     + J · Σ_⟨ij⟩ (σ^x σ^x + σ^y σ^y + σ^z σ^z)_{ij}
+ *
+ * Bond colouring γ_ij as in local_energy_kitaev: brick-wall layout,
+ * horizontal bond (x,y)-(x+1,y) is γ=x when (x+y) even else γ=y;
+ * vertical bond (x,y)-(x,y+1) is γ=z always. Open boundaries.
+ *
+ * Per-bond matrix elements (s' = s ⊕ {i,j} for the off-diagonal):
+ *   γ = x:   diag = J·s_i s_j,        off = (K + J) − J·s_i s_j
+ *   γ = y:   diag = J·s_i s_j,        off =       J − (K + J)·s_i s_j
+ *   γ = z:   diag = (K + J)·s_i s_j,  off =       J · (1 − s_i s_j)
+ *
+ * Checks:
+ *  K = 0  → off becomes J·(1 − s_i s_j), diag J·s_i s_j on every bond:
+ *           reduces to the xxz kernel at Jxy = Jz = 4J (σ convention).
+ *  J = 0  → collapses to the pure-Kitaev form: γ=x off = K, γ=y off
+ *           = −K·s_i s_j, γ=z diag = K·s_i s_j. Same physics as
+ *           local_energy_kitaev with the opposite sign convention on K
+ *           (we absorb the overall − sign into the sign of K here).
+ *
+ * Config: cfg->kh_K (Kitaev coupling), cfg->kh_J (Heisenberg coupling).
+ * Sign convention: positive K ↔ antiferromagnetic Kitaev; positive J ↔
+ * antiferromagnetic Heisenberg (both follow the Chaloupka–Jackeli–
+ * Khaliullin convention once rescaled by the S=σ/2 factor). Flip the
+ * sign of either scalar for the ferromagnetic side of the phase diagram.
+ */
+static double local_energy_kh(const nqs_config_t *cfg,
+                               int size_x, int size_y,
+                               const int *spins,
+                               nqs_log_amp_fn_t log_amp, void *user,
+                               double current_log_abs, double current_arg) {
+    double K = cfg->kh_K;
+    double J = cfg->kh_J;
+    int N = size_x * size_y;
+    double diag = 0.0, off = 0.0;
+    int *scratch = malloc((size_t)N * sizeof(int));
+    if (!scratch) return 0.0;
+    memcpy(scratch, spins, (size_t)N * sizeof(int));
+
+    for (int x = 0; x < size_x; x++) for (int y = 0; y < size_y; y++) {
+        int a = flat_idx(x, y, size_y);
+        int sa = spins[a];
+
+        /* Horizontal bond: γ = x when (x+y) even, γ = y otherwise. */
+        if (x + 1 < size_x) {
+            int b = flat_idx(x + 1, y, size_y);
+            int sb = spins[b];
+            int is_x_bond = (((x + y) & 1) == 0);
+            double sasb = (double)(sa * sb);
+            /* Diagonal is J·s_i s_j on both x and y bonds. */
+            diag += J * sasb;
+            /* Off-diagonal requires the flipped-pair amplitude ratio. */
+            scratch[a] = -sa; scratch[b] = -sb;
+            double r = amplitude_ratio(scratch, N, current_log_abs,
+                                        current_arg, log_amp, user);
+            scratch[a] = sa; scratch[b] = sb;
+            if (is_x_bond) off += ((K + J) - J        * sasb) * r;
+            else           off += ( J       - (K + J) * sasb) * r;
+        }
+
+        /* Vertical bond: γ = z. */
+        if (y + 1 < size_y) {
+            int b = flat_idx(x, y + 1, size_y);
+            int sb = spins[b];
+            double sasb = (double)(sa * sb);
+            diag += (K + J) * sasb;
+            if (sa != sb) {
+                /* off = J·(1 − sasb); only non-zero at antiparallel pair. */
+                scratch[a] = -sa; scratch[b] = -sb;
+                double r = amplitude_ratio(scratch, N, current_log_abs,
+                                            current_arg, log_amp, user);
+                scratch[a] = sa; scratch[b] = sb;
+                off += J * (1.0 - sasb) * r;
+            }
+        }
+    }
+    free(scratch);
+    return diag + off;
+}
+
+/* -----------------------------------------------------------------------
+ * Kagome Heisenberg (S=½). NN-only isotropic exchange on the kagome
+ * lattice: corner-sharing up- and down-triangles, three sublattices
+ * per unit cell (A, B, C), coordination four under PBC.
+ *
+ *   H = J · Σ_⟨ij⟩ S_i · S_j  =  (J/4) Σ s_i s_j + (J/2) Σ flip-pair
+ *
+ * Geometry convention.  The caller passes `size_x` = Lx_cells,
+ * `size_y` = Ly_cells (unit-cell count, not site count). The sampler
+ * and ansatz are created with num_sites = 3·Lx·Ly. Site index layout:
+ *
+ *     i = 3 · (cx · Ly_cells + cy) + s,   s ∈ {0=A, 1=B, 2=C}.
+ *
+ * Each unit cell (cx, cy) contributes:
+ *   - one up-triangle on {A, B, C} of the cell (3 bonds);
+ *   - one down-triangle anchored at A(cx, cy) with vertices
+ *     {A(cx, cy), B(cx−1, cy), C(cx, cy−1)} (3 bonds).
+ *
+ * Under PBC the cell indices wrap; under OBC a down-triangle is
+ * skipped entirely when either required neighbour cell is out of
+ * range. PBC is the standard choice for kagome Heisenberg research
+ * (Yan–Huse–White, Iqbal–Becca, …) because boundary sites distort
+ * the frustrated coordination. cfg->kagome_pbc selects.
+ *
+ * This is the headline open problem: gapped Z₂ spin liquid vs gapless
+ * Dirac spin liquid as the ground state. The kernel itself is simple
+ * Heisenberg math over an unusual bond list; all of the interesting
+ * physics lives in the ansatz and the symmetry projection on top.
+ */
+static double local_energy_kagome_heisenberg(const nqs_config_t *cfg,
+                                              int Lx_cells, int Ly_cells,
+                                              const int *spins,
+                                              nqs_log_amp_fn_t log_amp,
+                                              void *user,
+                                              double current_log_abs,
+                                              double current_arg) {
+    double J = cfg->j_coupling;
+    int pbc  = cfg->kagome_pbc;
+    int N    = 3 * Lx_cells * Ly_cells;
+    double diag = 0.0, off = 0.0;
+    int *scratch = malloc((size_t)N * sizeof(int));
+    if (!scratch) return 0.0;
+    memcpy(scratch, spins, (size_t)N * sizeof(int));
+
+    #define KG_SITE(cx, cy, sub) (3 * ((cx) * Ly_cells + (cy)) + (sub))
+
+    for (int cx = 0; cx < Lx_cells; cx++) {
+        for (int cy = 0; cy < Ly_cells; cy++) {
+            int A = KG_SITE(cx, cy, 0);
+            int B = KG_SITE(cx, cy, 1);
+            int C = KG_SITE(cx, cy, 2);
+
+            /* Up-triangle bonds: A-B, A-C, B-C. */
+            int bonds_up[3][2] = { {A, B}, {A, C}, {B, C} };
+            for (int b = 0; b < 3; b++) {
+                int u = bonds_up[b][0], v = bonds_up[b][1];
+                int su = spins[u], sv = spins[v];
+                diag += 0.25 * J * (double)(su * sv);
+                if (su != sv) {
+                    scratch[u] = -su; scratch[v] = -sv;
+                    double r = amplitude_ratio(scratch, N, current_log_abs,
+                                                current_arg, log_amp, user);
+                    scratch[u] = su; scratch[v] = sv;
+                    off += 0.5 * J * r;
+                }
+            }
+
+            /* Down-triangle anchored at A(cx, cy):
+             *   vertices A(cx, cy), B(cx-1, cy), C(cx, cy-1). */
+            int cxm, cym;
+            if (pbc) {
+                cxm = (cx - 1 + Lx_cells) % Lx_cells;
+                cym = (cy - 1 + Ly_cells) % Ly_cells;
+            } else {
+                if (cx == 0 || cy == 0) continue;
+                cxm = cx - 1;
+                cym = cy - 1;
+            }
+            int Bm = KG_SITE(cxm, cy, 1);
+            int Cm = KG_SITE(cx, cym, 2);
+
+            int bonds_dn[3][2] = { {A, Bm}, {A, Cm}, {Bm, Cm} };
+            for (int b = 0; b < 3; b++) {
+                int u = bonds_dn[b][0], v = bonds_dn[b][1];
+                int su = spins[u], sv = spins[v];
+                diag += 0.25 * J * (double)(su * sv);
+                if (su != sv) {
+                    scratch[u] = -su; scratch[v] = -sv;
+                    double r = amplitude_ratio(scratch, N, current_log_abs,
+                                                current_arg, log_amp, user);
+                    scratch[u] = su; scratch[v] = sv;
+                    off += 0.5 * J * r;
+                }
+            }
+        }
+    }
+
+    #undef KG_SITE
+    free(scratch);
+    return diag + off;
+}
+
 double nqs_local_energy(const nqs_config_t *cfg,
                         int size_x, int size_y,
                         const int *spins,
                         nqs_log_amp_fn_t log_amp,
                         void *log_amp_user) {
     if (!cfg || !spins || !log_amp) return 0.0;
-    int N = size_x * size_y;
+    /* Per-Hamiltonian site count: kagome uses 3 sublattices per
+     * unit cell; every other kernel uses N = size_x * size_y. */
+    int N = (cfg->hamiltonian == NQS_HAM_KAGOME_HEISENBERG)
+            ? 3 * size_x * size_y
+            : size_x * size_y;
 
     /* Seed ψ(s) for the ratio denominator once per call. */
     double cur_log_abs, cur_arg;
@@ -288,6 +477,13 @@ double nqs_local_energy(const nqs_config_t *cfg,
         case NQS_HAM_KITAEV_HONEYCOMB:
             return local_energy_kitaev(cfg, size_x, size_y, spins,
                                         log_amp, log_amp_user, cur_log_abs, cur_arg);
+        case NQS_HAM_KITAEV_HEISENBERG:
+            return local_energy_kh(cfg, size_x, size_y, spins,
+                                    log_amp, log_amp_user, cur_log_abs, cur_arg);
+        case NQS_HAM_KAGOME_HEISENBERG:
+            return local_energy_kagome_heisenberg(cfg, size_x, size_y, spins,
+                                                   log_amp, log_amp_user,
+                                                   cur_log_abs, cur_arg);
         default:
             return local_energy_tfim(cfg, size_x, size_y, spins,
                                      log_amp, log_amp_user, cur_log_abs, cur_arg);
@@ -466,6 +662,148 @@ static void local_energy_kitaev_complex(const nqs_config_t *cfg,
     *out_im = off_im;
 }
 
+/* Complex-amplitude Kitaev-Heisenberg kernel. Matches local_energy_kh
+ * in coefficient structure; emits both real and imaginary parts of the
+ * local energy so the non-stoquastic regime (Kitaev-dominated) can be
+ * represented by a complex-RBM / complex-ansatz wavefunction. */
+static void local_energy_kh_complex(const nqs_config_t *cfg,
+                                     int size_x, int size_y,
+                                     const int *spins,
+                                     nqs_log_amp_fn_t log_amp, void *user,
+                                     double cur_log_abs, double cur_arg,
+                                     double *out_re, double *out_im) {
+    double K = cfg->kh_K;
+    double J = cfg->kh_J;
+    int N = size_x * size_y;
+    double diag = 0.0, off_re = 0.0, off_im = 0.0;
+    int *scratch = malloc((size_t)N * sizeof(int));
+    if (!scratch) { *out_re = 0.0; *out_im = 0.0; return; }
+    memcpy(scratch, spins, (size_t)N * sizeof(int));
+
+    for (int x = 0; x < size_x; x++) for (int y = 0; y < size_y; y++) {
+        int a = flat_idx(x, y, size_y);
+        int sa = spins[a];
+
+        if (x + 1 < size_x) {
+            int b = flat_idx(x + 1, y, size_y);
+            int sb = spins[b];
+            int is_x_bond = (((x + y) & 1) == 0);
+            double sasb = (double)(sa * sb);
+            diag += J * sasb;
+            scratch[a] = -sa; scratch[b] = -sb;
+            double r, im;
+            amplitude_ratio_complex(scratch, N, cur_log_abs, cur_arg,
+                                     log_amp, user, &r, &im);
+            scratch[a] = sa; scratch[b] = sb;
+            double coef = is_x_bond ? ((K + J) - J        * sasb)
+                                    : ( J       - (K + J) * sasb);
+            off_re += coef * r;
+            off_im += coef * im;
+        }
+
+        if (y + 1 < size_y) {
+            int b = flat_idx(x, y + 1, size_y);
+            int sb = spins[b];
+            double sasb = (double)(sa * sb);
+            diag += (K + J) * sasb;
+            if (sa != sb) {
+                scratch[a] = -sa; scratch[b] = -sb;
+                double r, im;
+                amplitude_ratio_complex(scratch, N, cur_log_abs, cur_arg,
+                                         log_amp, user, &r, &im);
+                scratch[a] = sa; scratch[b] = sb;
+                double coef = J * (1.0 - sasb);
+                off_re += coef * r;
+                off_im += coef * im;
+            }
+        }
+    }
+    free(scratch);
+    *out_re = diag + off_re;
+    *out_im = off_im;
+}
+
+/* Complex-amplitude kagome Heisenberg kernel. Same bond list as the
+ * real path; emits Re/Im of the local energy so the kagome frustrated
+ * problem (where the GS carries a non-trivial phase structure) can be
+ * represented by complex-RBM or richer ansätze. */
+static void local_energy_kagome_heisenberg_complex(const nqs_config_t *cfg,
+                                                    int Lx_cells, int Ly_cells,
+                                                    const int *spins,
+                                                    nqs_log_amp_fn_t log_amp,
+                                                    void *user,
+                                                    double cur_log_abs,
+                                                    double cur_arg,
+                                                    double *out_re,
+                                                    double *out_im) {
+    double J = cfg->j_coupling;
+    int pbc  = cfg->kagome_pbc;
+    int N    = 3 * Lx_cells * Ly_cells;
+    double diag = 0.0, off_re = 0.0, off_im = 0.0;
+    int *scratch = malloc((size_t)N * sizeof(int));
+    if (!scratch) { *out_re = 0.0; *out_im = 0.0; return; }
+    memcpy(scratch, spins, (size_t)N * sizeof(int));
+
+    #define KG_SITE(cx, cy, sub) (3 * ((cx) * Ly_cells + (cy)) + (sub))
+
+    for (int cx = 0; cx < Lx_cells; cx++) {
+        for (int cy = 0; cy < Ly_cells; cy++) {
+            int A = KG_SITE(cx, cy, 0);
+            int B = KG_SITE(cx, cy, 1);
+            int C = KG_SITE(cx, cy, 2);
+
+            int bonds_up[3][2] = { {A, B}, {A, C}, {B, C} };
+            for (int b = 0; b < 3; b++) {
+                int u = bonds_up[b][0], v = bonds_up[b][1];
+                int su = spins[u], sv = spins[v];
+                diag += 0.25 * J * (double)(su * sv);
+                if (su != sv) {
+                    scratch[u] = -su; scratch[v] = -sv;
+                    double r, im;
+                    amplitude_ratio_complex(scratch, N, cur_log_abs, cur_arg,
+                                             log_amp, user, &r, &im);
+                    scratch[u] = su; scratch[v] = sv;
+                    off_re += 0.5 * J * r;
+                    off_im += 0.5 * J * im;
+                }
+            }
+
+            int cxm, cym;
+            if (pbc) {
+                cxm = (cx - 1 + Lx_cells) % Lx_cells;
+                cym = (cy - 1 + Ly_cells) % Ly_cells;
+            } else {
+                if (cx == 0 || cy == 0) continue;
+                cxm = cx - 1;
+                cym = cy - 1;
+            }
+            int Bm = KG_SITE(cxm, cy, 1);
+            int Cm = KG_SITE(cx, cym, 2);
+
+            int bonds_dn[3][2] = { {A, Bm}, {A, Cm}, {Bm, Cm} };
+            for (int b = 0; b < 3; b++) {
+                int u = bonds_dn[b][0], v = bonds_dn[b][1];
+                int su = spins[u], sv = spins[v];
+                diag += 0.25 * J * (double)(su * sv);
+                if (su != sv) {
+                    scratch[u] = -su; scratch[v] = -sv;
+                    double r, im;
+                    amplitude_ratio_complex(scratch, N, cur_log_abs, cur_arg,
+                                             log_amp, user, &r, &im);
+                    scratch[u] = su; scratch[v] = sv;
+                    off_re += 0.5 * J * r;
+                    off_im += 0.5 * J * im;
+                }
+            }
+        }
+    }
+
+    #undef KG_SITE
+    free(scratch);
+    *out_re = diag + off_re;
+    *out_im = off_im;
+}
+
 void nqs_local_energy_complex(const nqs_config_t *cfg,
                                int size_x, int size_y,
                                const int *spins,
@@ -476,7 +814,10 @@ void nqs_local_energy_complex(const nqs_config_t *cfg,
         if (out_re) *out_re = 0; if (out_im) *out_im = 0;
         return;
     }
-    int N = size_x * size_y;
+    /* Per-Hamiltonian site count — kagome uses 3 sublattices per cell. */
+    int N = (cfg->hamiltonian == NQS_HAM_KAGOME_HEISENBERG)
+            ? 3 * size_x * size_y
+            : size_x * size_y;
     double cur_log_abs, cur_arg;
     log_amp(spins, N, log_amp_user, &cur_log_abs, &cur_arg);
     switch (cfg->hamiltonian) {
@@ -511,6 +852,18 @@ void nqs_local_energy_complex(const nqs_config_t *cfg,
                                          cur_log_abs, cur_arg,
                                          out_re, out_im);
             return;
+        case NQS_HAM_KITAEV_HEISENBERG:
+            local_energy_kh_complex(cfg, size_x, size_y, spins,
+                                     log_amp, log_amp_user,
+                                     cur_log_abs, cur_arg,
+                                     out_re, out_im);
+            return;
+        case NQS_HAM_KAGOME_HEISENBERG:
+            local_energy_kagome_heisenberg_complex(cfg, size_x, size_y, spins,
+                                                    log_amp, log_amp_user,
+                                                    cur_log_abs, cur_arg,
+                                                    out_re, out_im);
+            return;
         default:
             local_energy_tfim_complex(cfg, size_x, size_y, spins,
                                        log_amp, log_amp_user,
@@ -526,7 +879,9 @@ void nqs_local_energy_batch_complex(const nqs_config_t *cfg,
                                      nqs_log_amp_fn_t log_amp,
                                      void *log_amp_user,
                                      double *out_re, double *out_im) {
-    int N = size_x * size_y;
+    int N = (cfg && cfg->hamiltonian == NQS_HAM_KAGOME_HEISENBERG)
+            ? 3 * size_x * size_y
+            : size_x * size_y;
     for (int i = 0; i < batch_size; i++) {
         nqs_local_energy_complex(cfg, size_x, size_y,
                                   &spins_batch[(size_t)i * (size_t)N],
@@ -542,7 +897,9 @@ void nqs_local_energy_batch(const nqs_config_t *cfg,
                             void *log_amp_user,
                             double *out_energies) {
     if (!cfg || !spins_batch || !out_energies || batch_size <= 0) return;
-    int N = size_x * size_y;
+    int N = (cfg->hamiltonian == NQS_HAM_KAGOME_HEISENBERG)
+            ? 3 * size_x * size_y
+            : size_x * size_y;
     for (int i = 0; i < batch_size; i++) {
         out_energies[i] = nqs_local_energy(cfg, size_x, size_y,
                                            &spins_batch[(size_t)i * (size_t)N],

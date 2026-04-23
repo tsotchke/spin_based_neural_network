@@ -151,3 +151,7 @@ double nqs_sampler_acceptance_ratio(const nqs_sampler_t *s) {
 const int *nqs_sampler_current(const nqs_sampler_t *s) {
     return s ? s->current : NULL;
 }
+
+int nqs_sampler_num_sites(const nqs_sampler_t *s) {
+    return s ? s->num_sites : 0;
+}

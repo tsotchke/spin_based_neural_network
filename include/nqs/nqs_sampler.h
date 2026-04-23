@@ -66,6 +66,14 @@ double nqs_sampler_acceptance_ratio(const nqs_sampler_t *s);
 /* Expose the current configuration without advancing the chain. */
 const int *nqs_sampler_current(const nqs_sampler_t *s);
 
+/* Return the sampler's configured site count (the N passed to
+ * nqs_sampler_create). Useful for consumers that allocate per-sample
+ * buffers sized to the sampler — the sampler is the authoritative
+ * source of N, which may differ from size_x*size_y when the lattice
+ * has more than one site per unit cell (e.g. kagome, where
+ * num_sites = 3·Lx·Ly). */
+int nqs_sampler_num_sites(const nqs_sampler_t *s);
+
 #ifdef __cplusplus
 }
 #endif

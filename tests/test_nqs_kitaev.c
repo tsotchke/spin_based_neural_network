@@ -93,10 +93,137 @@ static void test_kitaev_mixed_couplings(void) {
     double E = nqs_local_energy(&cfg, 2, 2, spins, const_log_amp, NULL);
     ASSERT_NEAR(E, -9.0, 1e-12);
 }
+/* ------------------------------------------------------------------
+ * Kitaev–Heisenberg (NQS_HAM_KITAEV_HEISENBERG) kernel tests.
+ *
+ * Convention implemented in src/nqs/nqs_gradient.c local_energy_kh:
+ *   H = K · Σ σ^γ_i σ^γ_j  +  J · Σ σ_i · σ_j
+ * on the same brick-wall honeycomb as the pure-Kitaev kernel. Bond γ
+ * colouring: horizontal (x,y)-(x+1,y) is γ=x when (x+y) even, else γ=y;
+ * vertical bond is γ=z.
+ *
+ * Per-bond matrix elements (s' = s ⊕ {i,j} off-diag):
+ *   γ=x:  diag = J·s_i s_j,       off = (K+J) − J·s_i s_j
+ *   γ=y:  diag = J·s_i s_j,       off = J − (K+J)·s_i s_j
+ *   γ=z:  diag = (K+J)·s_i s_j,   off = J·(1 − s_i s_j)
+ * ------------------------------------------------------------------ */
+
+static void test_kh_heisenberg_limit_all_up_2x2(void) {
+    /* K=0, J=1 (pure Heisenberg on honeycomb). 2x2 lattice, all spins +1.
+     * Bonds: 1 x, 1 y, 2 z.  With all sasb = +1:
+     *   x: diag = 1,  off coef = (0+1) − 1·1 = 0
+     *   y: diag = 1,  off coef = 1 − (0+1)·1 = 0
+     *   z: diag = (0+1)·1 = 1, off coef = 1·(1 − 1) = 0 (no flip)
+     * Total: diag 1+1+1+1 = 4, off = 0 → E = +4. */
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.hamiltonian = NQS_HAM_KITAEV_HEISENBERG;
+    cfg.kh_K = 0.0;
+    cfg.kh_J = 1.0;
+    int spins[4] = {+1, +1, +1, +1};
+    double E = nqs_local_energy(&cfg, 2, 2, spins, const_log_amp, NULL);
+    ASSERT_NEAR(E, 4.0, 1e-12);
+}
+
+static void test_kh_kitaev_limit_all_up_2x2(void) {
+    /* J=0, K=1 (pure Kitaev). 2x2 all spins +1.
+     *   x: diag = 0, off coef = (1+0) − 0 = 1  → off contribution +1
+     *   y: diag = 0, off coef = 0 − (1+0)·1 = −1 → off contribution −1
+     *   z: diag = (1+0)·1 = 1 each, 2 z-bonds → diag 2; off coef 0
+     * Total: diag 0+0+1+1 = 2, off 1−1 = 0 → E = +2.
+     * Note: this is the opposite sign from the legacy local_energy_kitaev,
+     * which uses H = −Σ J_α σ^α σ^α; here we use H = +K·σ^γ σ^γ. */
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.hamiltonian = NQS_HAM_KITAEV_HEISENBERG;
+    cfg.kh_K = 1.0;
+    cfg.kh_J = 0.0;
+    int spins[4] = {+1, +1, +1, +1};
+    double E = nqs_local_energy(&cfg, 2, 2, spins, const_log_amp, NULL);
+    ASSERT_NEAR(E, 2.0, 1e-12);
+}
+
+static void test_kh_equal_couplings_all_up_2x2(void) {
+    /* K=1, J=1, all spins +1 on 2x2.
+     *   x: diag = 1, off coef = (1+1) − 1·1 = 1
+     *   y: diag = 1, off coef = 1 − (1+1)·1 = −1
+     *   z: diag = (1+1)·1 = 2 per bond × 2 z-bonds → diag 4; off coef 0
+     * Total: diag 1+1+4 = 6, off 1−1 = 0 → E = +6. */
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.hamiltonian = NQS_HAM_KITAEV_HEISENBERG;
+    cfg.kh_K = 1.0;
+    cfg.kh_J = 1.0;
+    int spins[4] = {+1, +1, +1, +1};
+    double E = nqs_local_energy(&cfg, 2, 2, spins, const_log_amp, NULL);
+    ASSERT_NEAR(E, 6.0, 1e-12);
+}
+
+static void test_kh_antiparallel_zbond_triggers_offdiag(void) {
+    /* Configure 2x2 with a single z-bond antiparallel pair. Put spins as
+     *   (0,0) = +1   (1,0) = +1
+     *   (0,1) = -1   (1,1) = +1
+     * Flat layout (size_y=2, so flat(x,y)=2x+y):
+     *   [flat(0,0)=0: +1, flat(0,1)=1: -1, flat(1,0)=2: +1, flat(1,1)=3: +1]
+     * Bonds on 2x2:
+     *   x-bond (0,0)-(1,0): sites 0,2, sasb = +1 → diag += 0·1 = 0 (J=0),
+     *                       off coef = (K+0) − 0 = K. Uniform ψ: +K.
+     *   y-bond (0,1)-(1,1): sites 1,3, sasb = -1 → diag += 0·(-1) = 0,
+     *                       off coef = 0 − (K+0)·(-1) = +K. Uniform ψ: +K.
+     *   z-bond (0,0)-(0,1): sites 0,1, sasb = -1 → diag += (K+0)·(-1) = -K,
+     *                       off: sa != sb, so off coef = 0·(1-(-1)) = 0.
+     *   z-bond (1,0)-(1,1): sites 2,3, sasb = +1 → diag += (K+0)·1 = +K,
+     *                       off: sa == sb, skip.
+     * Total: diag = -K + K = 0. Off = K + K = 2K. With K=1: E = 2.0. */
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.hamiltonian = NQS_HAM_KITAEV_HEISENBERG;
+    cfg.kh_K = 1.0;
+    cfg.kh_J = 0.0;
+    /* flat layout (x=0,y=0),(x=0,y=1),(x=1,y=0),(x=1,y=1) for size_y=2. */
+    int spins[4] = {+1, -1, +1, +1};
+    double E = nqs_local_energy(&cfg, 2, 2, spins, const_log_amp, NULL);
+    ASSERT_NEAR(E, 2.0, 1e-12);
+}
+
+static void test_kh_matches_legacy_kitaev_at_matching_signs(void) {
+    /* Cross-check the two Kitaev kernels at their overlap point.
+     *
+     * Legacy local_energy_kitaev uses H = −Σ_α J_α σ^α σ^α. The KH
+     * kernel (at J_Heisenberg = 0) uses H = +K σ^γ σ^γ. They represent
+     * the same physics when K_KH = −J_α and J_α is isotropic
+     * (Jx = Jy = Jz). This test verifies the two dispatch paths
+     * produce numerically identical local energies on the same spin
+     * configurations, guarding against silent drift between the
+     * kernels since the docs claim equivalence at this limit. */
+    nqs_config_t cfg_kh = nqs_config_defaults();
+    cfg_kh.hamiltonian = NQS_HAM_KITAEV_HEISENBERG;
+    cfg_kh.kh_K = -1.0;
+    cfg_kh.kh_J =  0.0;
+
+    nqs_config_t cfg_kit = nqs_config_defaults();
+    cfg_kit.hamiltonian      = NQS_HAM_KITAEV_HONEYCOMB;
+    cfg_kit.j_coupling       = 1.0;  /* Jx */
+    cfg_kit.transverse_field = 1.0;  /* Jy */
+    cfg_kit.j2_coupling      = 1.0;  /* Jz */
+
+    int spins_up[4]    = {+1, +1, +1, +1};
+    int spins_mixed[4] = {+1, -1, +1, +1};
+
+    double E_kh_up  = nqs_local_energy(&cfg_kh,  2, 2, spins_up,    const_log_amp, NULL);
+    double E_kit_up = nqs_local_energy(&cfg_kit, 2, 2, spins_up,    const_log_amp, NULL);
+    ASSERT_NEAR(E_kh_up, E_kit_up, 1e-12);
+
+    double E_kh_mx  = nqs_local_energy(&cfg_kh,  2, 2, spins_mixed, const_log_amp, NULL);
+    double E_kit_mx = nqs_local_energy(&cfg_kit, 2, 2, spins_mixed, const_log_amp, NULL);
+    ASSERT_NEAR(E_kh_mx, E_kit_mx, 1e-12);
+}
+
 int main(void) {
     TEST_RUN(test_kitaev_diag_zz_on_uniform_ansatz);
     TEST_RUN(test_kitaev_xx_bond_on_uniform_ansatz);
     TEST_RUN(test_kitaev_yy_bond_on_uniform_ansatz);
     TEST_RUN(test_kitaev_mixed_couplings);
+    TEST_RUN(test_kh_heisenberg_limit_all_up_2x2);
+    TEST_RUN(test_kh_kitaev_limit_all_up_2x2);
+    TEST_RUN(test_kh_equal_couplings_all_up_2x2);
+    TEST_RUN(test_kh_antiparallel_zbond_triggers_offdiag);
+    TEST_RUN(test_kh_matches_legacy_kitaev_at_matching_signs);
     TEST_SUMMARY();
 }

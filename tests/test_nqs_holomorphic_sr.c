@@ -115,9 +115,126 @@ static void test_holomorphic_sr_on_heisenberg_4_site(void) {
     ASSERT_TRUE(E < -0.5);
     ASSERT_TRUE(E > -1.8);    /* variational lower bound with MC slack */
 }
+
+static void test_holomorphic_sr_on_kh_2x2_end_to_end(void) {
+    /* Kitaev-Heisenberg on a 2×2 brick-wall honeycomb patch. Complex RBM
+     * + holomorphic SR. Point: the KH kernel is wired correctly end-to-
+     * end (dispatch → local-energy → gradient accumulator → SR step)
+     * without producing NaNs, and the variational energy descends from
+     * its random-init value.
+     *
+     * We don't assert a specific energy — at K=1, J=1 the 2×2 bond count
+     * is tiny and the exact GS depends sensitively on the brick-wall
+     * boundary; the point of the test is end-to-end wiring, not
+     * reproducing Chaloupka–Jackeli–Khaliullin phase-diagram numbers. */
+    int Lx = 2, Ly = 2, N = Lx * Ly;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz           = NQS_ANSATZ_COMPLEX_RBM;
+    cfg.rbm_hidden_units = 8;
+    cfg.rbm_init_scale   = 0.05;
+    cfg.hamiltonian      = NQS_HAM_KITAEV_HEISENBERG;
+    cfg.kh_K             = 1.0;
+    cfg.kh_J             = 1.0;
+    cfg.num_samples      = 512;
+    cfg.num_thermalize   = 256;
+    cfg.num_decorrelate  = 2;
+    cfg.num_iterations   = 60;
+    cfg.learning_rate    = 0.03;
+    cfg.sr_diag_shift    = 1e-2;
+    cfg.sr_cg_max_iters  = 80;
+    cfg.sr_cg_tol        = 1e-7;
+    cfg.rng_seed         = 0xA44EEu;
+    nqs_ansatz_t  *a = nqs_ansatz_create(&cfg, N);
+    nqs_sampler_t *s = nqs_sampler_create(N, &cfg, nqs_ansatz_log_amp, a);
+    ASSERT_TRUE(a && s);
+    double trace[60];
+    int rc = nqs_sr_run_holomorphic(&cfg, Lx, Ly, a, s,
+                                     nqs_ansatz_log_amp, a, trace);
+    ASSERT_EQ_INT(rc, 0);
+
+    /* Finiteness on every iteration. */
+    for (int i = 0; i < cfg.num_iterations; i++) {
+        ASSERT_TRUE(isfinite(trace[i]));
+    }
+
+    /* Moving-window descent: tail mean below head mean. */
+    double head = 0.0, tail = 0.0;
+    for (int i = 0; i < 10; i++) head += trace[i];
+    for (int i = 0; i < 10; i++) tail += trace[cfg.num_iterations - 10 + i];
+    head /= 10.0;
+    tail /= 10.0;
+    printf("# KH 2x2 (K=1, J=1, complex RBM + holomorphic): "
+           "head=%.4f  tail=%.4f\n", head, tail);
+    ASSERT_TRUE(tail < head + 0.1);          /* learning, with MC slack */
+
+    nqs_sampler_free(s);
+    nqs_ansatz_free(a);
+}
+
+static void test_holomorphic_sr_on_kagome_2x2_end_to_end(void) {
+    /* Kagome Heisenberg on an N=12 PBC cluster (2×2 unit cells, 3
+     * sublattices). Same end-to-end discipline as the KH smoke test:
+     * exercises sampler → local-energy → gradient-accumulator → SR
+     * step all the way through the new dispatch without NaN/Inf, and
+     * asserts the variational energy descends below the fully-
+     * polarised all-up baseline (E_{all-up} = +6 for J = 1, 24 bonds,
+     * Heisenberg).
+     *
+     * No published-energy assertion — a short complex-RBM + holomorphic
+     * SR run at this cluster size won't reach the ED value. The goal is
+     * wiring correctness, not phase-diagram physics. */
+    int Lx = 2, Ly = 2;
+    int N = 3 * Lx * Ly;  /* = 12 sites */
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz           = NQS_ANSATZ_COMPLEX_RBM;
+    cfg.rbm_hidden_units = 12;
+    cfg.rbm_init_scale   = 0.05;
+    cfg.hamiltonian      = NQS_HAM_KAGOME_HEISENBERG;
+    cfg.j_coupling       = 1.0;
+    cfg.kagome_pbc       = 1;
+    cfg.num_samples      = 512;
+    cfg.num_thermalize   = 256;
+    cfg.num_decorrelate  = 2;
+    cfg.num_iterations   = 60;
+    cfg.learning_rate    = 0.03;
+    cfg.sr_diag_shift    = 1e-2;
+    cfg.sr_cg_max_iters  = 80;
+    cfg.sr_cg_tol        = 1e-7;
+    cfg.rng_seed         = 0xC0AEEu;
+    nqs_ansatz_t  *a = nqs_ansatz_create(&cfg, N);
+    nqs_sampler_t *s = nqs_sampler_create(N, &cfg, nqs_ansatz_log_amp, a);
+    ASSERT_TRUE(a && s);
+    double trace[60];
+    int rc = nqs_sr_run_holomorphic(&cfg, Lx, Ly, a, s,
+                                     nqs_ansatz_log_amp, a, trace);
+    ASSERT_EQ_INT(rc, 0);
+
+    /* Every iteration is finite. */
+    for (int i = 0; i < cfg.num_iterations; i++) {
+        ASSERT_TRUE(isfinite(trace[i]));
+    }
+
+    /* Tail mean below head mean (learning) and strictly below the
+     * trivial all-up energy of +6.0. */
+    double head = 0.0, tail = 0.0;
+    for (int i = 0; i < 10; i++) head += trace[i];
+    for (int i = 0; i < 10; i++) tail += trace[cfg.num_iterations - 10 + i];
+    head /= 10.0;
+    tail /= 10.0;
+    printf("# Kagome 2x2 PBC (N=12, J=1, complex RBM + holomorphic): "
+           "head=%.4f  tail=%.4f\n", head, tail);
+    ASSERT_TRUE(tail < head + 0.1);
+    ASSERT_TRUE(tail < 6.0);
+
+    nqs_sampler_free(s);
+    nqs_ansatz_free(a);
+}
+
 int main(void) {
     TEST_RUN(test_holomorphic_step_runs_on_tfim);
     TEST_RUN(test_holomorphic_sr_beats_triplet_on_2site_heisenberg);
     TEST_RUN(test_holomorphic_sr_on_heisenberg_4_site);
+    TEST_RUN(test_holomorphic_sr_on_kh_2x2_end_to_end);
+    TEST_RUN(test_holomorphic_sr_on_kagome_2x2_end_to_end);
     TEST_SUMMARY();
 }

@@ -171,13 +171,15 @@ TEST_CFLAGS = $(CFLAGS_COMMON) -Itests $(TEST_OPT_LEVEL) -DUSE_NEON_IF_AVAILABLE
 # `make test_asan` — convenience alias for a full sanitizer-instrumented
 # run. Equivalent to `make clean && make SANITIZE=1 test`. Catches use-after-
 # free, buffer overruns, signed-integer overflow, shift-out-of-range,
-# alignment, and null dereferences. Leak detection is platform-gated (Linux
-# only on the ASan runtime). UBSan is configured to halt on the first finding
-# so the exit code reflects correctness.
+# alignment, and null dereferences. Leak detection is Linux-only (macOS
+# ASan runtime aborts at startup with detect_leaks=1), so the default
+# ASAN_OPTIONS here toggle it by platform. UBSan is configured to halt on
+# the first finding so the exit code reflects correctness.
+ASAN_LEAK_FLAG := $(if $(filter Darwin,$(shell uname -s)),0,1)
 test_asan:
 	@$(MAKE) --no-print-directory clean >/dev/null 2>&1
 	@UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" \
-	 ASAN_OPTIONS="detect_leaks=1:abort_on_error=0" \
+	 ASAN_OPTIONS="detect_leaks=$(ASAN_LEAK_FLAG):abort_on_error=0" \
 	 $(MAKE) --no-print-directory SANITIZE=1 test
 
 # Legacy entropy test (pre-v0.4)
@@ -300,6 +302,10 @@ test_nqs_holomorphic_sr: $(BIN_DIR)
 test_nqs_kitaev: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_kitaev \
 	    tests/test_nqs_kitaev.c $(NQS_SRCS) $(LDFLAGS)
+
+test_nqs_kagome: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_kagome \
+	    tests/test_nqs_kagome.c $(NQS_SRCS) $(LDFLAGS)
 
 test_nqs_translation: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_translation \
@@ -455,7 +461,7 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
       test_matrix_neon test_nqs test_libirrep_bridge \
       test_nqs_convergence test_nqs_rbm test_nqs_complex_rbm test_nqs_holomorphic_sr \
       test_nqs_kitaev test_nqs_lanczos test_nqs_marshall test_nqs_translation \
-      test_nqs_tvmc test_nqs_xxz test_hopfield test_rbm_cd \
+      test_nqs_tvmc test_nqs_xxz test_nqs_kagome test_hopfield test_rbm_cd \
       test_torque_net test_torque_net_llg test_torque_net_golden \
       test_torque_net_heisenberg_fit \
       test_siren \
@@ -490,6 +496,7 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
 	@$(BIN_DIR)/test_nqs_complex_rbm
 	@$(BIN_DIR)/test_nqs_holomorphic_sr
 	@$(BIN_DIR)/test_nqs_kitaev
+	@$(BIN_DIR)/test_nqs_kagome
 	@$(BIN_DIR)/test_nqs_lanczos
 	@$(BIN_DIR)/test_nqs_marshall
 	@$(BIN_DIR)/test_nqs_translation

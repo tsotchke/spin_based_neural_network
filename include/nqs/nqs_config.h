@@ -50,8 +50,23 @@ typedef enum {
     NQS_HAM_TFIM             = 0,       /* transverse-field Ising          */
     NQS_HAM_HEISENBERG       = 1,       /* Heisenberg                      */
     NQS_HAM_J1_J2            = 2,       /* frustrated square lattice       */
-    NQS_HAM_KITAEV_HONEYCOMB = 3,       /* Kitaev honeycomb (exact at isotropic) */
-    NQS_HAM_XXZ              = 4        /* XXZ: J(SxSx + SySy) + Jz SzSz   */
+    NQS_HAM_KITAEV_HONEYCOMB = 3,       /* pure anisotropic Kitaev on brickwall
+                                         * honeycomb (Jx, Jy, Jz). Exact at
+                                         * isotropic Jx=Jy=Jz limit.        */
+    NQS_HAM_XXZ              = 4,       /* XXZ: J(SxSx + SySy) + Jz SzSz   */
+    NQS_HAM_KITAEV_HEISENBERG = 5,      /* Kitaev + isotropic Heisenberg on
+                                         * brickwall honeycomb. Uses kh_K
+                                         * (Kitaev) and kh_J (Heisenberg)
+                                         * in the config; the full (K, J)
+                                         * plane covers Kitaev spin liquid,
+                                         * Néel, zigzag, stripy, and FM. */
+    NQS_HAM_KAGOME_HEISENBERG = 6       /* Heisenberg on kagome lattice
+                                         * (Lx_cells × Ly_cells × 3 sites,
+                                         * p6mm symmetry). The open kagome
+                                         * Heisenberg S=½ ground-state
+                                         * problem (Z₂ QSL vs Dirac QSL).
+                                         * Uses j_coupling as J. PBC vs
+                                         * OBC chosen by kagome_pbc. */
 } nqs_hamiltonian_kind_t;
 
 /* --- Top-level configuration struct ----------------------------------- */
@@ -68,10 +83,17 @@ typedef struct {
 
     /* Hamiltonian */
     nqs_hamiltonian_kind_t hamiltonian;
-    double                 j_coupling;       /* J_1 (Heisenberg: J; XXZ: Jxy) */
-    double                 j2_coupling;      /* J_2 for J1-J2              */
+    double                 j_coupling;       /* J_1 (Heisenberg: J; XXZ: Jxy;
+                                              * pure Kitaev: Jx)           */
+    double                 j2_coupling;      /* J_2 for J1-J2;
+                                              * pure Kitaev: Jz            */
     double                 j_z_coupling;     /* Jz for XXZ (unused elsewhere) */
-    double                 transverse_field; /* Γ for TFIM                 */
+    double                 transverse_field; /* Γ for TFIM;
+                                              * pure Kitaev: Jy            */
+    double                 kh_K;             /* Kitaev coupling for KH
+                                              * (NQS_HAM_KITAEV_HEISENBERG) */
+    double                 kh_J;             /* Heisenberg coupling for KH  */
+    int                    kagome_pbc;       /* 1 = periodic, 0 = open (kagome) */
 
     /* Sampling */
     int     num_samples;           /* Metropolis samples per gradient step */
@@ -104,6 +126,9 @@ static inline nqs_config_t nqs_config_defaults(void) {
     c.j2_coupling       = 0.0;
     c.j_z_coupling      = 1.0;          /* XXZ: default to isotropic */
     c.transverse_field  = 1.0;
+    c.kh_K              = 1.0;         /* default KH: antiferromagnetic Kitaev */
+    c.kh_J              = 0.0;         /* default: pure Kitaev (J=0)          */
+    c.kagome_pbc        = 1;           /* default kagome: periodic boundary   */
     c.num_samples       = 1024;
     c.num_thermalize    = 256;
     c.num_decorrelate   = 4;

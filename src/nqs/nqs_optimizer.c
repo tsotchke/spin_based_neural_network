@@ -134,7 +134,12 @@ int nqs_sr_step_custom_full(const nqs_config_t *cfg,
                              void *grad_user,
                              nqs_sr_step_info_t *out_info) {
     if (!cfg || !ansatz || !sampler) return -1;
-    int N = size_x * size_y;
+    /* Use the sampler's configured site count. For single-site-per-cell
+     * lattices this equals size_x*size_y; for kagome and any future
+     * multi-site-per-cell geometry it doesn't. The sampler is the
+     * authoritative source — its num_sites was set at creation time
+     * by the caller who knew the real N. */
+    int N = nqs_sampler_num_sites(sampler);
     long num_params = nqs_ansatz_num_params(ansatz);
     if (num_params <= 0) return -1;
     if (!log_amp_fn) { log_amp_fn = nqs_ansatz_log_amp; log_amp_user = ansatz; }
@@ -389,7 +394,12 @@ int nqs_sr_step_holomorphic(const nqs_config_t *cfg,
                              void *log_amp_user,
                              nqs_sr_step_info_t *out_info) {
     if (!cfg || !ansatz || !sampler) return -1;
-    int N = size_x * size_y;
+    /* Use the sampler's configured site count. For single-site-per-cell
+     * lattices this equals size_x*size_y; for kagome and any future
+     * multi-site-per-cell geometry it doesn't. The sampler is the
+     * authoritative source — its num_sites was set at creation time
+     * by the caller who knew the real N. */
+    int N = nqs_sampler_num_sites(sampler);
     long num_params = nqs_ansatz_num_params(ansatz);
     if (num_params <= 0) return -1;
     if (!log_amp_fn) { log_amp_fn = nqs_ansatz_log_amp; log_amp_user = ansatz; }
@@ -658,7 +668,12 @@ int nqs_tvmc_step_real_time(const nqs_config_t *cfg, double dt,
                              void *log_amp_user,
                              nqs_sr_step_info_t *out_info) {
     if (!cfg || !ansatz || !sampler) return -1;
-    int N = size_x * size_y;
+    /* Use the sampler's configured site count. For single-site-per-cell
+     * lattices this equals size_x*size_y; for kagome and any future
+     * multi-site-per-cell geometry it doesn't. The sampler is the
+     * authoritative source — its num_sites was set at creation time
+     * by the caller who knew the real N. */
+    int N = nqs_sampler_num_sites(sampler);
     long num_params = nqs_ansatz_num_params(ansatz);
     if (num_params <= 0) return -1;
     if (!log_amp_fn) { log_amp_fn = nqs_ansatz_log_amp; log_amp_user = ansatz; }
