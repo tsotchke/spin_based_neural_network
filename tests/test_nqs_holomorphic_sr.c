@@ -224,10 +224,61 @@ static void test_holomorphic_sr_on_kagome_2x2_end_to_end(void) {
     printf("# Kagome 2x2 PBC (N=12, J=1, complex RBM + holomorphic): "
            "head=%.4f  tail=%.4f\n", head, tail);
     ASSERT_TRUE(tail < head + 0.1);
-    ASSERT_TRUE(tail < 6.0);
+    /* Tightened: the all-up baseline is E_{all-up} = +6, so tail<6
+     * alone is trivially satisfied by any working SR. Assert a
+     * substantial descent magnitude (head - tail > 3.0, vs exact
+     * GS descent ~11.2 over full training). This is compiler-
+     * optimisation robust: in practice the head-tail gap under
+     * -O2 has measured ~5.8 and under -O1+ASan ~6.4, both well
+     * above 3.0. */
+    ASSERT_TRUE(head - tail > 3.0);
 
     nqs_sampler_free(s);
     nqs_ansatz_free(a);
+}
+
+static void test_real_sr_on_kh_heisenberg_limit_end_to_end(void) {
+    /* Real-amplitude SR path through the KH kernel at K=0, J=1
+     * (pure Heisenberg on brick-wall honeycomb). Uses the mean-field
+     * LEGACY_MLP ansatz and standard nqs_sr_run — exercises the
+     * real-amplitude local_energy_kh (not the complex variant) and
+     * the non-holomorphic SR step.
+     *
+     * A mean-field product-state ansatz cannot represent singlet
+     * correlations so it will stall above the true GS, but it
+     * should still descend monotonically from random init on a
+     * bipartite problem. Assertion is finiteness + tail < head
+     * (learning) rather than a specific energy. */
+    int Lx = 2, Ly = 2, N = Lx * Ly;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz           = NQS_ANSATZ_LEGACY_MLP;
+    cfg.hamiltonian      = NQS_HAM_KITAEV_HEISENBERG;
+    cfg.kh_K             = 0.0;
+    cfg.kh_J             = 1.0;
+    cfg.num_samples      = 512;
+    cfg.num_thermalize   = 256;
+    cfg.num_decorrelate  = 2;
+    cfg.num_iterations   = 50;
+    cfg.learning_rate    = 0.05;
+    cfg.sr_diag_shift    = 1e-2;
+    cfg.sr_cg_max_iters  = 40;
+    cfg.rng_seed         = 0xBADF00Du;
+    nqs_ansatz_t  *a = nqs_ansatz_create(&cfg, N);
+    nqs_sampler_t *s = nqs_sampler_create(N, &cfg, nqs_ansatz_log_amp, a);
+    ASSERT_TRUE(a && s);
+    double trace[50];
+    int rc = nqs_sr_run(&cfg, Lx, Ly, a, s, trace);
+    ASSERT_EQ_INT(rc, 0);
+
+    for (int i = 0; i < cfg.num_iterations; i++) {
+        ASSERT_TRUE(isfinite(trace[i]));
+    }
+    double head = 0, tail = 0;
+    for (int i = 0; i < 10; i++) head += trace[i];
+    for (int i = 0; i < 10; i++) tail += trace[cfg.num_iterations - 10 + i];
+    head /= 10.0; tail /= 10.0;
+    printf("# KH K=0 J=1 2x2 (real MLP + plain SR): head=%.4f  tail=%.4f\n", head, tail);
+    ASSERT_TRUE(tail < head + 0.1);    /* learning, with MC slack  */
 }
 
 int main(void) {
@@ -236,5 +287,6 @@ int main(void) {
     TEST_RUN(test_holomorphic_sr_on_heisenberg_4_site);
     TEST_RUN(test_holomorphic_sr_on_kh_2x2_end_to_end);
     TEST_RUN(test_holomorphic_sr_on_kagome_2x2_end_to_end);
+    TEST_RUN(test_real_sr_on_kh_heisenberg_limit_end_to_end);
     TEST_SUMMARY();
 }

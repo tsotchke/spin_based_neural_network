@@ -200,6 +200,64 @@ static void test_kagome_nonuniform_ansatz_1x1_pbc(void) {
     ASSERT_NEAR(E, expected, 1e-12);
 }
 
+static void test_kagome_nonuniform_ansatz_2x2_pbc(void) {
+    /* Non-uniform linear ansatz on the research-standard 2×2 PBC
+     * geometry (N=12, 24 unique bonds, coord 4). Expected local
+     * energy is computed inline by independently iterating the same
+     * bond list the kernel uses — not a clean cross-check against
+     * an external source, but catches off-by-one / mispaired-bond
+     * bugs by splitting the bond enumeration into two independently
+     * written pieces. Both must agree for the test to pass.
+     *
+     * Spin config: flip two sites (0 and 7) to -1, rest +1.
+     * Linear ansatz α_i = 0.05·(i+1). */
+    double alpha[12];
+    for (int i = 0; i < 12; i++) alpha[i] = 0.05 * (double)(i + 1);
+    linear_ansatz_ctx_t ctx = { .alpha = alpha };
+    int spins[12];
+    for (int i = 0; i < 12; i++) spins[i] = +1;
+    spins[0] = -1;
+    spins[7] = -1;
+
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.hamiltonian = NQS_HAM_KAGOME_HEISENBERG;
+    cfg.j_coupling  = 1.0;
+    cfg.kagome_pbc  = 1;
+
+    /* Independent bond list enumeration. The 24 bonds on a 2×2 PBC
+     * kagome cluster under our convention (up-triangle intra-cell +
+     * down-triangle anchored at A(cx,cy) with PBC wrap). */
+    int bonds[24][2] = {
+        /* up-triangles per cell (0..3) */
+        { 0, 1}, { 0, 2}, { 1, 2},     /* cell (0,0) */
+        { 3, 4}, { 3, 5}, { 4, 5},     /* cell (0,1) */
+        { 6, 7}, { 6, 8}, { 7, 8},     /* cell (1,0) */
+        { 9,10}, { 9,11}, {10,11},     /* cell (1,1) */
+        /* down-triangles anchored at A(cx,cy), cxm=(cx-1)%Lx, cym=(cy-1)%Ly */
+        { 0, 7}, { 0, 5}, { 7, 5},     /* at (0,0): {A=0, B(1,0)=7, C(0,1)=5} */
+        { 3,10}, { 3, 2}, {10, 2},     /* at (0,1): {A=3, B(1,1)=10, C(0,0)=2} */
+        { 6, 1}, { 6,11}, { 1,11},     /* at (1,0): {A=6, B(0,0)=1, C(1,1)=11} */
+        { 9, 4}, { 9, 8}, { 4, 8},     /* at (1,1): {A=9, B(0,1)=4, C(1,0)=8} */
+    };
+
+    double J = 1.0;
+    double expected_diag = 0.0, expected_off = 0.0;
+    for (int b = 0; b < 24; b++) {
+        int u = bonds[b][0], v = bonds[b][1];
+        int su = spins[u], sv = spins[v];
+        expected_diag += 0.25 * J * (double)(su * sv);
+        if (su != sv) {
+            /* ratio ψ(s')/ψ(s) = exp(-2 α_u s_u - 2 α_v s_v) */
+            double r = exp(-2.0 * (alpha[u] * (double)su + alpha[v] * (double)sv));
+            expected_off += 0.5 * J * r;
+        }
+    }
+    double expected = expected_diag + expected_off;
+
+    double E = nqs_local_energy(&cfg, 2, 2, spins, linear_log_amp, &ctx);
+    ASSERT_NEAR(E, expected, 1e-12);
+}
+
 int main(void) {
     TEST_RUN(test_kagome_pbc_all_up_2x2);
     TEST_RUN(test_kagome_pbc_uniform_invariance);
@@ -207,5 +265,6 @@ int main(void) {
     TEST_RUN(test_kagome_obc_all_up_2x2);
     TEST_RUN(test_kagome_1x1_pbc_has_degenerate_self_bonds);
     TEST_RUN(test_kagome_nonuniform_ansatz_1x1_pbc);
+    TEST_RUN(test_kagome_nonuniform_ansatz_2x2_pbc);
     TEST_SUMMARY();
 }

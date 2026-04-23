@@ -13,6 +13,7 @@
 #include "nqs/nqs_sampler.h"
 #include "nqs/nqs_ansatz.h"
 #include "nqs/nqs_optimizer.h"
+#include "nqs/nqs_gradient.h"
 
 static double sampler_throughput(int L, int samples) {
     int N = L * L;
@@ -64,6 +65,47 @@ static double sr_step_throughput(int L, int samples_per_step, int steps) {
     return (double)steps / dt;
 }
 
+/* Local-energy evaluation throughput for a specified Hamiltonian on
+ * a cluster of the requested (size_x, size_y) dims. For kagome the
+ * number of sites is 3·size_x·size_y; for every other kernel it's
+ * size_x·size_y. */
+static double local_energy_throughput(int size_x, int size_y,
+                                       nqs_hamiltonian_kind_t ham,
+                                       int num_samples) {
+    int N = (ham == NQS_HAM_KAGOME_HEISENBERG)
+            ? 3 * size_x * size_y
+            : size_x * size_y;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz           = NQS_ANSATZ_COMPLEX_RBM;
+    cfg.hamiltonian      = ham;
+    cfg.kh_K             = 1.0;
+    cfg.kh_J             = 1.0;
+    cfg.j_coupling       = 1.0;
+    cfg.kagome_pbc       = 1;
+    cfg.num_samples      = num_samples;
+    cfg.num_thermalize   = 128;
+    cfg.num_decorrelate  = 1;
+    cfg.rbm_hidden_units = 8;
+
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    nqs_sampler_t *s = nqs_sampler_create(N, &cfg, nqs_ansatz_log_amp, a);
+    nqs_sampler_thermalize(s);
+
+    int *batch = malloc((size_t)num_samples * (size_t)N * sizeof(int));
+    nqs_sampler_batch(s, num_samples, batch);
+
+    double *re = malloc((size_t)num_samples * sizeof(double));
+    double *im = malloc((size_t)num_samples * sizeof(double));
+    double t0 = bench_now_seconds();
+    nqs_local_energy_batch_complex(&cfg, size_x, size_y, batch, num_samples,
+                                    nqs_ansatz_log_amp, a, re, im);
+    double dt = bench_now_seconds() - t0;
+    free(re); free(im); free(batch);
+    nqs_sampler_free(s);
+    nqs_ansatz_free(a);
+    return (double)num_samples / dt;
+}
+
 int main(void) {
     int L_sizes[] = {4, 6, 8};
     int samples[] = {4096, 2048, 1024};
@@ -95,6 +137,25 @@ int main(void) {
         bench_emit_metric(&em, "sr_steps_per_second", sps);
         bench_emit_end(&em);
         printf("nqs SR step L=%d: %.2f steps/sec\n", sr_Ls[i], sps);
+    }
+
+    /* v0.4.1: local-energy throughput for the two new Hamiltonian
+     * kernels — a silent-drift canary. Kagome 2×2 PBC has N=12 sites
+     * (3 per cell); KH 2×2 has N=4 sites (brick-wall honeycomb). */
+    struct { const char *name; int Lx; int Ly; nqs_hamiltonian_kind_t ham; int samples; } ker[] = {
+        { "kh_local_energy_2x2",     2, 2, NQS_HAM_KITAEV_HEISENBERG, 4096 },
+        { "kagome_local_energy_2x2", 2, 2, NQS_HAM_KAGOME_HEISENBERG, 2048 },
+    };
+    for (size_t i = 0; i < sizeof(ker) / sizeof(ker[0]); i++) {
+        double sps = local_energy_throughput(ker[i].Lx, ker[i].Ly, ker[i].ham, ker[i].samples);
+        bench_emitter_t em;
+        bench_emit_begin(&em, "nqs", ker[i].name);
+        bench_emit_int(&em, "Lx", ker[i].Lx);
+        bench_emit_int(&em, "Ly", ker[i].Ly);
+        bench_emit_int(&em, "num_samples", ker[i].samples);
+        bench_emit_metric(&em, "local_energy_per_second", sps);
+        bench_emit_end(&em);
+        printf("nqs %s: %.1f eval/sec\n", ker[i].name, sps);
     }
     return 0;
 }

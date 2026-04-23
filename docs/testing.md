@@ -45,9 +45,19 @@ continuity.
 ## Test coverage summary
 
 The table below enumerates v0.4 core-module suites. Pillar tests
-(`test_nqs*`, `test_mps*`, `test_theory_qpt_*`, etc.) land alongside
-their pillar code and are driven by `make test` through the same
-harness; see `tests/` for the complete list.
+(`test_nqs*`, `test_mps*`, `test_llg*`, `test_qec_*`,
+`test_torque_net*`, `test_fibonacci_anyons`, `test_hopfield`,
+`test_rbm_cd`, `test_thqcp_coupling`, etc.) land alongside their
+pillar code and are driven by `make test` through the same harness;
+see `tests/` for the complete list.
+
+As of v0.4.1, two Hamiltonian kernels were added to the NQS pillar
+(`NQS_HAM_KITAEV_HEISENBERG`, `NQS_HAM_KAGOME_HEISENBERG`); their
+coverage lives in `tests/test_nqs_kitaev.c` (9 tests including a
+legacy-vs-KH cross-check), `tests/test_nqs_kagome.c` (new, 7 tests
+with an independently-derived 2×2 PBC bond-list cross-check), and
+end-to-end SR convergence tests in `tests/test_nqs_holomorphic_sr.c`
+(2 complex-RBM + 1 real-MLP paths).
 
 | Suite | Tests | Covers | Notes |
 |---|---|---|---|
