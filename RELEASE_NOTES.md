@@ -1,3 +1,112 @@
+# Spin-Based Neural Computation Framework v0.4.1
+
+v0.4.1 is a **capability-addition release** layered on top of v0.4.0:
+two new Hamiltonian kernels in the NQS pillar plus a small amount of
+build-system housekeeping. No breaking changes.
+
+## New local-energy kernels
+
+### Kitaev-Heisenberg on brick-wall honeycomb
+
+`NQS_HAM_KITAEV_HEISENBERG` adds a unified Kitaev + Heisenberg
+Hamiltonian:
+
+```
+H = K · Σ_⟨ij⟩ σ^{γ_ij}_i σ^{γ_ij}_j  +  J · Σ_⟨ij⟩ σ_i · σ_j
+```
+
+on the brick-wall honeycomb, with `γ_ij ∈ {x, y, z}` set by the
+usual parity colouring (horizontal `(x+y)` even → x-bond, else
+y-bond; vertical → z-bond). Positive K / J follow the
+Chaloupka–Jackeli–Khaliullin antiferromagnetic convention. Config
+fields: `cfg.kh_K`, `cfg.kh_J`.
+
+Reduces cleanly:
+- K = 0 → stock Heisenberg on the honeycomb bond list.
+- J = 0 → pure Kitaev (up to the overall sign of K — this kernel
+  uses `H = +K σ^γ σ^γ` whereas the legacy `local_energy_kitaev`
+  uses `H = −J σ^γ σ^γ`).
+
+Both real and complex-amplitude paths are shipped
+(`local_energy_kh`, `local_energy_kh_complex`). Kitaev-dominated
+regimes are non-stoquastic and require `NQS_ANSATZ_COMPLEX_RBM`.
+See `docs/nqs.md §4` for the full per-bond matrix-element table.
+
+### Heisenberg on kagome lattice
+
+`NQS_HAM_KAGOME_HEISENBERG` adds nearest-neighbour Heisenberg on a
+three-sublattice kagome geometry. Caller passes `(size_x, size_y) =
+(Lx_cells, Ly_cells)` and sizes the sampler with
+`num_sites = 3 · Lx · Ly`. Flat index
+`i = 3·(cx·Ly + cy) + s`, `s ∈ {A, B, C}`. Each cell contributes an
+up-triangle plus a down-triangle anchored at `A(cx, cy)`. A 2×2 PBC
+cluster has `N = 12` sites and 24 bonds with coord 4 everywhere.
+
+Config fields: `cfg.j_coupling` (J), `cfg.kagome_pbc` (1 = PBC
+default, 0 = OBC).
+
+This is the kernel for the open kagome Heisenberg S=½ ground-state
+problem (gapped Z₂ spin liquid vs gapless Dirac spin liquid). Full
+diagnostic coverage (γ, S_VN, k-point spectrum) pairs with
+libirrep ≥ 1.3.0-alpha's batched RDM, entropy, and point-group
+projection primitives — gated behind `SPIN_NN_HAS_IRREP` and dormant
+in the default tree until libirrep is vendored.
+
+## Housekeeping
+
+- `VERSION_PINS`: `LIBIRREP_MIN` bumped from 1.2 to 1.3.0-alpha to
+  match the incoming libirrep release with kagome geometry, p6mm
+  wallpaper group, and config-projection helpers.
+- `VERSION_PINS`: removed five stale per-test tolerance keys that
+  drifted from their source. Per-test tolerances live at the top of
+  each `tests/test_*.c`; general policy in `REPRODUCIBILITY.md`.
+- `Makefile`: `test_asan` now picks ASAN's `detect_leaks` flag by
+  OS (Linux = 1, Darwin = 0). macOS's ASan runtime aborts at startup
+  with `detect_leaks=1`; this keeps the target runnable on both.
+
+## Tests added
+
+- `tests/test_nqs_kitaev.c` gains 4 KH analytical checkpoints on a
+  `2×2` brick-wall cluster: `K=0, J=1`; `K=1, J=0`; `K=J=1`;
+  antiparallel-z-bond off-diagonal trigger.
+- `tests/test_nqs_kagome.c` ships 5 kagome checkpoints: 2×2 PBC
+  all-up, uniform-ψ invariance (`E_loc = (J/4)·|bonds|`), J scaling,
+  2×2 OBC all-up, 1×1 PBC degenerate regression guard.
+- `tests/test_nqs_holomorphic_sr.c` gains an end-to-end KH
+  convergence test (complex RBM + holomorphic SR on 2×2, 60 iters,
+  head-to-tail descent assertion).
+
+## Test suite + sanitizer
+
+- Full `make test`: **343 / 343 passing**, up from 333 in v0.4.0. Zero
+  warnings under `-Wall -Wextra`.
+- `make test_asan` (AddressSanitizer + UndefinedBehaviorSanitizer):
+  clean across the full suite. No UB, no memory errors.
+
+## Compatibility
+
+- Fully backwards-compatible with v0.4.0. No existing API signatures
+  changed; no existing dispatch case reassigned.
+- Two new `nqs_hamiltonian_kind_t` enum values (5, 6) appended.
+- Three new `nqs_config_t` fields (`kh_K`, `kh_J`, `kagome_pbc`)
+  appended at the end of the struct; `nqs_config_defaults()`
+  initialises them.
+- `nqs_local_energy` / `nqs_local_energy_complex` now compute the
+  site count per-Hamiltonian (previously `size_x × size_y` uniformly)
+  — necessary for multi-sublattice lattices. For every existing
+  Hamiltonian this yields the same value as before.
+
+## Next
+
+- Point-group projection (`NQS_SYM_POINT_GROUP` ↔ libirrep's
+  `irrep_pg_project`) wires up when libirrep `v1.3.0-alpha.1` lands.
+- `χ_F`-from-samples helper (trace of the QGT) is a small follow-up
+  exposed as a standalone entry point.
+- Phase-diagram research work against the kagome kernel lives in
+  a private track.
+
+---
+
 # Spin-Based Neural Computation Framework v0.4.0
 
 v0.4.0 is the **foundation release** for the v0.5+ research pillars. It

@@ -1,5 +1,15 @@
 # libirrep 1.2 coordination
 
+> **Status (2026-04-23, v0.4.1).** This document is historical — it
+> records the 1.2 cycle now closed. libirrep 1.2.0 has shipped; see
+> `VERSION_PINS` for the current `LIBIRREP_MIN` (now `1.3.0-alpha`,
+> which ships kagome geometry, p6mm wallpaper group,
+> `config_project.h`, `rdm.h`, `sym_group.h`, `spin_project.h`, and a
+> half-integer path in `tensor_product.h`). Live coordination notes
+> between the two projects go through
+> `/Users/tyr/Desktop/agent-notes/inbox-spin/` and
+> `/Users/tyr/Desktop/agent-notes/inbox-irrep/`.
+
 Companion document to [`docs/cross_project_integration.md`](cross_project_integration.md).
 Tracks the technical commitments between this repo (`spin_based_neural_network`)
 and [`libirrep`](https://github.com/tsotchke/libirrep) for the libirrep 1.2

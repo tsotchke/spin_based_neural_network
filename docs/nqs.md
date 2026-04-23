@@ -50,7 +50,7 @@ Fields worth highlighting:
 |---|---|
 | `ansatz` | **Shipped in v0.4:** `NQS_ANSATZ_LEGACY_MLP` (mean-field, N params), `NQS_ANSATZ_RBM` (real-amplitude restricted Boltzmann machine, Carleo–Troyer 2017), `NQS_ANSATZ_COMPLEX_RBM` (complex-amplitude RBM for non-stoquastic Hamiltonians). **Not in v0.4 — v0.5 slot only:** `NQS_ANSATZ_VIT`, `NQS_ANSATZ_FACTORED_VIT`, `NQS_ANSATZ_AUTOREGRESSIVE`, `NQS_ANSATZ_KAN`. Requesting one of the v0.5 slots in a v0.4 build makes `nqs_ansatz_create` return `NULL`. |
 | `symmetries` | Bitmask (`NQS_SYM_TRANSLATION`, `NQS_SYM_SPIN_FLIP`, `NQS_SYM_U1`, `NQS_SYM_POINT_GROUP`, `NQS_SYM_SU2`). Applied as wavefunction projections in v0.5. |
-| `hamiltonian` | `NQS_HAM_TFIM`, `NQS_HAM_HEISENBERG`, `NQS_HAM_J1_J2`, `NQS_HAM_KITAEV_HONEYCOMB`. Selects the local-energy kernel. |
+| `hamiltonian` | `NQS_HAM_TFIM`, `NQS_HAM_HEISENBERG`, `NQS_HAM_J1_J2`, `NQS_HAM_XXZ`, `NQS_HAM_KITAEV_HONEYCOMB` (anisotropic Kitaev on brick-wall honeycomb), `NQS_HAM_KITAEV_HEISENBERG` (Kitaev + Heisenberg on honeycomb, v0.4.1), `NQS_HAM_KAGOME_HEISENBERG` (Heisenberg on kagome lattice, v0.4.1). Selects the local-energy kernel. See §4 for per-kernel conventions and config fields. |
 | `num_samples`, `num_thermalize`, `num_decorrelate` | Metropolis batch parameters. |
 | `sr_diag_shift` | Tikhonov ε on the quantum geometric tensor. |
 | `sr_cg_max_iters`, `sr_cg_tol` | Conjugate-gradient knobs for the QGT solve. |
@@ -93,7 +93,108 @@ v0.4 ships closed-form kernels for:
 | TFIM | `-J Σ_⟨ij⟩ s_i s_j` | `-Γ Σ_i ψ(s⊕e_i)/ψ(s)` |
 | Heisenberg | `J/4 Σ_⟨ij⟩ s_i s_j` | `J/2 Σ_⟨ij⟩ [s_i = -s_j] · ψ(s ⊕ {i,j})/ψ(s)` |
 | J1-J2 | same + `J_2/4 Σ_⟨⟨ij⟩⟩ s_i s_j` | same + J2 next-nearest offdiag |
-| Kitaev honeycomb | reserved — falls back to TFIM in v0.4 | — |
+| Kitaev honeycomb (anisotropic) | `-J_z Σ_z-bonds s_i s_j` | `-J_x·1` on x-bonds; `+J_y·s_i s_j` on y-bonds (brick-wall γ colouring) |
+| Kitaev-Heisenberg | see below | see below |
+| Kagome Heisenberg (v0.4.1) | `J/4 Σ_⟨ij⟩ s_i s_j` over kagome bonds | `J/2 Σ_⟨ij⟩ [s_i = -s_j] · ψ(s ⊕ {i,j})/ψ(s)` |
+
+### Kitaev-Heisenberg (KH)
+
+> **Scope note.** This is Kitaev-Heisenberg on the **honeycomb** lattice
+> — a capability for studying the Kitaev spin-liquid regime and its
+> Heisenberg-perturbed phase diagram (Chaloupka–Jackeli–Khaliullin).
+> It is *not* a solver for the kagome Heisenberg S=½ ground-state
+> problem (gapped Z₂ QSL vs gapless Dirac QSL), which is a separate
+> open question on a different lattice — see the kagome Heisenberg
+> section below when that kernel lands.
+
+`NQS_HAM_KITAEV_HEISENBERG` selects a unified Kitaev + Heisenberg
+Hamiltonian on the brick-wall honeycomb. Convention:
+
+```
+H = K · Σ_⟨ij⟩ σ^{γ_ij}_i σ^{γ_ij}_j  +  J · Σ_⟨ij⟩ σ_i · σ_j
+```
+
+where `γ_ij ∈ {x, y, z}` is the bond's Kitaev colour (brick-wall:
+horizontal (x, y)–(x+1, y) is γ=x when (x+y) even else γ=y; vertical
+(x, y)–(x, y+1) is γ=z). Positive `K` / `J` are antiferromagnetic,
+following the Chaloupka–Jackeli–Khaliullin convention. Config:
+`cfg.kh_K`, `cfg.kh_J`.
+
+Per-bond matrix elements (`s' = s ⊕ {i, j}` for the off-diagonal):
+
+| Bond colour | Diagonal | Off-diagonal coefficient |
+|---|---|---|
+| γ = x | `J · s_i s_j` | `(K + J) − J · s_i s_j` |
+| γ = y | `J · s_i s_j` | `J − (K + J) · s_i s_j` |
+| γ = z | `(K + J) · s_i s_j` | `J · (1 − s_i s_j)` (vanishes on parallel pairs) |
+
+Reduces to the stock Heisenberg kernel at `K = 0`, and to the pure
+Kitaev kernel at `J = 0` (up to the overall sign of K — the KH kernel
+uses `H = +K σ^γ σ^γ` whereas the legacy `local_energy_kitaev` uses
+`H = −J σ^γ σ^γ`; set `kh_K` with the opposite sign if you want
+ferromagnetic Kitaev).
+
+Both real and complex-amplitude kernels are shipped
+(`local_energy_kh`, `local_energy_kh_complex`). Kitaev-dominated
+regimes are non-stoquastic and require `NQS_ANSATZ_COMPLEX_RBM` or
+richer. The Kitaev B-phase (gapless, isotropic `K > 0, J = 0`) has
+power-law correlations that strain RBM capacity — expect the
+complex RBM to track the B-phase qualitatively but a KAN or ViT
+ansatz (v0.5+) to be needed for the quantitative energy.
+
+### Kagome Heisenberg (v0.4.1)
+
+> **Target problem.** This is Heisenberg on the kagome lattice — the
+> headline open question is whether the S=½ ground state is a gapped
+> Z₂ spin liquid (topological order, γ = ln 2) or a gapless Dirac
+> spin liquid (algebraic correlations, no topological γ). The kernel
+> here is *infrastructure* for that research; the ansatz choice,
+> symmetry projection, and finite-size scaling do the scientific
+> work.
+
+`NQS_HAM_KAGOME_HEISENBERG` selects nearest-neighbour Heisenberg on
+the three-sublattice kagome lattice:
+
+```
+H = J · Σ_⟨ij⟩ S_i · S_j  =  (J/4) Σ s_i s_j + (J/2) Σ flip-pair
+```
+
+**Geometry.** The caller passes `(size_x, size_y) = (Lx_cells, Ly_cells)`
+through the existing `nqs_local_energy` dispatch and sizes the sampler
+with `num_sites = 3 · Lx · Ly` (three sublattices per unit cell).
+Flat site index: `i = 3·(cx·Ly + cy) + s`, `s ∈ {0=A, 1=B, 2=C}`.
+
+Each unit cell contributes:
+- an up-triangle on `{A, B, C}` of the cell (3 bonds);
+- a down-triangle anchored at `A(cx, cy)` with vertices
+  `{A(cx, cy), B(cx−1, cy), C(cx, cy−1)}` (3 bonds).
+
+Under PBC the cell indices wrap; under OBC a down-triangle is skipped
+entirely when either required neighbour cell is out of range. PBC is
+the standard choice for kagome Heisenberg research (coord 4 everywhere)
+— `cfg.kagome_pbc = 1` is the default. A 2×2 PBC cluster has `N = 12`
+sites and 24 bonds.
+
+**Config.** `cfg.j_coupling` = J, `cfg.kagome_pbc` ∈ {0, 1}.
+
+Both real- and complex-amplitude kernels are shipped
+(`local_energy_kagome_heisenberg`, `local_energy_kagome_heisenberg_complex`).
+Kagome ground states are non-stoquastic under any known sign rule
+(no Marshall structure on a frustrated triangular sublattice), so
+meaningful variational work requires `NQS_ANSATZ_COMPLEX_RBM` and
+holomorphic SR. Gapless Dirac-like correlations additionally strain
+RBM capacity at the isotropic point — a ViT or KAN ansatz is the
+natural v0.5+ target for quantitative E₀ comparison at N ≥ 36.
+
+For full diagnostic coverage (topological γ, entanglement S_VN,
+k-point spectrum, correlation decay), this kernel is *designed* to
+pair with the batched RDM + entropy + point-group projection
+primitives in libirrep ≥ 1.3.0-alpha. Those bindings have not
+landed yet on the NQS side — the `SPIN_NN_HAS_IRREP` flag currently
+gates only the libirrep-bridge scaffolding. The NQS symmetry-
+projection wrapper (`NQS_SYM_POINT_GROUP` → `irrep_pg_project`) is a
+tracked follow-up and will land once `libirrep v1.3.0-alpha.1` is
+vendored.
 
 Bulk variant:
 

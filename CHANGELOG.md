@@ -5,6 +5,53 @@ All notable changes to the Spin-Based Neural Computation Framework will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-04-23 — Hamiltonian kernels: KH + kagome
+
+### Added
+- **Kitaev-Heisenberg local-energy kernel** (`NQS_HAM_KITAEV_HEISENBERG`)
+  on the brick-wall honeycomb. Convention `H = K · Σ σ^γ σ^γ + J · Σ σ·σ`
+  (Chaloupka–Jackeli–Khaliullin sign). Real + complex-amplitude paths.
+  Config: `cfg.kh_K`, `cfg.kh_J`. Reduces to Heisenberg at K=0 and to
+  pure Kitaev (up to the sign of K) at J=0. Scope: honeycomb KH phase
+  diagram capability, *not* the kagome Heisenberg ground-state problem.
+- **Heisenberg-on-kagome local-energy kernel** (`NQS_HAM_KAGOME_HEISENBERG`).
+  Three-sublattice kagome geometry with PBC (default) or OBC: 2×2 PBC
+  cluster → N=12, 24 bonds, coord 4. Real + complex-amplitude paths.
+  Config: `cfg.j_coupling`, `cfg.kagome_pbc`. Caller passes
+  `(size_x, size_y) = (Lx_cells, Ly_cells)` through the existing
+  dispatch; `N_sites = 3·Lx·Ly` is computed internally. Target for
+  the kagome Heisenberg S=½ ground-state problem (gapped Z₂ vs
+  gapless Dirac spin liquid).
+- Nine new analytical checkpoint tests (`tests/test_nqs_kitaev.c`
+  gains 4 KH cases, `tests/test_nqs_kagome.c` ships 5 kagome cases)
+  plus one end-to-end complex-RBM + holomorphic SR convergence test
+  for KH in `tests/test_nqs_holomorphic_sr.c`.
+
+### Changed
+- `VERSION_PINS`: `LIBIRREP_MIN` bumped 1.2 → 1.3.0-alpha to match the
+  incoming libirrep release carrying kagome geometry, p6mm wallpaper
+  group, and config-projection helpers.
+- `VERSION_PINS`: removed five stale tolerance entries that drifted
+  from their source (per-test tolerances are declared at the top of
+  each `tests/test_*.c` and covered by `REPRODUCIBILITY.md`).
+
+### Changed
+- `nqs_local_energy` and `nqs_local_energy_complex` (and the `_batch`
+  variants) now compute the site count per-Hamiltonian rather than
+  assuming `size_x × size_y` — required for lattices with more than
+  one site per unit cell. Every existing Hamiltonian kernel yields
+  the same `N` as before; only new multi-sublattice kernels (kagome)
+  see a different value.
+- `nqs_sr_step` / `nqs_sr_step_holomorphic` / `nqs_sr_step_custom` now
+  read `N` from `nqs_sampler_num_sites(sampler)` rather than
+  recomputing `size_x * size_y`, for the same reason.
+- New accessor `nqs_sampler_num_sites(const nqs_sampler_t *s)` exposes
+  the sampler's configured site count to consumers.
+
+### Tests
+- Full suite: 343/343 passing (was 333 in v0.4), 0 warnings under
+  `-Wall -Wextra`, 0 regressions.
+
 ## [Unreleased] — v0.5 pillar landings
 
 ### Added — pillar P2.1 (time-dependent NQS)

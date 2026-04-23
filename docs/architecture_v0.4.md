@@ -19,7 +19,8 @@ scheduled for v0.5 and beyond. It complements the per-feature docs:
 | Release | Scope |
 |---|---|
 | **v0.3** | Topological quantum computing primitives (Berry / Chern / winding / TKNN, Majorana modes, toric code, topological entanglement entropy, visualization). |
-| **v0.4 (this release)** | Foundation — physics improvements, engine-neutral scaffolding, 109-test suite, 4-suite benchmark harness. |
+| **v0.4 (foundation release)** | Foundation — physics improvements, engine-neutral scaffolding, assert-based test suite over every library module, benchmark harness. |
+| **v0.4.1 (current)** | Capability addition: Kitaev-Heisenberg kernel on brick-wall honeycomb; Heisenberg-on-kagome kernel (three-sublattice, target for the open S=½ gapped-Z₂-vs-gapless-Dirac question); `LIBIRREP_MIN` bumped to 1.3.0-alpha. |
 | **v0.5** | Tier-1 research pillars: NQS, equivariant LLG, learned QEC decoders, neural-operator Boltzmann samplers, Fibonacci-anyon gates. |
 | **v0.6** | Tier-2 pillars: time-dependent NQS, MPS warm-start, foundation NQS, KAN-NQS, p-bit neuromorphic, gauge-invariant sampling, thermodynamic computing. |
 | **v0.7** | Observability — full benchmark suite, visualization modes for every pillar, reproducible experiment manifests, dashboard. |
@@ -186,7 +187,8 @@ for v0.5 via the engine layer; CPU + NEON/AVX2 ship today.
 A v0.5 pillar is considered landed when:
 
 1. A new `tests/test_<pillar>.c` suite exists with at least one test per
-   public API function (see current 109-test suite as the pattern).
+   public API function (see the existing `tests/test_*.c` suites as the
+   pattern).
 2. A new `benchmarks/bench_<pillar>.c` suite emits JSON under
    `benchmarks/results/<pillar>/`.
 3. Reproducibility: a manifest records the git commits of this repo +

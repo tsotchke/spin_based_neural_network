@@ -9,11 +9,22 @@ With the recent implementation of topological quantum features based on Majorana
 > topological-QC physics: Majorana braiding now has a full Hilbert-space
 > unitary implementation with verified non-Abelian statistics, and the
 > toric code gains an explicit data-qubit model with a greedy MWPM
-> baseline decoder. A 109-test suite verifies every library module.
-> See [docs/architecture_v0.4.md](docs/architecture_v0.4.md) for the
-> v0.5 roadmap (neural-network quantum states, equivariant
+> baseline decoder. See [docs/architecture_v0.4.md](docs/architecture_v0.4.md)
+> for the v0.5 roadmap (neural-network quantum states, equivariant
 > Landau-Lifshitz dynamics, learned surface-code decoders,
 > Fibonacci-anyon gates).
+>
+> **v0.4.1 update.** Two new Hamiltonian kernels in the NQS pillar:
+> `NQS_HAM_KITAEV_HEISENBERG` (brick-wall honeycomb KH, real +
+> complex amplitude paths) and `NQS_HAM_KAGOME_HEISENBERG` (kagome
+> Heisenberg on a three-sublattice geometry). The kagome kernel is
+> *infrastructure* for the open kagome-S=½ ground-state question
+> (gapped Z₂ vs gapless Dirac spin liquid) — it evaluates the
+> Hamiltonian on kagome bonds; the scientific decision still depends
+> on ansatz choice, symmetry projection, and finite-size scaling.
+> `LIBIRREP_MIN` bumped to 1.3.0-alpha for the incoming p6mm +
+> batched-RDM primitives. Full suite 343 / 343, AddressSanitizer +
+> UndefinedBehaviorSanitizer clean.
 
 ## Project Highlights
 - **Quantum Physics and Machine Learning**: Leverage spin-based neural networks to simulate and learn from quantum systems.
@@ -319,10 +330,28 @@ The `matrix_neon.c` module contains advanced optimizations for critical computat
 ## Release Information
 
 
-The current release is **v0.4.0** — the *foundation* release that
-significantly advances the v0.3 topological-QC physics, wires in an
-engine-neutral scaffolding layer for v0.5+ neural-network pillars, and
-ships a 109-test suite plus 4-suite benchmark harness.
+The current release is **v0.4.1** — a capability-addition release
+layered on top of the v0.4.0 foundation.
+
+**v0.4.1 additions (on top of v0.4.0):**
+
+- **Kitaev-Heisenberg kernel on brick-wall honeycomb**
+  (`NQS_HAM_KITAEV_HEISENBERG`). Real + complex-amplitude paths,
+  Chaloupka–Jackeli–Khaliullin sign convention, reduces to
+  Heisenberg at `K=0` and to pure Kitaev at `J=0`. Config fields
+  `cfg.kh_K`, `cfg.kh_J`.
+- **Kagome Heisenberg kernel**
+  (`NQS_HAM_KAGOME_HEISENBERG`). Three-sublattice kagome geometry,
+  PBC (default) or OBC, N = 3·Lx·Ly. The target Hamiltonian for the
+  open kagome-S=½ ground-state problem.
+- **Nine new analytical checkpoints + one SR-loop convergence test**
+  for the two kernels.
+- **`LIBIRREP_MIN`** bumped 1.2 → 1.3.0-alpha.
+- **Full suite**: 343 / 343 passing, zero warnings under
+  `-Wall -Wextra`, AddressSanitizer + UndefinedBehaviorSanitizer
+  clean.
+
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the full v0.4.1 notes.
 
 **v0.4.0 highlights:**
 
