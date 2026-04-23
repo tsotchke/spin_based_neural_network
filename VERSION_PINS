@@ -25,7 +25,7 @@ SDL2_MIN=2.24
 # via `make <FLAG>=1 <ROOT>=<path>` — see DEVELOPMENT.md §"Enabling
 # optional bridges".
 
-LIBIRREP_MIN=1.2           # IRREP_ENABLE=1, IRREP_ROOT=... at build time
+LIBIRREP_MIN=1.3.0-alpha   # IRREP_ENABLE=1, IRREP_ROOT=... at build time
 MOONLAB_COMMIT_COMPAT=>=   # any MOONLAB_ROOT checkout exposing libquantumsim
 ESHKOL_ABI=0.1             # SPIN_NN_HAS_ESHKOL=1 builds
 QGTL_ABI=0.1               # SPIN_NN_HAS_QGTL=1 builds
@@ -37,14 +37,11 @@ QLLM_ABI=0.1               # SPIN_NN_HAS_QLLM=1 builds
 FP_IEEE_DOUBLE=required     # no -ffast-math, no -funsafe-math-optimizations
 NEON_RUNTIME_DETECT=yes     # `make universal` picks at runtime
 
-# --- tolerances of shipped numerical tests ---------------------------
-# See REPRODUCIBILITY.md for commentary.
-
-T1_1_TOL=8.88e-16
-T2_1_TOL=3.3e-16
-T1_6_TOL=1e-6
-T1_8_TOL=1e-13
-T1_9_TOL=5e-5
+# --- numerical tolerance policy --------------------------------------
+# Per-test tolerances are declared at the top of each tests/test_*.c
+# file. See REPRODUCIBILITY.md for the general rules (IEEE double eps
+# for closed-form identities; stencil-truncation-bounded for finite-
+# difference checks; analytical-limit comparisons for MC kernels).
 
 # --- CI platforms ----------------------------------------------------
 # Mirror of .github/workflows/test.yml matrix.
@@ -53,5 +50,5 @@ CI_PLATFORMS=ubuntu-latest,macos-latest
 
 # --- last verified ---------------------------------------------------
 
-LAST_VERIFIED=2026-04-18
-LAST_VERIFIED_COMMIT=c085990
+LAST_VERIFIED=2026-04-23
+LAST_VERIFIED_COMMIT=2d828d0
