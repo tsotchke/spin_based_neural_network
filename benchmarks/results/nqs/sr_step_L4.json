@@ -1,14 +1,14 @@
 {
   "suite": "nqs",
   "name": "sr_step_L4",
-  "utc_epoch": 1776484513,
+  "utc_epoch": 1776984310,
   "os": "Darwin",
   "arch": "arm64",
-  "hostname": "localhost",
+  "hostname": "Atlas.local",
   "metrics": {
     "L": 4,
     "samples_per_step": 256,
     "steps_run": 20,
-    "sr_steps_per_second": 2996.25468
+    "sr_steps_per_second": 5344.73548
   }
 }

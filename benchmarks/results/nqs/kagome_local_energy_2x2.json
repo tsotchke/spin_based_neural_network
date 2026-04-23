@@ -1,13 +1,14 @@
 {
   "suite": "nqs",
-  "name": "sampler_L8",
+  "name": "kagome_local_energy_2x2",
   "utc_epoch": 1776984310,
   "os": "Darwin",
   "arch": "arm64",
   "hostname": "Atlas.local",
   "metrics": {
-    "L": 8,
-    "samples": 1024,
-    "samples_per_second": 11010751.5
+    "Lx": 2,
+    "Ly": 2,
+    "num_samples": 2048,
+    "local_energy_per_second": 256096.036
   }
 }

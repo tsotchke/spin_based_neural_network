@@ -1,13 +1,13 @@
 {
   "suite": "nqs",
   "name": "sampler_L4",
-  "utc_epoch": 1776484513,
+  "utc_epoch": 1776984310,
   "os": "Darwin",
   "arch": "arm64",
-  "hostname": "localhost",
+  "hostname": "Atlas.local",
   "metrics": {
     "L": 4,
     "samples": 4096,
-    "samples_per_second": 10951871.8
+    "samples_per_second": 27489916.9
   }
 }
