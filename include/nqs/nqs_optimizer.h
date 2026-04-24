@@ -174,6 +174,56 @@ int nqs_tvmc_step_real_time(const nqs_config_t *cfg, double dt,
                              void *log_amp_user,
                              nqs_sr_step_info_t *out_info);
 
+/* Excited-state Stochastic Reconfiguration via orthogonal-ansatz
+ * penalty (Choo-Neupert-Carleo 2018, arXiv:1810.10196 §II).
+ *
+ * Given a reference wavefunction ψ_ref (typically a converged ground-
+ * state ansatz, passed as ref_log_amp_fn / ref_log_amp_user), trains
+ * the ansatz to minimise
+ *
+ *     L[ψ]  =  ⟨ψ|H|ψ⟩/⟨ψ|ψ⟩  +  μ |⟨r⟩_{|ψ|²}|²
+ *
+ * where r(s) = ψ_ref(s)/ψ(s) is the per-sample amplitude ratio,
+ * ⟨r⟩_{|ψ|²} is the Monte Carlo estimator of the (unnormalised)
+ * overlap, and μ = `penalty_mu` is the orthogonality strength.
+ *
+ * Implementation mirrors `nqs_sr_step_holomorphic`: same QGT metric,
+ * same CG solve, same ansatz-update; the only modification is that
+ * the per-sample local energy carries an additive penalty term
+ *
+ *     ΔE_loc(s)  =  μ · r(s) · conj(⟨r⟩_batch)
+ *
+ * whose expectation is μ|⟨r⟩|². Taking the gradient of L then slots
+ * into the same natural-gradient formula as the ground-state SR step.
+ *
+ * `out_info->mean_energy` reports the *physical* energy ⟨H⟩ (not the
+ * augmented loss); the penalty appears only as a gradient pressure
+ * steering away from ψ_ref. For a well-trained ψ_ref ≈ |GS⟩ and large
+ * μ, the trainer should converge to the first excited state.
+ *
+ * Returns 0 on success. */
+int nqs_sr_step_excited(const nqs_config_t *cfg,
+                         int size_x, int size_y,
+                         nqs_ansatz_t *ansatz,
+                         nqs_sampler_t *sampler,
+                         nqs_log_amp_fn_t log_amp_fn,
+                         void *log_amp_user,
+                         nqs_log_amp_fn_t ref_log_amp_fn,
+                         void *ref_log_amp_user,
+                         double penalty_mu,
+                         nqs_sr_step_info_t *out_info);
+
+int nqs_sr_run_excited(const nqs_config_t *cfg,
+                        int size_x, int size_y,
+                        nqs_ansatz_t *ansatz,
+                        nqs_sampler_t *sampler,
+                        nqs_log_amp_fn_t log_amp_fn,
+                        void *log_amp_user,
+                        nqs_log_amp_fn_t ref_log_amp_fn,
+                        void *ref_log_amp_user,
+                        double penalty_mu,
+                        double *out_energy_trace);
+
 /* Second-order Heun integrator for real-time tVMC. One step costs two
  * MC samplings (one for k1 at θ, one for k2 at θ + dt·k1) but reduces
  * the energy-conservation error from O(dt²) to O(dt³). */

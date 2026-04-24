@@ -509,6 +509,190 @@ int nqs_sr_run_holomorphic(const nqs_config_t *cfg,
     return 0;
 }
 
+/* ===================== excited-state SR (penalty method) =========== */
+
+int nqs_sr_step_excited(const nqs_config_t *cfg,
+                         int size_x, int size_y,
+                         nqs_ansatz_t *ansatz,
+                         nqs_sampler_t *sampler,
+                         nqs_log_amp_fn_t log_amp_fn,
+                         void *log_amp_user,
+                         nqs_log_amp_fn_t ref_log_amp_fn,
+                         void *ref_log_amp_user,
+                         double penalty_mu,
+                         nqs_sr_step_info_t *out_info) {
+    if (!cfg || !ansatz || !sampler || !ref_log_amp_fn) return -1;
+    int N = nqs_sampler_num_sites(sampler);
+    long num_params = nqs_ansatz_num_params(ansatz);
+    if (num_params <= 0) return -1;
+    if (!log_amp_fn) { log_amp_fn = nqs_ansatz_log_amp; log_amp_user = ansatz; }
+
+    int batch_size = cfg->num_samples;
+    int *batch = malloc((size_t)batch_size * (size_t)N * sizeof(int));
+    double *E_re = malloc((size_t)batch_size * sizeof(double));
+    double *E_im = malloc((size_t)batch_size * sizeof(double));
+    double *r_re = malloc((size_t)batch_size * sizeof(double));
+    double *r_im = malloc((size_t)batch_size * sizeof(double));
+    double *R  = malloc((size_t)batch_size * (size_t)num_params * sizeof(double));
+    double *Im = malloc((size_t)batch_size * (size_t)num_params * sizeof(double));
+    double *R_mean = calloc((size_t)num_params, sizeof(double));
+    double *I_mean = calloc((size_t)num_params, sizeof(double));
+    double *F = calloc((size_t)num_params, sizeof(double));
+    double *delta = calloc((size_t)num_params, sizeof(double));
+    if (!batch || !E_re || !E_im || !r_re || !r_im || !R || !Im
+        || !R_mean || !I_mean || !F || !delta) {
+        free(batch); free(E_re); free(E_im); free(r_re); free(r_im);
+        free(R); free(Im); free(R_mean); free(I_mean); free(F); free(delta);
+        return -1;
+    }
+
+    /* 1. Sample + physical complex local energy. */
+    nqs_sampler_batch(sampler, batch_size, batch);
+    nqs_local_energy_batch_complex(cfg, size_x, size_y, batch, batch_size,
+                                    log_amp_fn, log_amp_user, E_re, E_im);
+
+    /* 2. Amplitude ratio r(s) = ψ_ref(s)/ψ(s) per sample. Early in
+     * training ψ and ψ_ref can disagree on which configurations are
+     * most probable; a rare sample where |ψ(s)| is much smaller than
+     * |ψ_ref(s)| then produces r(s) with enormous magnitude, which
+     * pollutes ⟨r⟩ and cascades into a NaN local energy. Cap the
+     * log-difference at a finite threshold — the penalty's job is
+     * to enforce orthogonality in expectation, not to be faithful
+     * on tail events. Standard VMC hygiene; the clamp is a no-op
+     * once the two wavefunctions start sampling the same typical
+     * set. */
+    /* A normalised wavefunction has typical |ψ(s)| ~ 2^{-N/2}; two
+     * such wavefunctions sampled at typical configurations give
+     * r(s) = O(1). |r(s)| > 1e4 is a sign of a rare event that the
+     * penalty should not magnify into a catastrophic parameter
+     * update. Cap at exp(10) ≈ 2.2e4. */
+    const double R_LOG_CAP = 10.0;
+    for (int i = 0; i < batch_size; i++) {
+        const int *spins_i = &batch[(size_t)i * (size_t)N];
+        double log_abs_p, arg_p;
+        log_amp_fn(spins_i, N, log_amp_user, &log_abs_p, &arg_p);
+        double log_abs_r, arg_r;
+        ref_log_amp_fn(spins_i, N, ref_log_amp_user, &log_abs_r, &arg_r);
+        double dlog = log_abs_r - log_abs_p;
+        if (dlog >  R_LOG_CAP) dlog =  R_LOG_CAP;
+        if (dlog < -R_LOG_CAP) dlog = -R_LOG_CAP;
+        double mag = exp(dlog);
+        double dth = arg_r - arg_p;
+        r_re[i] = mag * cos(dth);
+        r_im[i] = mag * sin(dth);
+    }
+
+    /* Batch mean of r and physical-energy mean (reported as mean_energy,
+     * *not* augmented with the penalty). */
+    double Rr_mean = 0.0, Ri_mean = 0.0;
+    double Er_mean = 0.0, Ei_mean = 0.0, Er_sq_mean = 0.0;
+    for (int i = 0; i < batch_size; i++) {
+        Rr_mean    += r_re[i];
+        Ri_mean    += r_im[i];
+        Er_mean    += E_re[i];
+        Ei_mean    += E_im[i];
+        Er_sq_mean += E_re[i] * E_re[i];
+    }
+    double inv_batch = 1.0 / (double)batch_size;
+    Rr_mean    *= inv_batch;
+    Ri_mean    *= inv_batch;
+    double phys_Er_mean = Er_mean * inv_batch;
+    double phys_Ei_mean = Ei_mean * inv_batch;
+    Er_sq_mean *= inv_batch;
+
+    /* 3. Augment per-sample local energy with the penalty term
+     *    ΔE_loc(s) = μ · r(s) · conj(⟨r⟩). */
+    for (int i = 0; i < batch_size; i++) {
+        double drR = penalty_mu * (r_re[i] * Rr_mean + r_im[i] * Ri_mean);
+        double drI = penalty_mu * (r_im[i] * Rr_mean - r_re[i] * Ri_mean);
+        E_re[i] += drR;
+        E_im[i] += drI;
+    }
+    /* Recompute augmented means for the force. */
+    double Er_mean_aug = phys_Er_mean
+        + penalty_mu * (Rr_mean * Rr_mean + Ri_mean * Ri_mean);
+    double Ei_mean_aug = phys_Ei_mean
+        + penalty_mu * (Ri_mean * Rr_mean - Rr_mean * Ri_mean);
+    /* Note: Ei_mean_aug simplifies to phys_Ei_mean because the
+     * imaginary penalty contribution has ⟨r_im·R_re − r_re·R_im⟩ =
+     * R_im·R_re − R_re·R_im = 0 at the batch-mean level. Kept
+     * symmetrical for clarity. */
+
+    /* 4. Complex gradients per sample. */
+    for (int i = 0; i < batch_size; i++) {
+        nqs_ansatz_logpsi_gradient_complex(ansatz,
+                                            &batch[(size_t)i * (size_t)N], N,
+                                            &R[(size_t)i * (size_t)num_params],
+                                            &Im[(size_t)i * (size_t)num_params]);
+    }
+
+    /* 5. Force F_k using augmented E_loc. */
+    for (long k = 0; k < num_params; k++) {
+        double sR = 0.0, sI = 0.0;
+        double sRe = 0.0, sIe = 0.0;
+        for (int i = 0; i < batch_size; i++) {
+            double rk = R [(size_t)i * (size_t)num_params + k];
+            double ik = Im[(size_t)i * (size_t)num_params + k];
+            sR  += rk;
+            sI  += ik;
+            sRe += rk * E_re[i];
+            sIe += ik * E_im[i];
+        }
+        R_mean[k] = sR * inv_batch;
+        I_mean[k] = sI * inv_batch;
+        F[k] = 2.0 * ((sRe + sIe) * inv_batch
+                      - R_mean[k] * Er_mean_aug - I_mean[k] * Ei_mean_aug);
+    }
+
+    /* 6. CG solve on the (same) complex QGT + apply update. */
+    int converged = 0;
+    int iters = cg_solve_complex(R, Im, batch_size, num_params,
+                                   R_mean, I_mean,
+                                   cfg->sr_diag_shift, F,
+                                   cfg->sr_cg_max_iters, cfg->sr_cg_tol,
+                                   delta, &converged);
+    nqs_ansatz_apply_update(ansatz, delta, -cfg->learning_rate);
+
+    if (out_info) {
+        /* Report *physical* energy, not augmented — users want to watch
+         * the Hamiltonian expectation climb toward E₁. */
+        out_info->mean_energy = phys_Er_mean;
+        out_info->variance_energy = Er_sq_mean - phys_Er_mean * phys_Er_mean;
+        out_info->update_norm = vec_norm(delta, num_params) * cfg->learning_rate;
+        out_info->acceptance_ratio = nqs_sampler_acceptance_ratio(sampler);
+        out_info->cg_iterations = iters;
+        out_info->converged = converged;
+    }
+
+    free(batch); free(E_re); free(E_im); free(r_re); free(r_im);
+    free(R); free(Im); free(R_mean); free(I_mean); free(F); free(delta);
+    return 0;
+}
+
+int nqs_sr_run_excited(const nqs_config_t *cfg,
+                        int size_x, int size_y,
+                        nqs_ansatz_t *ansatz,
+                        nqs_sampler_t *sampler,
+                        nqs_log_amp_fn_t log_amp_fn,
+                        void *log_amp_user,
+                        nqs_log_amp_fn_t ref_log_amp_fn,
+                        void *ref_log_amp_user,
+                        double penalty_mu,
+                        double *out_energy_trace) {
+    if (!cfg || !ansatz || !sampler || !ref_log_amp_fn) return -1;
+    nqs_sampler_thermalize(sampler);
+    for (int it = 0; it < cfg->num_iterations; it++) {
+        nqs_sr_step_info_t info;
+        int rc = nqs_sr_step_excited(cfg, size_x, size_y, ansatz, sampler,
+                                       log_amp_fn, log_amp_user,
+                                       ref_log_amp_fn, ref_log_amp_user,
+                                       penalty_mu, &info);
+        if (rc != 0) return rc;
+        if (out_energy_trace) out_energy_trace[it] = info.mean_energy;
+    }
+    return 0;
+}
+
 /* ===================== real-time tVMC ================================ */
 /* Compute Re(S)^{-1} Im(F) at the current ansatz params from a freshly
  * sampled batch. Does NOT apply the update. `out_delta` length = num_params.
