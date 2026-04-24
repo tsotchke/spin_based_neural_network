@@ -48,9 +48,15 @@ the Metropolis rule `min(1, exp(-ΔE))` against a uniform random draw.
 
 ## 2. Kitaev model (`include/kitaev_model.h`)
 
-Anisotropic 3D nearest-neighbor spin Hamiltonian with distinct coupling
-constants on each axis. `compute_kitaev_energy()` uses open boundary
-conditions:
+Classical anisotropic Ising model with axis-dependent coupling constants.
+This is **not** the quantum Kitaev honeycomb model (Kitaev 2006, Ann. Phys.
+321:2–111); it is a classical spin lattice with the same coupling structure
+whose quantum analogue is the honeycomb model.  The quantum topological
+invariants (Chern number via FHS, TEE via Kitaev-Preskill) computed in
+`berry_phase.c` and `topological_entropy.c` use these coupling constants to
+parameterise the quantum phase diagram.
+
+`compute_kitaev_energy()` uses open boundary conditions:
 
 ```
 H = Σ_i (J_x s_i s_{i+x̂} + J_y s_i s_{i+ŷ} + J_z s_i s_{i+ẑ})

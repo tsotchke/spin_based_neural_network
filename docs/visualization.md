@@ -127,8 +127,8 @@ Topological entanglement entropy quantifies quantum entanglement unique to topol
 - It measures **long-range quantum entanglement** that is independent of the boundary size
 - The Kitaev-Preskill construction eliminates boundary contributions to entanglement
 - The formula is: S_topo = S_A + S_B + S_C - S_AB - S_BC - S_AC + S_ABC, where S represents entropy
-- For a Z2 topological order (like the toric code), S_topo = -log(2) ≈ -0.693
-- The negative sign indicates information stored non-locally in the system
+- For a Z₂ topological order (like the toric code), γ = +log(2) ≈ +0.693
+- The positive TEE indicates long-range entanglement; the area-law term is subtracted by the Kitaev-Preskill combination
 
 ### Scientific Relevance
 
@@ -164,7 +164,7 @@ The visualizations are based on established mathematical models:
 - **Berry curvature**: F(k) = ∇ × A(k), where A(k) = i⟨u_k|∇_k|u_k⟩
 - **Toric code stabilizers**: A_v = ∏ᵢ∈star(v) σ_i^x and B_p = ∏ᵢ∈∂p σ_i^z
 - **Majorana operators**: γ_2j-1 = c_j + c_j† and γ_2j = i(c_j - c_j†)
-- **Topological entanglement entropy**: S_topo = -log(D), where D is the total quantum dimension
+- **Topological entanglement entropy**: γ = +log(D), where D is the total quantum dimension (γ > 0 signals topological order)
 
 This visualization tool provides an intuitive window into the abstract mathematical concepts that underlie topological quantum computing, making them accessible for research, education, and exploration.
 

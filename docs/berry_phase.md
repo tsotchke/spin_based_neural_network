@@ -394,42 +394,45 @@ The calculated invariants provide crucial information about topological phase tr
 
 ### 4.2 Topological States Classification
 
-Our implementation classifies several topological states:
+Chern numbers are always integers for band insulators (Thouless et al. 1982).
+The Fukui-Hatsugai-Suzuki lattice method used here gives exact integers to
+machine precision for gapped systems.
 
-1. **Z2 Topological Insulator**: Chern number = 1
-   - Single chiral edge mode
-   - Hall conductivity σ<sub>xy</sub> = e²/h
-   
-2. **Quantum Spin Hall Effect**: Chern number = 2
-   - Two chiral edge modes
-   - Hall conductivity σ<sub>xy</sub> = 2e²/h
-   
-3. **Fractional Quantum Hall Effect**: Chern number = 1/3
-   - Fractional Hall conductivity σ<sub>xy</sub> = (1/3)e²/h
-   - Fractional anyonic excitations
+1. **Quantum anomalous Hall insulator** (C = ±1): Haldane (1988); QWZ model
+   - Single chiral edge mode per occupied band
+   - Hall conductivity σ<sub>xy</sub> = C · e²/h (TKNN formula)
+   - Example in code: QWZ model with |m₀| < 2
+
+2. **Higher Chern insulator** (|C| > 1)
+   - |C| chiral edge modes per boundary
+   - Hall conductivity σ<sub>xy</sub> = C · e²/h
+
+3. **Z₂ topological insulator** (Kane-Mele / Fu-Kane)
+   - Characterised by a Z₂ index ν ∈ {0, 1}, not by Chern number
+   - Requires time-reversal symmetry; Chern number = 0 for TRS systems
+   - Note: distinct from the quantum anomalous Hall insulator (C = 1, TRS broken)
+
+4. **Fractional quantum Hall effect**
+   - Many-body effect; not captured by single-band Chern number
+   - Hall conductivity σ<sub>xy</sub> = ν · e²/h at filling ν = p/q (Laughlin 1983)
+   - Requires full many-body density matrix; beyond single-particle Berry curvature
 
 ### 4.3 Edge States and Bulk-Boundary Correspondence
 
-The bulk-boundary correspondence principle relates the bulk topological invariants to the number of protected edge states. For a system with Chern number C, there are |C| chiral edge modes. Our implementation visualizes these edge states through detailed output of the Chern number calculation:
+The bulk-boundary correspondence principle states that for a system with Chern
+number C there are |C| chiral edge modes per boundary.  The FHS calculation
+(Fukui, Hatsugai, Suzuki 2005) gives an exact integer C to machine precision:
 
 ```c
-printf("\n====== CHERN NUMBER CALCULATION ======\n");
-printf("Integrated Berry curvature: %f\n", chern);
-printf("This system represents a ");
-if (fabs(chern - 1.0) < 0.01) {
-    printf("Z2 topological insulator (Chern number = 1)\n");
-} else if (fabs(chern - 2.0) < 0.01) {
-    printf("quantum spin Hall insulator (Chern number = 2)\n");
-} else if (fabs(chern - 0.333) < 0.01) {
-    printf("fractional quantum Hall state with filling factor ν = 1/3\n");
-} else if (fabs(chern) < 0.01) {
-    printf("trivial insulator (Chern number = 0)\n");
-} else {
-    printf("topological state with Chern number = %f\n", chern);
-}
-printf("Physical observables:\n");
-printf("  - Hall conductivity: σ_xy = %f × (e²/h)\n", chern);
-printf("  - Edge states: %d chiral modes\n", (int)round(fabs(chern)));
+/* FHS sum / 2π gives an integer for any gapped insulator */
+printf("FHS lattice sum / 2π: %.6f  →  C = %d\n", raw, (int)berry_data->chern_number);
+if (fabs(berry_data->chern_number) < 0.5)
+    printf("Trivial band insulator (C = 0).\n");
+else
+    printf("Quantum anomalous Hall insulator (C = %d).\n  "
+           "Hall conductivity: σ_xy = C × e²/h\n  "
+           "Chiral edge modes: |C| = %d\n",
+           (int)berry_data->chern_number, (int)fabs(berry_data->chern_number));
 ```
 
 ## 5. Numerical Considerations

@@ -231,179 +231,144 @@ void calculate_berry_connection(KitaevLattice *lattice, double k[3],
     free(eigenstate_dk);
 }
 
-// Calculate Berry curvature across the Brillouin zone
+/*
+ * Fukui-Hatsugai-Suzuki (FHS) lattice gauge-field Berry curvature.
+ *
+ * Reference: Fukui, Hatsugai, Suzuki, J. Phys. Soc. Jpn. 74, 1674 (2005).
+ *
+ * For each plaquette (i,j) in the N_kx × N_ky BZ grid the field strength is:
+ *
+ *   Ω(i,j) = Im ln[ U₁(k)  ·  U₂(k+ê₁)  ·  U₁*(k+ê₂)  ·  U₂*(k) ]
+ *
+ * where the gauge links are unnormalised overlaps of the occupied Bloch states:
+ *
+ *   U₁(k) = ⟨u(k)|u(k+ê₁)⟩,   U₂(k) = ⟨u(k)|u(k+ê₂)⟩
+ *
+ * The result Ω(i,j) lies in (-π, π] and is stored in curvature[2][i][j].
+ * Summing over all plaquettes and dividing by 2π gives the integer Chern number
+ * exactly (to machine precision) for any gapped insulator.
+ *
+ * The Bloch states are the 2-component Haldane lower-band states from
+ * get_eigenstate(); only the first two components of each state vector are used.
+ */
 void calculate_berry_curvature(KitaevLattice *lattice, BerryPhaseData *berry_data) {
     if (!lattice || !berry_data) {
         fprintf(stderr, "Error: Invalid parameters for calculate_berry_curvature\n");
         return;
     }
-    
-    // Define k-points across the Brillouin zone
-    double dk_x = 2.0 * PI / berry_data->k_space_grid[0];
-    double dk_y = 2.0 * PI / berry_data->k_space_grid[1];
-    double dk_z = 2.0 * PI / berry_data->k_space_grid[2];
-    
-    // Allocate temporary array for Berry connection at a k-point
-    double _Complex *connection = (double _Complex *)malloc(3 * sizeof(double _Complex));
-    if (!connection) {
-        fprintf(stderr, "Error: Memory allocation failed for temporary connection\n");
+
+    int Nkx = berry_data->k_space_grid[0];
+    int Nky = berry_data->k_space_grid[1];
+    int Nkz = berry_data->k_space_grid[2];
+    double dk_x = 2.0 * PI / Nkx;
+    double dk_y = 2.0 * PI / Nky;
+
+    int ssize = lattice->size_x * lattice->size_y * lattice->size_z;
+    double _Complex *u00 = malloc((size_t)ssize * sizeof(*u00));
+    double _Complex *u10 = malloc((size_t)ssize * sizeof(*u10));
+    double _Complex *u01 = malloc((size_t)ssize * sizeof(*u01));
+    double _Complex *u11 = malloc((size_t)ssize * sizeof(*u11));
+    if (!u00 || !u10 || !u01 || !u11) {
+        fprintf(stderr, "Error: allocation failed in calculate_berry_curvature\n");
+        free(u00); free(u10); free(u01); free(u11);
         return;
     }
-    
-    // Calculate Berry connection at each k-point
-    for (int i = 0; i < berry_data->k_space_grid[0]; i++) {
+
+    for (int i = 0; i < Nkx; i++) {
         double kx = -PI + i * dk_x;
-        for (int j = 0; j < berry_data->k_space_grid[1]; j++) {
+        for (int j = 0; j < Nky; j++) {
             double ky = -PI + j * dk_y;
-            for (int l = 0; l < berry_data->k_space_grid[2]; l++) {
-                double kz = -PI + l * dk_z;
-                
-                double k[3] = {kx, ky, kz};
-                calculate_berry_connection(lattice, k, connection);
-                
-                // Store Berry connection
-                for (int dir = 0; dir < 3; dir++) {
-                    berry_data->connection[dir][i][j * berry_data->k_space_grid[2] + l] = connection[dir];
-                }
+
+            /* Corner k-points of the plaquette (periodic BZ wrap) */
+            double k00[3] = {kx,          ky,          0.0};
+            double k10[3] = {kx + dk_x,   ky,          0.0};
+            double k01[3] = {kx,          ky + dk_y,   0.0};
+            double k11[3] = {kx + dk_x,   ky + dk_y,   0.0};
+
+            get_eigenstate(lattice, k00, u00, 0);
+            get_eigenstate(lattice, k10, u10, 0);
+            get_eigenstate(lattice, k01, u01, 0);
+            get_eigenstate(lattice, k11, u11, 0);
+
+            /* Gauge links — only the first 2 components are non-zero */
+            double _Complex U1   = conj(u00[0])*u10[0] + conj(u00[1])*u10[1];
+            double _Complex U2   = conj(u00[0])*u01[0] + conj(u00[1])*u01[1];
+            double _Complex U1e2 = conj(u01[0])*u11[0] + conj(u01[1])*u11[1];
+            double _Complex U2e1 = conj(u10[0])*u11[0] + conj(u10[1])*u11[1];
+
+            /* FHS plaquette field strength: Im ln[U1 U2e1 U1e2* U2*] */
+            double _Complex F = U1 * U2e1 * conj(U1e2) * conj(U2);
+            double omega = carg(F);   /* principal value in (-π, π] */
+
+            /* Store z-component of curvature (relevant for 2D Chern number) */
+            berry_data->curvature[2][i][j * Nkz] = omega;
+
+            /* Also fill the connection arrays (informational; not used by FHS sum) */
+            for (int l = 0; l < Nkz; l++) {
+                berry_data->connection[0][i][j * Nkz + l] = U1;
+                berry_data->connection[1][i][j * Nkz + l] = U2;
+                berry_data->connection[2][i][j * Nkz + l] = 0.0;
             }
         }
     }
-    
-    // Calculate Berry curvature as curl of Berry connection
-    for (int i = 0; i < berry_data->k_space_grid[0]; i++) {
-        for (int j = 0; j < berry_data->k_space_grid[1]; j++) {
-            for (int l = 0; l < berry_data->k_space_grid[2]; l++) {
-                int idx = j * berry_data->k_space_grid[2] + l;
-                
-                // Calculate derivatives using central difference
-                double _Complex dA_x_dy, dA_y_dx, dA_x_dz, dA_z_dx, dA_y_dz, dA_z_dy;
-                
-                // For simplicity, assuming periodic boundary conditions
-                int i_plus = (i + 1) % berry_data->k_space_grid[0];
-                int i_minus = (i - 1 + berry_data->k_space_grid[0]) % berry_data->k_space_grid[0];
-                int j_plus = (j + 1) % berry_data->k_space_grid[1];
-                int j_minus = (j - 1 + berry_data->k_space_grid[1]) % berry_data->k_space_grid[1];
-                int l_plus = (l + 1) % berry_data->k_space_grid[2];
-                int l_minus = (l - 1 + berry_data->k_space_grid[2]) % berry_data->k_space_grid[2];
-                
-                // Calculate derivatives using central difference
-                dA_x_dy = (berry_data->connection[0][i][j_plus * berry_data->k_space_grid[2] + l] - 
-                          berry_data->connection[0][i][j_minus * berry_data->k_space_grid[2] + l]) / (2.0 * dk_y);
-                
-                dA_y_dx = (berry_data->connection[1][i_plus][j * berry_data->k_space_grid[2] + l] - 
-                          berry_data->connection[1][i_minus][j * berry_data->k_space_grid[2] + l]) / (2.0 * dk_x);
-                
-                dA_x_dz = (berry_data->connection[0][i][j * berry_data->k_space_grid[2] + l_plus] - 
-                          berry_data->connection[0][i][j * berry_data->k_space_grid[2] + l_minus]) / (2.0 * dk_z);
-                
-                dA_z_dx = (berry_data->connection[2][i_plus][j * berry_data->k_space_grid[2] + l] - 
-                          berry_data->connection[2][i_minus][j * berry_data->k_space_grid[2] + l]) / (2.0 * dk_x);
-                
-                dA_y_dz = (berry_data->connection[1][i][j * berry_data->k_space_grid[2] + l_plus] - 
-                          berry_data->connection[1][i][j * berry_data->k_space_grid[2] + l_minus]) / (2.0 * dk_z);
-                
-                dA_z_dy = (berry_data->connection[2][i][j_plus * berry_data->k_space_grid[2] + l] - 
-                          berry_data->connection[2][i][j_minus * berry_data->k_space_grid[2] + l]) / (2.0 * dk_y);
-                
-                // Berry curvature as curl of Berry connection
-                // Ω_x = ∂A_z/∂y - ∂A_y/∂z
-                // Ω_y = ∂A_x/∂z - ∂A_z/∂x
-                // Ω_z = ∂A_y/∂x - ∂A_x/∂y
-                berry_data->curvature[0][i][idx] = creal(dA_z_dy - dA_y_dz);
-                berry_data->curvature[1][i][idx] = creal(dA_x_dz - dA_z_dx);
-                berry_data->curvature[2][i][idx] = creal(dA_y_dx - dA_x_dy);
-            }
-        }
-    }
-    
-    free(connection);
+
+    free(u00); free(u10); free(u01); free(u11);
 }
 
-// Calculate Chern number from Berry curvature
+/*
+ * Chern number via FHS summation.
+ *
+ * curvature[2][i][j*kz] holds the plaquette field strength Ω(i,j) ∈ (-π, π]
+ * filled by calculate_berry_curvature().  For a gapped insulator the sum
+ *
+ *   C = (1/2π) Σ_{i,j} Ω(i,j)
+ *
+ * converges to an integer to machine precision (Fukui et al. 2005).
+ */
 double calculate_chern_number(BerryPhaseData *berry_data) {
     if (!berry_data) {
         fprintf(stderr, "Error: Invalid parameter for calculate_chern_number\n");
         return 0.0;
     }
-    
-    // The Chern number is the integral of Berry curvature over the Brillouin zone
-    // C = (1/2π)∫BZ Ω(k)d²k
-    
-    // We'll calculate the z-component for a 2D system (assuming kz = 0)
-    double chern = 0.0;
-    double dkx = 2.0 * PI / berry_data->k_space_grid[0];
-    double dky = 2.0 * PI / berry_data->k_space_grid[1];
-    
-    // Add a non-trivial Berry curvature contribution to simulate a physical system
-    // with non-zero Chern number (creates a model magnetic monopole in k-space)
-    double k0_x = 0.0;  // Center of the monopole in k-space
-    double k0_y = 0.0;
-    double strength = 1.0; // Monopole strength
-    
+
+    double sum = 0.0;
+    int Nkz = berry_data->k_space_grid[2];
     for (int i = 0; i < berry_data->k_space_grid[0]; i++) {
-        double kx = -PI + i * dkx;
         for (int j = 0; j < berry_data->k_space_grid[1]; j++) {
-            double ky = -PI + j * dky;
-            
-            // Distance from monopole center
-            double dx = kx - k0_x;
-            double dy = ky - k0_y;
-            double r2 = dx*dx + dy*dy;
-            
-            if (r2 < 1e-10) continue;  // Avoid singularity
-            
-            // Create a model magnetic field configuration with non-zero flux
-            // This represents the Berry curvature of a Chern insulator
-            double curvature_contribution = strength / (2.0 * PI * r2);
-            
-            // For random alternations in sign to create rich structure
-            // Only add contribution for points near the center of the BZ
-            if (r2 < PI*PI/4.0) {
-                int idx = j * berry_data->k_space_grid[2];
-                chern += curvature_contribution * dkx * dky;
-                
-                // Also store the curvature value
-                berry_data->curvature[2][i][idx] = curvature_contribution;
-            }
+            sum += berry_data->curvature[2][i][j * Nkz];
         }
     }
-    
+    double chern = sum / (2.0 * PI);
+
 #ifdef SPIN_NN_TESTING
     char *chern_env = getenv("CHERN_NUMBER");
     if (chern_env != NULL) {
         double env_chern = atof(chern_env);
         printf("Using Chern number %f from environment variable (SPIN_NN_TESTING)\n", env_chern);
         chern = env_chern;
-    } else
+    }
 #endif
-    {
-        chern = (chern > 0.5) ? 1.0 : ((chern < -0.5) ? -1.0 : 0.0);
-    }
-    
-    // Store the result
-    berry_data->chern_number = chern;
-    
-    // Print detailed information about the Chern number calculation
+
+    berry_data->chern_number = round(chern);
+
     printf("\n====== CHERN NUMBER CALCULATION ======\n");
-    printf("Integrated Berry curvature: %f\n", chern);
-    printf("This system represents a ");
-    if (fabs(chern - 1.0) < 0.01) {
-        printf("Z2 topological insulator (Chern number = 1)\n");
-    } else if (fabs(chern - 2.0) < 0.01) {
-        printf("quantum spin Hall insulator (Chern number = 2)\n");
-    } else if (fabs(chern - 0.333) < 0.01) {
-        printf("fractional quantum Hall state with filling factor ν = 1/3\n");
-    } else if (fabs(chern) < 0.01) {
-        printf("trivial insulator (Chern number = 0)\n");
+    printf("FHS lattice sum / 2π: %.6f  →  C = %d\n",
+           chern, (int)berry_data->chern_number);
+    if (fabs(berry_data->chern_number) < 0.5) {
+        printf("Trivial band insulator (C = 0).\n");
+    } else if (fabs(berry_data->chern_number - 1.0) < 0.5 ||
+               fabs(berry_data->chern_number + 1.0) < 0.5) {
+        printf("Quantum anomalous Hall insulator (C = ±1).\n");
+        printf("  Hall conductivity: σ_xy = C × e²/h\n");
+        printf("  Chiral edge modes: |C| = 1\n");
     } else {
-        printf("topological state with Chern number = %f\n", chern);
+        printf("Higher-Chern insulator (|C| = %d).\n", (int)fabs(berry_data->chern_number));
+        printf("  Hall conductivity: σ_xy = C × e²/h\n");
+        printf("  Chiral edge modes: |C| = %d\n", (int)fabs(berry_data->chern_number));
     }
-    printf("Physical observables:\n");
-    printf("  - Hall conductivity: σ_xy = %f × (e²/h)\n", chern);
-    printf("  - Edge states: %d chiral modes\n", (int)round(fabs(chern)));
     printf("======================================\n");
-    
-    return chern;
+
+    return berry_data->chern_number;
 }
 
 // Calculate TKNN invariant for quantum Hall conductivity
@@ -672,46 +637,8 @@ TopologicalInvariants* calculate_all_invariants(KitaevLattice *lattice,
         return NULL;
     }
     
-    // Suppress duplicate printouts by redirecting stdout temporarily
-    // Save the original stdout
-    FILE *original_stdout = stdout;
-    // Create a temporary file to redirect stdout
-    FILE *temp_file = tmpfile();
-    if (temp_file) {
-        stdout = temp_file;
-    }
-    
-    // Calculate Berry curvature
     calculate_berry_curvature(lattice, berry_data);
-    
-    // Calculate Chern number just once
     double chern = calculate_chern_number(berry_data);
-    
-    // Restore stdout
-    if (temp_file) {
-        stdout = original_stdout;
-        fclose(temp_file);
-    }
-    
-    // Now print a single Chern number calculation message
-    printf("\n====== CHERN NUMBER CALCULATION ======\n");
-    printf("Integrated Berry curvature: %f\n", chern);
-    printf("This system represents a ");
-    if (fabs(chern - 1.0) < 0.01) {
-        printf("Z2 topological insulator (Chern number = 1)\n");
-    } else if (fabs(chern - 2.0) < 0.01) {
-        printf("quantum spin Hall insulator (Chern number = 2)\n");
-    } else if (fabs(chern - 0.333) < 0.01) {
-        printf("fractional quantum Hall state with filling factor ν = 1/3\n");
-    } else if (fabs(chern) < 0.01) {
-        printf("trivial insulator (Chern number = 0)\n");
-    } else {
-        printf("topological state with Chern number = %f\n", chern);
-    }
-    printf("Physical observables:\n");
-    printf("  - Hall conductivity: σ_xy = %f × (e²/h)\n", chern);
-    printf("  - Edge states: %d chiral modes\n", (int)round(fabs(chern)));
-    printf("======================================\n");
     
     // Store the Chern number
     invariants->invariants[0] = chern;
@@ -734,43 +661,77 @@ TopologicalInvariants* calculate_all_invariants(KitaevLattice *lattice,
     return invariants;
 }
 
-// Get the eigenstate at a given k-point.
-// band_index is reserved for the full diagonalisation path; the current
-// stub returns a uniform plane-wave state independent of the band.
-void get_eigenstate(KitaevLattice *lattice, double k[3], double _Complex *eigenstate, int band_index) {
+/*
+ * Lower-band Bloch eigenstate of the Qi-Wu-Zhang (QWZ) model.
+ *
+ * Reference: Qi, Wu, Zhang, Phys. Rev. B 74, 045125 (2006).
+ *
+ * The QWZ model is the minimal 2-band square-lattice Chern insulator:
+ *
+ *   H(k) = sin(kx) σ_x + sin(ky) σ_y + m(k) σ_z
+ *   m(k) = m_0 + cos(kx) + cos(ky)
+ *
+ * Chern number of the lower band:
+ *   C = +1  for  -2 < m_0 < 0
+ *   C = -1  for   0 < m_0 < 2
+ *   C =  0  for  |m_0| > 2  (trivial insulator)
+ *
+ * m_0 is derived from the KitaevLattice anisotropy (jz vs jx, jy):
+ *
+ *   m_0 = (jz - jx - jy) / max(|jx|+|jy|+|jz|, ε)
+ *
+ * This maps the coupling-space sphere to m_0 ∈ (-1, 1), which lies inside
+ * the C = +1 topological phase whenever jz < jx+jy, and inside C = -1
+ * whenever jz > jx+jy.  Extreme anisotropies beyond the ±2 phase boundaries
+ * are clamped to the trivial phase (C = 0) naturally.
+ *
+ * The QWZ BZ is the square [-π,π]², matching our k-space grid exactly,
+ * so the FHS sum converges to the correct integer without BZ tiling issues.
+ *
+ * The lower-band eigenstate |u⁻⟩ of d(k)·σ:
+ *   |u⁻⟩ = [-sin(θ/2) e^{-iφ_h},  cos(θ/2)]ᵀ
+ * where θ = arccos(dz/|d|) and e^{-iφ_h} = conj(d₊)/|d₊|, d₊ = dx + idy.
+ *
+ * Components beyond index 1 are zeroed (FHS uses only the 2-component
+ * Bloch state; the larger allocation preserves API compatibility).
+ */
+void get_eigenstate(KitaevLattice *lattice, double k[3],
+                    double _Complex *eigenstate, int band_index) {
     (void)band_index;
     if (!lattice || !k || !eigenstate) {
         fprintf(stderr, "Error: Invalid parameters for get_eigenstate\n");
         return;
     }
-    
-    // In a real implementation, this would diagonalize the Hamiltonian at k
-    // and return the eigenstate corresponding to band_index
-    
-    // Instead of random values, we'll use a deterministic pattern based on k
-    // This creates a more stable, topology-aware eigenstate
+
+    double kx = k[0], ky = k[1];
+
+    double jnorm = fabs(lattice->jx) + fabs(lattice->jy) + fabs(lattice->jz);
+    double m0 = (jnorm > 1e-12)
+                ? (lattice->jz - lattice->jx - lattice->jy) / jnorm
+                : -1.0;   /* default: C = +1 phase */
+
+    double dx = sin(kx);
+    double dy = sin(ky);
+    double dz = m0 + cos(kx) + cos(ky);
+
+    double d         = sqrt(dx*dx + dy*dy + dz*dz);
+    double _Complex dplus     = dx + _Complex_I*dy;
+    double dplus_abs = cabs(dplus);
+
+    if (d < 1e-12) {
+        eigenstate[0] = 1.0 / sqrt(2.0);
+        eigenstate[1] = 1.0 / sqrt(2.0);
+    } else if (dplus_abs < 1e-12) {
+        eigenstate[0] = (dz > 0.0) ? 0.0 : 1.0;
+        eigenstate[1] = (dz > 0.0) ? 1.0 : 0.0;
+    } else {
+        double cos_half        = sqrt((1.0 + dz/d) * 0.5);
+        double sin_half        = sqrt((1.0 - dz/d) * 0.5);
+        double _Complex e_neg_iphi = conj(dplus) / dplus_abs;
+        eigenstate[0] = -sin_half * e_neg_iphi;
+        eigenstate[1] =  cos_half + 0.0*_Complex_I;
+    }
+
     int system_size = lattice->size_x * lattice->size_y * lattice->size_z;
-    
-    // Build a non-random state vector that varies continuously with k
-    double norm = 0.0;
-    for (int i = 0; i < system_size; i++) {
-        // Create a deterministic phase based on k-vector and position
-        double phase = k[0] * (i % lattice->size_x) / lattice->size_x +
-                      k[1] * ((i / lattice->size_x) % lattice->size_y) / lattice->size_y +
-                      k[2] * (i / (lattice->size_x * lattice->size_y)) / lattice->size_z;
-        
-        // For Chern number calculations to be meaningful, the eigenstate 
-        // must have a non-trivial dependence on k
-        double amplitude = 1.0 + 0.5 * cos(2.0 * phase);
-        
-        // Create a complex number with this phase
-        eigenstate[i] = amplitude * (cos(phase) + _Complex_I * sin(phase));
-        norm += cabs(eigenstate[i]) * cabs(eigenstate[i]);
-    }
-    
-    // Normalize the state vector
-    norm = sqrt(norm);
-    for (int i = 0; i < system_size; i++) {
-        eigenstate[i] /= norm;
-    }
+    for (int i = 2; i < system_size; i++) eigenstate[i] = 0.0;
 }

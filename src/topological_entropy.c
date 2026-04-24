@@ -148,182 +148,202 @@ double calculate_von_neumann_entropy(KitaevLattice *lattice,
     return entropy;
 }
 
-// Calculate the reduced density matrix for a subsystem
-void calculate_reduced_density_matrix(KitaevLattice *lattice, 
-                                     int subsystem_coords[3], 
-                                     int subsystem_size[3], 
+/*
+ * Compute the classical anisotropic-Ising energy for a spin configuration
+ * given as a bitmask (bit b = 1 → spin +1 at global site b; bit b = 0 → spin -1).
+ *
+ * The Kitaev anisotropic Hamiltonian is:
+ *   H = Σ_{x-bonds} Jx si sj  +  Σ_{y-bonds} Jy si sj  +  Σ_{z-bonds} Jz si sj
+ * following the same bond assignments as compute_kitaev_energy() in kitaev_model.c.
+ */
+static double compute_classical_energy_bitfield(const KitaevLattice *lat,
+                                                unsigned long long state) {
+    double E = 0.0;
+    int Ny = lat->size_y, Nz = lat->size_z;
+    for (int x = 0; x < lat->size_x; x++) {
+        for (int y = 0; y < lat->size_y; y++) {
+            for (int z = 0; z < lat->size_z; z++) {
+                int site = x*Ny*Nz + y*Nz + z;
+                int si = ((state >> site) & 1ULL) ? 1 : -1;
+                if (x+1 < lat->size_x) {
+                    int nbr = (x+1)*Ny*Nz + y*Nz + z;
+                    int sj = ((state >> nbr) & 1ULL) ? 1 : -1;
+                    E += lat->jx * si * sj;
+                }
+                if (y+1 < lat->size_y) {
+                    int nbr = x*Ny*Nz + (y+1)*Nz + z;
+                    int sj = ((state >> nbr) & 1ULL) ? 1 : -1;
+                    E += lat->jy * si * sj;
+                }
+                if (z+1 < lat->size_z) {
+                    int nbr = x*Ny*Nz + y*Nz + (z+1);
+                    int sj = ((state >> nbr) & 1ULL) ? 1 : -1;
+                    E += lat->jz * si * sj;
+                }
+            }
+        }
+    }
+    return E;
+}
+
+/*
+ * Thermal reduced density matrix ρ_A by exact Boltzmann enumeration.
+ *
+ * For a classical Ising model the thermal state is diagonal in the spin-z
+ * basis: ρ(s) = exp(-β H(s)) / Z.  The reduced density matrix obtained by
+ * tracing out the environment B is therefore also diagonal:
+ *
+ *   ρ_A(s_A, s_A) = Σ_{s_B} exp(-β H(s_A ⊗ s_B)) / Z
+ *
+ * This function computes ρ_A exactly by enumerating all 2^N_total spin
+ * configurations, which is feasible for N_total ≤ 20 (2^20 = 1M states).
+ *
+ * For N_total > 20 the function falls back to a Metropolis MC estimate using
+ * the current lattice spin configuration as the starting point, sampling
+ * 10,000 sweeps to estimate P(s_A).
+ *
+ * When lattice->spins is NULL (test stubs that allocate the struct directly
+ * without calling initialize_kitaev_lattice) the function returns the
+ * maximally mixed state as a safe fallback.
+ *
+ * The density matrix is real and diagonal; off-diagonal elements are zero
+ * for a classical thermal state in the computational basis.
+ */
+void calculate_reduced_density_matrix(KitaevLattice *lattice,
+                                     int subsystem_coords[3],
+                                     int subsystem_size[3],
                                      double _Complex *reduced_density_matrix,
                                      int matrix_size) {
     if (!lattice || !reduced_density_matrix) return;
-    
-    int total_sites = lattice->size_x * lattice->size_y * lattice->size_z;
-    int subsystem_sites = subsystem_size[0] * subsystem_size[1] * subsystem_size[2];
-    
-    // Determine which sites belong to the subsystem
-    int *subsystem_indices = (int *)malloc(subsystem_sites * sizeof(int));
-    if (!subsystem_indices) {
-        fprintf(stderr, "Error: Memory allocation failed for subsystem_indices\n");
+
+    int Ny = lattice->size_y, Nz = lattice->size_z;
+    int total_sites = lattice->size_x * Ny * Nz;
+    int sub_sites   = subsystem_size[0] * subsystem_size[1] * subsystem_size[2];
+
+    /* Initialise RDM to zero */
+    for (int i = 0; i < matrix_size * matrix_size; i++) reduced_density_matrix[i] = 0.0;
+
+    /* Build list of global site indices that belong to subsystem A */
+    int *sub_idx = (int *)malloc((size_t)sub_sites * sizeof(int));
+    if (!sub_idx) {
+        fprintf(stderr, "Error: allocation failed in calculate_reduced_density_matrix\n");
         return;
     }
-    
-    // Calculate global indices for each site in the subsystem
-    int idx = 0;
-    for (int i = 0; i < subsystem_size[0]; i++) {
-        for (int j = 0; j < subsystem_size[1]; j++) {
-            for (int k = 0; k < subsystem_size[2]; k++) {
-                int x = subsystem_coords[0] + i;
-                int y = subsystem_coords[1] + j;
-                int z = subsystem_coords[2] + k;
-                
-                if (x < 0 || x >= lattice->size_x || 
-                    y < 0 || y >= lattice->size_y || 
-                    z < 0 || z >= lattice->size_z) {
-                    continue;  // Skip sites outside the lattice
-                }
-                
-                subsystem_indices[idx++] = x * lattice->size_y * lattice->size_z + 
-                                          y * lattice->size_z + z;
-            }
+    {
+        int k = 0;
+        for (int i = 0; i < subsystem_size[0]; i++)
+        for (int j = 0; j < subsystem_size[1]; j++)
+        for (int l = 0; l < subsystem_size[2]; l++) {
+            int x = subsystem_coords[0]+i, y = subsystem_coords[1]+j, z = subsystem_coords[2]+l;
+            if (x>=0 && x<lattice->size_x && y>=0 && y<Ny && z>=0 && z<Nz)
+                sub_idx[k++] = x*Ny*Nz + y*Nz + z;
         }
+        sub_sites = k;   /* trim to in-bounds count */
     }
-    
-    // Sort the indices to make lookup more efficient
-    for (int i = 0; i < subsystem_sites; i++) {
-        for (int j = i + 1; j < subsystem_sites; j++) {
-            if (subsystem_indices[i] > subsystem_indices[j]) {
-                int temp = subsystem_indices[i];
-                subsystem_indices[i] = subsystem_indices[j];
-                subsystem_indices[j] = temp;
-            }
-        }
-    }
-    
-    // Create a map from global to subsystem indices
-    int *global_to_sub = (int *)malloc(total_sites * sizeof(int));
-    if (!global_to_sub) {
-        fprintf(stderr, "Error: Memory allocation failed for global_to_sub\n");
-        free(subsystem_indices);
+
+    /* Safety: if spins not allocated (test stubs), return maximally mixed */
+    if (!lattice->spins) {
+        for (int i = 0; i < matrix_size; i++)
+            reduced_density_matrix[i * matrix_size + i] = 1.0 / matrix_size;
+        free(sub_idx);
         return;
     }
-    
-    // Initialize all sites as not belonging to the subsystem
-    for (int i = 0; i < total_sites; i++) {
-        global_to_sub[i] = -1;
-    }
-    
-    // Mark subsystem sites with their local index
-    for (int i = 0; i < subsystem_sites; i++) {
-        global_to_sub[subsystem_indices[i]] = i;
-    }
-    
-    // Initialize the reduced density matrix to zero
-    for (int i = 0; i < matrix_size; i++) {
-        for (int j = 0; j < matrix_size; j++) {
-            reduced_density_matrix[i * matrix_size + j] = 0.0;
+
+    if (total_sites <= 20) {
+        /*
+         * Exact Boltzmann enumeration over all 2^N configurations.
+         * beta = 1 (kT = J, matching the existing convention in
+         * calculate_kitaev_matrix_element which uses beta = 1).
+         */
+        const double beta = 1.0;
+        long long full_size = 1LL << total_sites;
+        double Z = 0.0;
+
+        for (long long state = 0; state < full_size; state++) {
+            double E = compute_classical_energy_bitfield(lattice, (unsigned long long)state);
+            double w = exp(-beta * E);
+            Z += w;
+
+            /* Extract subsystem-A configuration as an integer index */
+            int s_A = 0;
+            for (int b = 0; b < sub_sites; b++)
+                if ((state >> sub_idx[b]) & 1LL) s_A |= (1 << b);
+
+            reduced_density_matrix[s_A * matrix_size + s_A] += (double _Complex)w;
         }
-    }
-    
-    // Calculate full system density matrix size
-    int full_size = 1 << total_sites;  // 2^total_sites
-    
-    // We'll use Monte Carlo sampling to make the computation tractable
-    int max_samples = 1000;  // Adjust based on computational resources
-    
-    // Log information about matrix sizes for diagnostics
-    if (full_size > 1000000) {
-        fprintf(stderr, "Info: Full density matrix would be very large: %d x %d\n", full_size, full_size);
-        fprintf(stderr, "Info: Using Monte Carlo sampling with %d samples per matrix element\n", max_samples);
-    }
-    
-    // Instead of allocating the full density matrix (which would be enormous),
-    // calculate elements of the reduced density matrix directly
-    
-    // For each basis state of the subsystem
-    for (int sub_state_i = 0; sub_state_i < matrix_size; sub_state_i++) {
-        for (int sub_state_j = 0; sub_state_j < matrix_size; sub_state_j++) {
-            double _Complex sum = 0.0;
-            
-            // We need to sum over all possible states of the environment
-            // but we'll limit this to a tractable number using importance sampling
-            // Allow early termination if convergence is detected
-            double convergence_threshold = 1e-6;
-            double _Complex prev_sum = 0.0;
-            int min_samples = 50; // Minimum samples to process before checking convergence
-            
-            for (int sample = 0; sample < max_samples; sample++) {
-                // Generate a random environment state - use multiple rand() calls for better coverage
-                unsigned long long env_state = ((unsigned long long)rand() << 32) | rand();
-                
-                // Check for convergence after minimum samples
-                if (sample > min_samples && sample % 10 == 0) {
-                    if (cabs(sum - prev_sum) < convergence_threshold) {
-                        // Early termination - converged
-                        break;
-                    }
-                    prev_sum = sum;
-                }
-                
-                // Construct full system state indices for this environment state
-                unsigned long long full_state_i = 0;
-                unsigned long long full_state_j = 0;
-                
-                // Set bits for subsystem sites based on sub_state_i and sub_state_j
-                for (int bit = 0; bit < subsystem_sites; bit++) {
-                    int global_idx = subsystem_indices[bit];
-                    
-                    // Set bit in full state based on subsystem state
-                    if (sub_state_i & (1 << bit)) {
-                        full_state_i |= (1ULL << global_idx);
-                    }
-                    if (sub_state_j & (1 << bit)) {
-                        full_state_j |= (1ULL << global_idx);
-                    }
-                }
-                
-                // Set bits for environment sites based on env_state
-                for (int global_idx = 0; global_idx < total_sites; global_idx++) {
-                    if (global_to_sub[global_idx] == -1) {  // If site is in the environment
-                        // Use the same environment state for both i and j (tracing out)
-                        if (env_state & (1ULL << (global_idx % 64))) {
-                            full_state_i |= (1ULL << global_idx);
-                            full_state_j |= (1ULL << global_idx);
-                        }
-                    }
-                }
-                
-                // Calculate the contribution to the reduced density matrix element
-                // This uses the full implementation of the Kitaev matrix element calculation
-                double _Complex matrix_element = calculate_kitaev_matrix_element(lattice, full_state_i, full_state_j);
-                sum += matrix_element / max_samples;
-            }
-            
-            reduced_density_matrix[sub_state_i * matrix_size + sub_state_j] = sum;
-        }
-    }
-    
-    // Ensure the density matrix is normalized (trace = 1)
-    double trace = 0.0;
-    for (int i = 0; i < matrix_size; i++) {
-        trace += creal(reduced_density_matrix[i * matrix_size + i]);
-    }
-    
-    if (fabs(trace) > 1e-10) {
-        for (int i = 0; i < matrix_size; i++) {
-            for (int j = 0; j < matrix_size; j++) {
-                reduced_density_matrix[i * matrix_size + j] /= trace;
-            }
-        }
+
+        if (Z > 1e-12)
+            for (int i = 0; i < matrix_size; i++)
+                reduced_density_matrix[i*matrix_size+i] /= (double _Complex)Z;
+        else
+            for (int i = 0; i < matrix_size; i++)
+                reduced_density_matrix[i*matrix_size+i] = 1.0 / matrix_size;
+
     } else {
-        // Fallback to a maximally mixed state if trace is too small
-        for (int i = 0; i < matrix_size; i++) {
-            for (int j = 0; j < matrix_size; j++) {
-                reduced_density_matrix[i * matrix_size + j] = (i == j) ? 1.0 / matrix_size : 0.0;
+        /*
+         * Metropolis MC estimate for N > 20.
+         *
+         * Start from the current lattice spin configuration, perform
+         * N_sweeps * total_sites single-spin Metropolis flips at beta=1,
+         * and accumulate the subsystem-A histogram.
+         */
+        const double beta = 1.0;
+        const int    N_sweeps = 10000;
+
+        /* Copy current spin state into a flat array */
+        int *spins = (int *)malloc((size_t)total_sites * sizeof(int));
+        if (!spins) {
+            free(sub_idx);
+            return;
+        }
+        for (int x = 0; x < lattice->size_x; x++)
+        for (int y = 0; y < Ny; y++)
+        for (int z = 0; z < Nz; z++)
+            spins[x*Ny*Nz + y*Nz + z] = lattice->spins[x][y][z];
+
+        long long *counts = (long long *)calloc((size_t)matrix_size, sizeof(long long));
+        if (!counts) { free(spins); free(sub_idx); return; }
+
+        long long total_samples = (long long)N_sweeps * total_sites;
+
+        for (long long sweep = 0; sweep < total_samples; sweep++) {
+            /* Pick a random site */
+            int site = rand() % total_sites;
+            int x = site / (Ny*Nz), y = (site / Nz) % Ny, z = site % Nz;
+
+            /* Compute local field (sum of coupled neighbours) */
+            double h = 0.0;
+            if (x>0)              h += lattice->jx * spins[(x-1)*Ny*Nz + y*Nz + z];
+            if (x+1<lattice->size_x) h += lattice->jx * spins[(x+1)*Ny*Nz + y*Nz + z];
+            if (y>0)              h += lattice->jy * spins[x*Ny*Nz + (y-1)*Nz + z];
+            if (y+1<Ny)           h += lattice->jy * spins[x*Ny*Nz + (y+1)*Nz + z];
+            if (z>0)              h += lattice->jz * spins[x*Ny*Nz + y*Nz + (z-1)];
+            if (z+1<Nz)           h += lattice->jz * spins[x*Ny*Nz + y*Nz + (z+1)];
+
+            double dE = 2.0 * spins[site] * h;
+            if (dE <= 0.0 || (double)rand()/RAND_MAX < exp(-beta * dE))
+                spins[site] *= -1;
+
+            /* Accumulate after burn-in (first half discarded) */
+            if (sweep >= total_samples / 2) {
+                int s_A = 0;
+                for (int b = 0; b < sub_sites; b++)
+                    if (spins[sub_idx[b]] > 0) s_A |= (1 << b);
+                counts[s_A]++;
             }
         }
+
+        long long n_samples = total_samples / 2;
+        for (int i = 0; i < matrix_size; i++)
+            reduced_density_matrix[i*matrix_size+i] = (n_samples > 0)
+                ? (double _Complex)counts[i] / (double _Complex)n_samples
+                : 1.0 / matrix_size;
+
+        free(spins);
+        free(counts);
     }
-    
-    free(subsystem_indices);
-    free(global_to_sub);
+
+    free(sub_idx);
 }
 
 // Calculate a matrix element of the Kitaev model Hamiltonian
@@ -418,88 +438,65 @@ double calculate_topological_entropy(KitaevLattice *lattice,
                lattice->size_x, lattice->size_y, lattice->size_z);
     }
     
-    // Calculate appropriate entropy for large lattices based on scaling laws
-    // Use a more reasonable threshold for when to switch to the approximation method
+    /*
+     * Large-lattice path: predict TEE from the quantum Kitaev phase diagram.
+     *
+     * The quantum Kitaev honeycomb model (Kitaev 2006, Ann. Phys. 321:2–111)
+     * partitions into three gapless A phases and one gapped B phase, determined
+     * solely by the coupling magnitudes |Jx|, |Jy|, |Jz|:
+     *
+     *   B phase (gapped): triangle inequality holds simultaneously:
+     *     |Jz| < |Jx| + |Jy|,  |Jx| < |Jy| + |Jz|,  |Jy| < |Jx| + |Jz|
+     *
+     *   A phases (gapless): one coupling exceeds the sum of the other two.
+     *
+     * With perturbative time-reversal breaking (hx hy hz ≠ 0), the B phase
+     * acquires Ising anyonic topological order: {1, σ, ψ} with quantum
+     * dimensions {1, √2, 1}, total quantum dimension D = 2, TEE γ = ln(2).
+     * (Kitaev 2006, §10; Kells et al. 2009, Phys. Rev. B 80, 100507.)
+     *
+     * The A phases have γ = 0 (no topological order in the gapless state).
+     *
+     * This prediction uses the quantum model's exact phase diagram applied to
+     * the coupling constants of the classical lattice.  For a direct numerical
+     * measurement of γ, use the NQS Kitaev-Preskill path with an NQS ansatz
+     * (see src/nqs/nqs_lanczos.c: nqs_lanczos_k_lowest_kagome_heisenberg for
+     * the analogous kagome geometry).
+     */
     if (lattice->size_x > 4 || lattice->size_y > 4 || lattice->size_z > 4) {
-        if (getenv("DEBUG_ENTROPY")) {
-            printf("DEBUG: Large lattice detected, using boundary law scaling\n");
-        }
-        
-        // Calculate boundary length first
         partition_regions(lattice, entanglement_data);
-        
-        // Use boundary law scaling for approximate calculation
-        // S = αL - γ where L is boundary length, γ is topological entanglement entropy
-        // and α is a non-universal constant (system-specific)
         double boundary_length = entanglement_data->boundary_length;
-        
-        // Ensure boundary length is at least 2 to avoid log(0) = -inf and to have a meaningful boundary
         if (boundary_length < 2.0) {
-            // Force recalculation of regions to set a proper boundary length
             define_kitaev_preskill_regions(lattice, entanglement_data);
             partition_regions(lattice, entanglement_data);
             boundary_length = entanglement_data->boundary_length;
-            
-            // If still too small, use lattice size as a default approximation
             if (boundary_length < 2.0) {
-                // Set boundary length based on lattice dimensions for a default value
-                boundary_length = MAX(2.0, (lattice->size_x + lattice->size_y + lattice->size_z) / 3.0);
+                boundary_length = MAX(2.0, (lattice->size_x + lattice->size_y
+                                           + lattice->size_z) / 3.0);
                 entanglement_data->boundary_length = boundary_length;
             }
         }
-        
-        double area_law_term = log(boundary_length);
-        
-        if (getenv("DEBUG_ENTROPY")) {
-            printf("DEBUG: Boundary length: %d\n", (int)boundary_length);
-            printf("DEBUG: Area law term: %f\n", area_law_term);
-        }
-        
-        // Estimate TEE based on lattice coupling parameters
-        // Different topological phases have different TEE values
-        double approximate_tee = 0.0;
-        
-        // Check if the system is likely in a topological phase
-        // For Kitaev model, a rough heuristic for Z2 phase: 
-        // |Jx| ~ |Jy| ~ |Jz| and not all have same sign
+
         double abs_jx = fabs(lattice->jx);
         double abs_jy = fabs(lattice->jy);
         double abs_jz = fabs(lattice->jz);
-        
-        double j_avg = (abs_jx + abs_jy + abs_jz) / 3.0;
-        double j_variance = (pow(abs_jx - j_avg, 2) + 
-                           pow(abs_jy - j_avg, 2) + 
-                           pow(abs_jz - j_avg, 2)) / 3.0;
-        
-        bool same_signs = (lattice->jx * lattice->jy > 0) && 
-                          (lattice->jx * lattice->jz > 0);
-                          
-        // Calculate approximate TEE based on model parameters
-        if (j_variance < 0.3 * j_avg && !same_signs) {
-            // Likely Z2 topological order
-            approximate_tee = log(2.0);
-            if (getenv("DEBUG_ENTROPY")) {
-                printf("DEBUG: Parameters suggest Z2 topological order\n");
-                printf("DEBUG: Using calculated TEE value: %f\n", approximate_tee);
-            }
-        } else if (abs_jz < 0.5 * (abs_jx + abs_jy) / 2.0 && abs_jx > 1.5 * abs_jz && abs_jy > 1.5 * abs_jz) {
-            // Parameters suggest non-Abelian phase
-            approximate_tee = 2.0 * log(2.0);
-            if (getenv("DEBUG_ENTROPY")) {
-                printf("DEBUG: Parameters suggest non-Abelian phase\n");
-                printf("DEBUG: Using calculated TEE value: %f\n", approximate_tee);
-            }
-        } else {
-            // Likely trivial or unknown phase
-            approximate_tee = 0.0;
-            if (getenv("DEBUG_ENTROPY")) {
-                printf("DEBUG: Parameters suggest trivial or unknown phase\n");
-                printf("DEBUG: Using calculated TEE value: %f\n", approximate_tee);
-            }
+
+        /* B phase: all three triangle inequalities hold */
+        int in_B_phase = (abs_jz < abs_jx + abs_jy)
+                      && (abs_jx < abs_jy + abs_jz)
+                      && (abs_jy < abs_jx + abs_jz);
+
+        double tee = in_B_phase ? log(2.0) : 0.0;
+
+        if (getenv("DEBUG_ENTROPY")) {
+            printf("DEBUG: Kitaev phase: %s  |Jx|=%.3f |Jy|=%.3f |Jz|=%.3f\n",
+                   in_B_phase ? "B (gapped, Ising anyons)" : "A (gapless)",
+                   abs_jx, abs_jy, abs_jz);
+            printf("DEBUG: Predicted TEE γ = %.6f  (ln2 = %.6f)\n", tee, log(2.0));
         }
-        
-        entanglement_data->gamma = approximate_tee;
-        return approximate_tee;
+
+        entanglement_data->gamma = tee;
+        return tee;
     }
     
     if (getenv("DEBUG_ENTROPY")) {
@@ -1075,24 +1072,63 @@ void calculate_density_matrix(KitaevLattice *lattice, double _Complex *density_m
     free(state_vector);
 }
 
-// Perform partial trace operation
-void partial_trace(double _Complex *full_density_matrix, 
+/*
+ * Partial trace: trace out the environment degrees of freedom from a full
+ * 2^N_total × 2^N_total density matrix, retaining only the subsystem A sites.
+ *
+ * subsystem_sites[b] = global site index of subsystem bit b (0-indexed).
+ * subsystem_size = number of sites in the subsystem (|A|).
+ * full_system_size = total number of sites N_total.
+ *
+ * The result is a 2^|A| × 2^|A| reduced density matrix:
+ *
+ *   ρ_A(s_A, s_A') = Σ_{s_B} ρ(s_A ⊗ s_B, s_A' ⊗ s_B)
+ *
+ * This is O(4^N_total) and is only practical for N_total ≤ ~12.
+ * For larger systems use calculate_reduced_density_matrix directly.
+ */
+void partial_trace(double _Complex *full_density_matrix,
                   double _Complex *reduced_density_matrix,
                   int *subsystem_sites,
                   int subsystem_size,
                   int full_system_size) {
-    (void)full_system_size;  /* reserved for future partial-trace paths */
     if (!full_density_matrix || !reduced_density_matrix || !subsystem_sites) return;
-    
-    // In a proper implementation, this would perform a partial trace
-    // over the degrees of freedom outside the subsystem
-    
-    // For simplicity, we'll just set the reduced density matrix to the identity
-    int reduced_size = 1 << subsystem_size;  // 2^subsystem_size
-    
-    for (int i = 0; i < reduced_size; i++) {
-        for (int j = 0; j < reduced_size; j++) {
-            reduced_density_matrix[i * reduced_size + j] = (i == j) ? 1.0 / reduced_size : 0.0;
+
+    int A_dim    = 1 << subsystem_size;
+    int full_dim = 1 << full_system_size;
+
+    /* Initialise to zero */
+    for (int i = 0; i < A_dim * A_dim; i++) reduced_density_matrix[i] = 0.0;
+
+    /* For each pair of subsystem A basis states (s_A, s_A') */
+    for (int sA_i = 0; sA_i < A_dim; sA_i++) {
+        for (int sA_j = 0; sA_j < A_dim; sA_j++) {
+            double _Complex sum = 0.0;
+
+            /* Sum over all full-system states that agree with sA_i (row) on A sites
+             * and with sA_j (col) on A sites, and match on all B sites */
+            for (int full_i = 0; full_i < full_dim; full_i++) {
+                /* Check that full_i matches sA_i on all subsystem sites */
+                int mismatch = 0;
+                for (int b = 0; b < subsystem_size; b++) {
+                    int bit_i   = (full_i >> subsystem_sites[b]) & 1;
+                    int bit_sA  = (sA_i  >> b)                  & 1;
+                    if (bit_i != bit_sA) { mismatch = 1; break; }
+                }
+                if (mismatch) continue;
+
+                /* Construct full_j: same B-site bits as full_i, A-site bits from sA_j */
+                int full_j = full_i;
+                for (int b = 0; b < subsystem_size; b++) {
+                    int bit_sAj = (sA_j >> b) & 1;
+                    if (bit_sAj) full_j |=  (1 << subsystem_sites[b]);
+                    else         full_j &= ~(1 << subsystem_sites[b]);
+                }
+
+                sum += full_density_matrix[full_i * full_dim + full_j];
+            }
+
+            reduced_density_matrix[sA_i * A_dim + sA_j] = sum;
         }
     }
 }
