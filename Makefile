@@ -2,8 +2,29 @@ CC = gcc
 # -Wall -Wextra is the default warning baseline. Additional strictness
 # (-Wpedantic, -Wshadow, -Wconversion) can be layered on for targeted
 # hardening runs via `make CFLAGS_EXTRA='-Wshadow -Wconversion' test`.
-CFLAGS_COMMON = -Wall -Wextra -std=c11 -Iinclude $(CFLAGS_EXTRA)
+#
+# -D_GNU_SOURCE exposes M_PI and friends via glibc's <math.h>. macOS's
+# libc ships them under its default feature-test macros, but glibc
+# with -std=c11 (strict ISO) hides them unless _GNU_SOURCE (or
+# _DEFAULT_SOURCE / _XOPEN_SOURCE=600) is set. Using _GNU_SOURCE here
+# keeps the same code compiling on both platforms without per-file
+# guards.
+CFLAGS_COMMON = -Wall -Wextra -std=c11 -D_GNU_SOURCE -Iinclude $(CFLAGS_EXTRA)
 LDFLAGS = -lm
+
+# Host architecture detection. Targets that unconditionally used
+# `-march=armv8-a+simd` (topo_example, arm, arm_testing) broke on
+# x86_64 CI runners. The topo_example target now picks an arch-
+# appropriate flag; the explicitly-named `arm*` targets still force
+# ARM and are guarded by being renamed / skipped on non-ARM hosts.
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_M),arm64)
+  ARCH_NEON_FLAGS := -DUSE_NEON -march=armv8-a+simd
+else ifeq ($(UNAME_M),aarch64)
+  ARCH_NEON_FLAGS := -DUSE_NEON -march=armv8-a+simd
+else
+  ARCH_NEON_FLAGS := -DDISABLE_NEON
+endif
 
 # Local build output directory
 BIN_DIR = build
@@ -145,9 +166,11 @@ sdl_check:
 	    echo "      'port install libsdl2') or install pkg-config."; \
 	fi
 
-# Build topo example
+# Build topo example. On ARM64 hosts this picks up NEON via
+# ARCH_NEON_FLAGS; on x86_64 it falls back to the disable-NEON
+# path so the target builds cleanly on every CI runner.
 topo_example: src/topological_example.c $(BIN_DIR)
-	$(CC) $(CFLAGS_COMMON) -O2 -DUSE_NEON -march=armv8-a+simd -o $(BIN_DIR)/topo_example src/topological_example.c src/kitaev_model.c $(QUANTUM_SRCS) $(LDFLAGS)
+	$(CC) $(CFLAGS_COMMON) -O2 $(ARCH_NEON_FLAGS) -o $(BIN_DIR)/topo_example src/topological_example.c src/kitaev_model.c $(QUANTUM_SRCS) $(LDFLAGS)
 
 # Build visualization
 visualization: src/visualization.c src/visualization_main.c $(BIN_DIR)

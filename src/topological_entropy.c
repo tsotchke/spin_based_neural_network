@@ -600,18 +600,22 @@ double calculate_topological_entropy(KitaevLattice *lattice,
         printf("  Region C: (%d,%d,%d) size %d×%d×%d\n", C_x, C_y, C_z, C_width, C_height, C_depth);
     }
     
+    /* Pack per-region coords/sizes into proper 3-element arrays.
+     * The previous implementation passed `&A_x` / `&A_width` and
+     * relied on adjacent local-variable layout — undefined behaviour
+     * that gcc 12+ flags with -Wstringop-overflow. Arrays are built
+     * explicitly so the callee sees a valid int[3]. */
+    int A_coords[3] = { A_x, A_y, A_z };
+    int A_size[3]   = { A_width, A_height, A_depth };
+    int B_coords[3] = { B_x, B_y, B_z };
+    int B_size[3]   = { B_width, B_height, B_depth };
+    int C_coords[3] = { C_x, C_y, C_z };
+    int C_size[3]   = { C_width, C_height, C_depth };
+
     // Calculate single region entropies - allow negative values
-    double S_A = calculate_von_neumann_entropy(lattice, 
-                                              &A_x, 
-                                              &A_width);
-    
-    double S_B = calculate_von_neumann_entropy(lattice, 
-                                              &B_x, 
-                                              &B_width);
-    
-    double S_C = calculate_von_neumann_entropy(lattice, 
-                                              &C_x, 
-                                              &C_width);
+    double S_A = calculate_von_neumann_entropy(lattice, A_coords, A_size);
+    double S_B = calculate_von_neumann_entropy(lattice, B_coords, B_size);
+    double S_C = calculate_von_neumann_entropy(lattice, C_coords, C_size);
     
     // Calculate combined region AB (top row of the clover-leaf)
     int AB[6]; // [x_start, y_start, z_start, x_size, y_size, z_size]

@@ -11,12 +11,16 @@
 #include <math.h>
 #include <complex.h>
 
-static int _tests_run = 0;
-static int _tests_passed = 0;
-static int _tests_failed = 0;
-static int _current_test_ok = 1;
-static const char *_current_test_name = "";
-static int _tests_skipped = 0;
+/* Per-translation-unit harness state. The __attribute__((unused))
+ * keeps -Wunused-variable quiet under strict builds even when a
+ * test file doesn't touch every counter (e.g. files that don't
+ * use SKIP_SUITE silently warn on glibc's gcc). */
+static int _tests_run __attribute__((unused)) = 0;
+static int _tests_passed __attribute__((unused)) = 0;
+static int _tests_failed __attribute__((unused)) = 0;
+static int _current_test_ok __attribute__((unused)) = 1;
+static const char *_current_test_name __attribute__((unused)) = "";
+static int _tests_skipped __attribute__((unused)) = 0;
 
 #define TEST_RUN(fn) do {                                                 \
     _current_test_ok = 1;                                                 \
