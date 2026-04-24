@@ -59,6 +59,31 @@ with an independently-derived 2×2 PBC bond-list cross-check), and
 end-to-end SR convergence tests in `tests/test_nqs_holomorphic_sr.c`
 (2 complex-RBM + 1 real-MLP paths).
 
+The v0.4.1 follow-up also ships three sample-based diagnostics and
+an exact-reference solver for the kagome ground-state question:
+
+- `tests/test_nqs_chi_F.c` (6 cases) — χ_F finiteness +
+  non-negativity on complex-RBM and legacy-MLP ansätze, bad-args
+  rejection, Monte-Carlo consistency across batch sizes, per-bond-
+  class phase probe output, and a rejection check for the kagome-
+  only bond-phase helper on non-kagome Hamiltonians.
+- `tests/test_nqs_excited.c` (4 cases) — excited-state SR via the
+  Choo–Neupert–Carleo orthogonal-ansatz penalty. μ=0 equivalence
+  with holomorphic SR, null-reference rejection, 2-site Heisenberg
+  triplet recovery to four decimal places, and a 60-iter kagome
+  N=12 smoke exercising the multi-sublattice kernel.
+- `tests/test_nqs_lanczos.c` gains
+  `test_kagome_lanczos_k_lowest_gives_exact_gap`: k-Ritz
+  extraction must return ascending eigenvalues whose smallest
+  matches the rank-1 refine to 10⁻⁸ and whose gap is positive
+  (regression guard for a sort-order bug).
+
+Research driver (NOT part of `make test`):
+`make research_kagome_N12_diagnostics` chains GS SR → χ_F →
+per-bond-class phase → excited-state SR → Lanczos-exact E₀/E₁/gap
+in one run; takes O(20 min) on an M-series Mac and emits a self-
+contained TAP-style report for longitudinal comparison.
+
 | Suite | Tests | Covers | Notes |
 |---|---|---|---|
 | `test_majorana` | 13 | `src/majorana_modes.c` | Hilbert-space braiding (`B⁴=-I`, `B⁸=I`), anticommutation, parity, legacy braid, zero-modes detection, chain-to-lattice mapping |

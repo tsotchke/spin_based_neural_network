@@ -25,6 +25,28 @@ With the recent implementation of topological quantum features based on Majorana
 > `LIBIRREP_MIN` bumped to 1.3.0-alpha for the incoming p6mm +
 > batched-RDM primitives. Full suite 343 / 343, AddressSanitizer +
 > UndefinedBehaviorSanitizer clean.
+>
+> **v0.4.1 follow-up (kagome diagnostics pipeline).** Three new
+> sample-based diagnostics and a spin-gap solver land on top of the
+> kagome kernel:
+> - `nqs_compute_chi_F` — Tr(S)/2 of the quantum geometric tensor,
+>   the fidelity-susceptibility convergence / transition probe.
+> - `nqs_compute_kagome_bond_phase` — per-bond-class ⟨ψ(s_{ij})/ψ(s)⟩
+>   for Marshall-like vs Dirac-compatible phase structure.
+> - `nqs_sr_{step,run}_excited` — excited-state VMC via the Choo–
+>   Neupert–Carleo 2018 orthogonal-ansatz penalty; validated to
+>   4-decimal agreement with the exact triplet on 2-site Heisenberg.
+> - `nqs_lanczos_k_lowest_kagome_heisenberg` — multi-Ritz Lanczos on
+>   the full 2^N Hilbert space (dim=4096 at N=12). On our 2×2 PBC
+>   cluster: E₀ = **−5.44487522 J**, E₁ = −5.32839240 J, exact
+>   spin gap **Δ = 0.116483 J**. Anchors every VMC energy estimate
+>   against a machine-precision reference and gives the 5-diagnostic
+>   protocol's spin-gap probe exact targets at N=12, 18, 24.
+>
+> End-to-end driver: `make research_kagome_N12_diagnostics` chains
+> GS SR → χ_F → bond-phase → excited-SR → Lanczos-exact E₀/E₁/gap
+> in one research artefact. See
+> [docs/research/kagome_KH_plan.md](docs/research/kagome_KH_plan.md).
 
 ## Project Highlights
 - **Quantum Physics and Machine Learning**: Leverage spin-based neural networks to simulate and learn from quantum systems.

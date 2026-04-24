@@ -82,7 +82,8 @@ FOUNDATION_SRCS = src/nn_backend.c src/eshkol_bridge.c
 # sources regardless of which pillar section they land in below.
 NQS_SRCS  = src/nqs/nqs_sampler.c src/nqs/nqs_gradient.c \
             src/nqs/nqs_ansatz.c  src/nqs/nqs_optimizer.c \
-            src/nqs/nqs_marshall.c src/nqs/nqs_translation.c
+            src/nqs/nqs_marshall.c src/nqs/nqs_translation.c \
+            src/nqs/nqs_diagnostics.c
 MPS_SRCS  = src/mps/lanczos.c src/mps/mps.c src/mps/svd.c src/mps/dmrg.c src/mps/tebd.c
 LLG_SRCS  = src/llg/llg.c src/llg/exchange_field.c src/llg/demag.c
 QEC_SRCS  = src/qec_decoder/qec_decoder.c
@@ -307,6 +308,29 @@ test_nqs_kagome: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_kagome \
 	    tests/test_nqs_kagome.c $(NQS_SRCS) $(LDFLAGS)
 
+test_nqs_chi_F: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_chi_F \
+	    tests/test_nqs_chi_F.c $(NQS_SRCS) $(LDFLAGS)
+
+test_nqs_excited: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_excited \
+	    tests/test_nqs_excited.c $(NQS_SRCS) $(LDFLAGS)
+
+# Research-scale convergence runner for the kagome Heisenberg S=1/2
+# open ground-state question. Takes minutes, NOT wired into `make test`.
+# Run manually: `make research_kagome_N12 && ./build/research_kagome_N12`.
+research_kagome_N12: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/research_kagome_N12 \
+	    scripts/research_kagome_N12_convergence.c $(NQS_SRCS) $(LDFLAGS)
+
+# End-to-end diagnostics driver: GS SR → χ_F → per-bond-class phase →
+# excited-state SR → spin-gap estimate, all on the same N=12 PBC kagome
+# cluster. O(10 min) on an M-series Mac. NOT wired into `make test`.
+research_kagome_N12_diagnostics: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/research_kagome_N12_diagnostics \
+	    scripts/research_kagome_N12_diagnostics.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
+
 test_nqs_translation: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_translation \
 	    tests/test_nqs_translation.c $(NQS_SRCS) $(LDFLAGS)
@@ -461,7 +485,8 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
       test_matrix_neon test_nqs test_libirrep_bridge \
       test_nqs_convergence test_nqs_rbm test_nqs_complex_rbm test_nqs_holomorphic_sr \
       test_nqs_kitaev test_nqs_lanczos test_nqs_marshall test_nqs_translation \
-      test_nqs_tvmc test_nqs_xxz test_nqs_kagome test_hopfield test_rbm_cd \
+      test_nqs_tvmc test_nqs_xxz test_nqs_kagome test_nqs_chi_F test_nqs_excited \
+      test_hopfield test_rbm_cd \
       test_torque_net test_torque_net_llg test_torque_net_golden \
       test_torque_net_heisenberg_fit \
       test_siren \
@@ -497,6 +522,8 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
 	@$(BIN_DIR)/test_nqs_holomorphic_sr
 	@$(BIN_DIR)/test_nqs_kitaev
 	@$(BIN_DIR)/test_nqs_kagome
+	@$(BIN_DIR)/test_nqs_chi_F
+	@$(BIN_DIR)/test_nqs_excited
 	@$(BIN_DIR)/test_nqs_lanczos
 	@$(BIN_DIR)/test_nqs_marshall
 	@$(BIN_DIR)/test_nqs_translation

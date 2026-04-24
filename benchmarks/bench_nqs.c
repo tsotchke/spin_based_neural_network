@@ -37,6 +37,84 @@ static double sampler_throughput(int L, int samples) {
     return (double)samples / dt;
 }
 
+/* Sampler throughput on a Hamiltonian-specific site layout (kagome has
+ * 3 sublattices per unit cell; every other kernel is single-site). */
+static double sampler_throughput_ham(int size_x, int size_y,
+                                      nqs_hamiltonian_kind_t ham, int samples) {
+    int N = (ham == NQS_HAM_KAGOME_HEISENBERG)
+            ? 3 * size_x * size_y
+            : size_x * size_y;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz           = NQS_ANSATZ_COMPLEX_RBM;
+    cfg.hamiltonian      = ham;
+    cfg.kh_K             = 1.0;
+    cfg.kh_J             = 1.0;
+    cfg.j_coupling       = 1.0;
+    cfg.kagome_pbc       = 1;
+    cfg.num_samples      = samples;
+    cfg.num_thermalize   = 128;
+    cfg.num_decorrelate  = 1;
+    cfg.rbm_hidden_units = 8;
+
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    nqs_sampler_t *s = nqs_sampler_create(N, &cfg, nqs_ansatz_log_amp, a);
+    nqs_sampler_thermalize(s);
+
+    int *buf = malloc((size_t)samples * (size_t)N * sizeof(int));
+    double t0 = bench_now_seconds();
+    nqs_sampler_batch(s, samples, buf);
+    double dt = bench_now_seconds() - t0;
+    free(buf);
+
+    nqs_sampler_free(s);
+    nqs_ansatz_free(a);
+    return (double)samples / dt;
+}
+
+/* Full holomorphic-SR step throughput on a Hamiltonian-specific
+ * cluster. Exercises sampler → local-energy → gradients → QGT CG →
+ * update. The complex-RBM is narrower than in a research run, but the
+ * relative wall-cost across Hamiltonians is what the bench reports. */
+static double sr_holomorphic_step_throughput_ham(int size_x, int size_y,
+                                                  nqs_hamiltonian_kind_t ham,
+                                                  int samples_per_step,
+                                                  int steps) {
+    int N = (ham == NQS_HAM_KAGOME_HEISENBERG)
+            ? 3 * size_x * size_y
+            : size_x * size_y;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz           = NQS_ANSATZ_COMPLEX_RBM;
+    cfg.hamiltonian      = ham;
+    cfg.kh_K             = 1.0;
+    cfg.kh_J             = 1.0;
+    cfg.j_coupling       = 1.0;
+    cfg.kagome_pbc       = 1;
+    cfg.num_samples      = samples_per_step;
+    cfg.num_thermalize   = 128;
+    cfg.num_decorrelate  = 1;
+    cfg.rbm_hidden_units = 8;
+    cfg.learning_rate    = 1e-3;
+    cfg.sr_diag_shift    = 1e-2;
+    cfg.sr_cg_max_iters  = 20;
+    cfg.sr_cg_tol        = 1e-7;
+
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    nqs_sampler_t *s = nqs_sampler_create(N, &cfg, nqs_ansatz_log_amp, a);
+    nqs_sampler_thermalize(s);
+
+    double t0 = bench_now_seconds();
+    for (int i = 0; i < steps; i++) {
+        nqs_sr_step_info_t info;
+        nqs_sr_step_holomorphic(&cfg, size_x, size_y, a, s,
+                                  nqs_ansatz_log_amp, a, &info);
+    }
+    double dt = bench_now_seconds() - t0;
+
+    nqs_sampler_free(s);
+    nqs_ansatz_free(a);
+    return (double)steps / dt;
+}
+
 static double sr_step_throughput(int L, int samples_per_step, int steps) {
     int N = L * L;
     nqs_config_t cfg = nqs_config_defaults();
@@ -156,6 +234,47 @@ int main(void) {
         bench_emit_metric(&em, "local_energy_per_second", sps);
         bench_emit_end(&em);
         printf("nqs %s: %.1f eval/sec\n", ker[i].name, sps);
+    }
+
+    /* Sampler + full-SR-step throughput for the KH / kagome kernels.
+     * Together with the local-energy rows above, gives one record per
+     * major pipeline stage so per-Hamiltonian drift across releases is
+     * visible in `benchmarks/results/`. */
+    struct { const char *name; int Lx; int Ly; nqs_hamiltonian_kind_t ham; int samples; } samp_ker[] = {
+        { "kh_sampler_2x2",     2, 2, NQS_HAM_KITAEV_HEISENBERG, 4096 },
+        { "kagome_sampler_2x2", 2, 2, NQS_HAM_KAGOME_HEISENBERG, 2048 },
+    };
+    for (size_t i = 0; i < sizeof(samp_ker) / sizeof(samp_ker[0]); i++) {
+        double sps = sampler_throughput_ham(samp_ker[i].Lx, samp_ker[i].Ly,
+                                              samp_ker[i].ham, samp_ker[i].samples);
+        bench_emitter_t em;
+        bench_emit_begin(&em, "nqs", samp_ker[i].name);
+        bench_emit_int(&em, "Lx", samp_ker[i].Lx);
+        bench_emit_int(&em, "Ly", samp_ker[i].Ly);
+        bench_emit_int(&em, "samples", samp_ker[i].samples);
+        bench_emit_metric(&em, "samples_per_second", sps);
+        bench_emit_end(&em);
+        printf("nqs %s: %.1f samples/sec\n", samp_ker[i].name, sps);
+    }
+
+    struct { const char *name; int Lx; int Ly; nqs_hamiltonian_kind_t ham;
+             int samples; int steps; } sr_ker[] = {
+        { "kh_sr_holomorphic_2x2",     2, 2, NQS_HAM_KITAEV_HEISENBERG, 256, 10 },
+        { "kagome_sr_holomorphic_2x2", 2, 2, NQS_HAM_KAGOME_HEISENBERG, 256, 10 },
+    };
+    for (size_t i = 0; i < sizeof(sr_ker) / sizeof(sr_ker[0]); i++) {
+        double sps = sr_holomorphic_step_throughput_ham(
+            sr_ker[i].Lx, sr_ker[i].Ly, sr_ker[i].ham,
+            sr_ker[i].samples, sr_ker[i].steps);
+        bench_emitter_t em;
+        bench_emit_begin(&em, "nqs", sr_ker[i].name);
+        bench_emit_int(&em, "Lx", sr_ker[i].Lx);
+        bench_emit_int(&em, "Ly", sr_ker[i].Ly);
+        bench_emit_int(&em, "samples_per_step", sr_ker[i].samples);
+        bench_emit_int(&em, "steps_run", sr_ker[i].steps);
+        bench_emit_metric(&em, "sr_steps_per_second", sps);
+        bench_emit_end(&em);
+        printf("nqs %s: %.2f steps/sec\n", sr_ker[i].name, sps);
     }
     return 0;
 }

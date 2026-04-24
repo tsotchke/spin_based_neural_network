@@ -287,6 +287,116 @@ double trace[cfg.num_iterations];
 nqs_sr_run(&cfg, Lx, Ly, ansatz, sampler, trace);
 ```
 
+## 6.5. Sample-based diagnostics
+
+`include/nqs/nqs_diagnostics.h` ships two observers on a trained
+wavefunction. Both consume a freshly sampled batch from the sampler
+and return scalars; neither ever mutates the ansatz.
+
+### χ_F — fidelity susceptibility / Tr(S)
+
+```c
+double trace_S, per_param;
+nqs_compute_chi_F(&cfg, Lx, Ly, ansatz, sampler, &trace_S, &per_param);
+double chi_F = 0.5 * trace_S;  /* Zanardi-Paunković 2006 convention */
+```
+
+Returns the trace of the quantum geometric tensor
+
+    S_{k,l} = ⟨O_k* O_l⟩_{|ψ|²} − ⟨O_k*⟩⟨O_l⟩,
+    Tr(S)  = Σ_k ( ⟨|O_k|²⟩ − |⟨O_k⟩|² )
+
+where O_k = ∂ log ψ / ∂θ_k. The helper uses
+`nqs_ansatz_logpsi_gradient_complex` so both real and
+complex-amplitude ansätze are supported transparently (real ansätze
+fill the imaginary component with zeros).
+
+Primary use: convergence diagnostic and, on symmetry-projected
+runs, a scalar-curvature replacement for the falsified
+scalar-curvature QPT detector.
+
+### Per-bond-class amplitude ratio (kagome)
+
+```c
+double r_re[3], r_im[3]; long cnt[3];
+nqs_compute_kagome_bond_phase(&cfg, Lx, Ly, ansatz, sampler,
+                                r_re, r_im, cnt);
+```
+
+For each opposite-spin bond (i,j) of class α ∈ {A-B, A-C, B-C}
+encountered in a sampled configuration s, accumulates the complex
+amplitude ratio `r_{ij}(s) = ψ(s_{ij})/ψ(s)` (with s_{ij} = s with
+spins i,j flipped). Normalising per class gives the per-sublattice-
+pair circular mean. |⟨r⟩| ≈ 1 with arg ≈ π across all classes ⇒
+Marshall-like bipartite sign structure; mixed phases with reduced
+magnitudes ⇒ frustrated / Dirac-compatible behaviour. Kagome-
+specific; returns an error on other Hamiltonians.
+
+## 6.6. Excited-state SR (orthogonal-ansatz penalty)
+
+`nqs_sr_{step,run}_excited` in `include/nqs/nqs_optimizer.h`
+implements the Choo-Neupert-Carleo 2018 excited-state VMC recipe:
+
+    L[ψ]  =  ⟨H⟩  +  μ |⟨r⟩|²     where r(s) = ψ_ref(s)/ψ(s)
+
+Given a frozen reference wavefunction `ψ_ref` (typically a converged
+ground-state ansatz, passed via `ref_log_amp_fn / ref_log_amp_user`)
+and a penalty strength `μ`, the trainer augments the holomorphic-SR
+local energy by ΔE_loc(s) = μ · r(s) · conj(⟨r⟩_batch) and otherwise
+uses the same natural-gradient path as `nqs_sr_step_holomorphic`.
+`out_info->mean_energy` reports the *physical* ⟨H⟩, not the
+augmented loss — the penalty appears only as a gradient pressure.
+
+Validated on 2-site Heisenberg (exact E₀ = -0.75, E₁ = +0.25):
+reference cRBM converges to E_ref = -0.7528, excited run with
+μ = 5 reaches E = +0.2498 — 4-decimal agreement with the exact
+triplet. See `tests/test_nqs_excited.c`.
+
+Combined with the diagnostics above, the excited-state gap is the
+last missing piece for the spin-gap probe in the 5-diagnostic
+protocol (see `docs/research/kagome_KH_plan.md`).
+
+## 6.7. Lanczos post-processing (exact reference)
+
+`include/nqs/nqs_lanczos.h` ships three families of refinement helpers
+that turn a trained NQS into an exact reference on small Hilbert
+spaces (dim = 2^N for N ≤ 24). The physics payload is the same in
+every variant:
+
+    (1) Materialise ψ(s) = exp(log ψ(s)) for every basis state s ∈
+        {0 .. 2^N − 1} using the ansatz's `log_amp` callback.
+    (2) Build the Hamiltonian matvec H·v — no matrix is materialised,
+        only a per-bond sparse scan matching the VMC local-energy
+        kernel by construction.
+    (3) Run matrix-free Lanczos with full reorthogonalisation, seeded
+        from Re(ψ) of the trained state. Krylov subspace built on top
+        of a good variational seed converges in O(tens) of iterations.
+
+### Hamiltonians shipped
+
+| Function                                   | Hamiltonian                      | Geometry            |
+|--------------------------------------------|----------------------------------|---------------------|
+| `nqs_lanczos_refine_tfim`                  | −J ΣσᶻσZ − Γ Σσˣ                 | L×L OBC square      |
+| `nqs_lanczos_refine_heisenberg`            | J Σ S·S (XXZ anisotropy `Jz`)    | L×L OBC square      |
+| `nqs_lanczos_refine_kagome_heisenberg`     | J Σ S·S on kagome up+down bonds  | Lx×Ly cells, 3 per cell, PBC or OBC |
+
+### Multi-Ritz (spin gap from a single Lanczos run)
+
+`nqs_lanczos_k_lowest_kagome_heisenberg` returns the k smallest Ritz
+values from a single Krylov pass. The spin gap drops out as
+`out_eigenvalues[1] - out_eigenvalues[0]` once both have converged.
+For the N=12 PBC kagome cluster in this repo:
+
+- E₀ = **−5.44487522 J** (4-decimal exact vs the rank-1 refine)
+- E₁ = −5.32839240 J
+- E₂ = −5.29823654 J
+- **spin gap Δ = 0.116483 J**
+
+The same machinery extrapolates to N=18 (dim=2¹⁸) and N=24 (dim=2²⁴,
+fits in ~128 MB) without code changes — just pass `Lx_cells × Ly_cells
+× 3 = N`. That's the N-schedule anchor the kagome Z₂ vs Dirac probe
+needs (see `docs/research/kagome_KH_plan.md` item 6).
+
 ## 7. Tests
 
 `tests/test_nqs.c` (14 tests):
@@ -304,6 +414,23 @@ nqs_sr_run(&cfg, Lx, Ly, ansatz, sampler, trace);
 - SR run populates an energy trace without numerical failures.
 
 Run `make test_nqs && ./build/test_nqs`.
+
+`tests/test_nqs_chi_F.c` (6 tests): χ_F helper finiteness and
+non-negativity on TFIM complex-RBM, legacy-MLP real-path parity,
+bad-args rejection, MC consistency across two batch sizes, and the
+kagome bond-phase probe (with per-class output + a rejection test
+for non-kagome Hamiltonians).
+
+`tests/test_nqs_excited.c` (4 tests): μ = 0 equivalence with
+holomorphic SR, null-reference rejection, decisive energy-gap
+recovery on 2-site Heisenberg (reaches the exact triplet E₁ to
+four decimal places), and a 60-iter kagome N=12 smoke through the
+multi-sublattice kernel.
+
+End-to-end research driver: `make research_kagome_N12_diagnostics`
+chains GS SR → χ_F → per-bond-class phase → excited-state SR on
+one N=12 PBC kagome cluster. Not part of `make test`; O(10 min)
+on an M-series Mac.
 
 ## 8. Benchmarks
 
