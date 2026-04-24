@@ -70,11 +70,58 @@ int nqs_lanczos_refine_heisenberg(nqs_ansatz_t *a, int Lx, int Ly,
                                    double *out_eigenvector,
                                    lanczos_result_t *out_result);
 
+/* Kagome Heisenberg S=½ on a (Lx_cells × Ly_cells) cluster with three
+ * sublattices per unit cell (N = 3·Lx_cells·Ly_cells sites, 24 bonds
+ * at the 2×2 PBC point).
+ *
+ *   H = J Σ_<ij> S_i · S_j
+ *
+ * Off-diagonal (S^+S^-/S^-S^+) matrix elements are real, so even for
+ * complex-amplitude ansätze (e.g. the cRBM trained by holomorphic SR)
+ * the Hermitian H decouples into two independent real eigenproblems
+ * on Re(ψ) and Im(ψ) with the same spectrum. The Lanczos refiner
+ * therefore seeds from Re(ψ) = |ψ|·cos(arg ψ) — this picks up the
+ * Marshall-like sign structure observed on trained kagome cRBMs (see
+ * `nqs_compute_kagome_bond_phase`). */
+int nqs_exact_energy_kagome_heisenberg(nqs_ansatz_t *a,
+                                        int Lx_cells, int Ly_cells,
+                                        double J, int pbc,
+                                        double *out_energy);
+
+int nqs_lanczos_refine_kagome_heisenberg(nqs_ansatz_t *a,
+                                          int Lx_cells, int Ly_cells,
+                                          double J, int pbc,
+                                          int max_iters, double tol,
+                                          double *out_eigenvalue,
+                                          double *out_eigenvector,
+                                          lanczos_result_t *out_result);
+
+/* k-lowest-eigenvalue variant for kagome Heisenberg. Returns the k
+ * smallest Ritz values of H seeded from the trained ansatz's Re(ψ).
+ * The gap E_1 − E_0 lands naturally in `out_eigenvalues[1] -
+ * out_eigenvalues[0]` once both have converged. */
+int nqs_lanczos_k_lowest_kagome_heisenberg(nqs_ansatz_t *a,
+                                            int Lx_cells, int Ly_cells,
+                                            double J, int pbc,
+                                            int max_iters, int k,
+                                            double *out_eigenvalues,
+                                            lanczos_result_t *out_result);
+
 /* Variant of nqs_materialise_state that takes an explicit log_amp
  * callback (so Marshall / translation wrappers feed in). */
 int nqs_materialise_state_with_cb(nqs_log_amp_fn_t log_amp, void *user,
                                    int Lx, int Ly,
                                    double **out_psi, long *out_dim);
+
+/* Variant of nqs_materialise_state_with_cb for lattices whose site
+ * count is not size_x · size_y (kagome has 3 sublattices per cell, so
+ * N = 3·Lx·Ly). Required for kagome Lanczos refinement of the
+ * complex-RBM trained by the holomorphic SR + kagome Heisenberg
+ * kernel. Real-valued output: stores Re(ψ) = |ψ|·cos(arg ψ), which
+ * is the Marshall-aligned seed for the subsequent Krylov iteration. */
+int nqs_materialise_state_with_cb_N(nqs_log_amp_fn_t log_amp, void *user,
+                                     int N,
+                                     double **out_psi, long *out_dim);
 
 #ifdef __cplusplus
 }

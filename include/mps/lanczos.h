@@ -70,6 +70,30 @@ int lanczos_smallest_with_init(lanczos_matvec_fn_t matvec, void *user_data,
                                 double *out_eigenvector,
                                 lanczos_result_t *out);
 
+/* Multi-eigenvalue variant — extract the k smallest Ritz values after
+ * running a full Krylov subspace of dimension max_iters. The rank-1
+ * residual-norm early exit is disabled here because convergence of
+ * *all* k smallest eigenvalues (particularly the gap E_1 − E_0) needs
+ * a larger basis than convergence of just E_0.
+ *
+ *   initial_vector  — seed (may be NULL)
+ *   k               — number of smallest eigenvalues to extract
+ *   out_eigenvalues — caller-owned length-k array, filled in
+ *                     ascending order on success
+ *   out             — summary (iterations = Krylov dim actually built;
+ *                     eigenvalue / residual_norm refer to the smallest
+ *                     Ritz value and its bound)
+ *
+ * For gap estimation on small Hilbert spaces (dim ≤ 10⁴) set
+ * max_iters = min(dim, 200) and k = 2–5. Returns 0 on success. */
+int lanczos_k_smallest_with_init(lanczos_matvec_fn_t matvec, void *user_data,
+                                  long dim,
+                                  int max_iters,
+                                  const double *initial_vector,
+                                  int k,
+                                  double *out_eigenvalues,
+                                  lanczos_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

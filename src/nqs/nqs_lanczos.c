@@ -62,6 +62,47 @@ int nqs_materialise_state(nqs_ansatz_t *a, int Lx, int Ly,
                                           out_psi, out_dim);
 }
 
+/* Same as nqs_materialise_state_with_cb but takes an explicit site
+ * count. Lets kagome (N = 3·Lx·Ly, i.e. not size_x·size_y) reuse the
+ * materialisation path. Mirrors the cb variant above verbatim with
+ * only the N = Lx·Ly line replaced. */
+int nqs_materialise_state_with_cb_N(nqs_log_amp_fn_t log_amp, void *user,
+                                     int N,
+                                     double **out_psi, long *out_dim) {
+    if (!log_amp || !out_psi || !out_dim || N <= 0 || N > 24) return -1;
+    long dim = 1L << N;
+    double *psi = malloc((size_t)dim * sizeof(double));
+    if (!psi) return -1;
+    int *spins = malloc((size_t)N * sizeof(int));
+    if (!spins) { free(psi); return -1; }
+    double lp_max = -INFINITY;
+    double *lp      = malloc((size_t)dim * sizeof(double));
+    double *arg_arr = malloc((size_t)dim * sizeof(double));
+    if (!lp || !arg_arr) { free(psi); free(spins); free(lp); free(arg_arr); return -1; }
+    for (long s = 0; s < dim; s++) {
+        state_to_spins(s, N, spins);
+        double lp_s, arg_s;
+        log_amp(spins, N, user, &lp_s, &arg_s);
+        lp[s]      = lp_s;
+        arg_arr[s] = arg_s;
+        if (lp_s > lp_max) lp_max = lp_s;
+    }
+    double norm2 = 0.0;
+    for (long s = 0; s < dim; s++) {
+        /* Store Re(ψ) = |ψ|·cos(arg ψ). For the Hermitian Heisenberg
+         * Hamiltonian the GS is real up to a global phase, so cos is
+         * the right projection for the Lanczos seed. */
+        psi[s] = cos(arg_arr[s]) * exp(lp[s] - lp_max);
+        norm2 += psi[s] * psi[s];
+    }
+    double inv = norm2 > 0 ? 1.0 / sqrt(norm2) : 1.0;
+    for (long s = 0; s < dim; s++) psi[s] *= inv;
+    free(lp); free(arg_arr); free(spins);
+    *out_psi = psi;
+    *out_dim = dim;
+    return 0;
+}
+
 /* Build the dense TFIM Hamiltonian matrix in the computational basis.
  *   H = -J Σ_<ij> σ^z_i σ^z_j - Γ Σ_i σ^x_i
  * with open boundary conditions on an (Lx × Ly) lattice. */
@@ -220,9 +261,194 @@ int nqs_lanczos_refine_heisenberg(nqs_ansatz_t *a, int Lx, int Ly,
     if (!a || !out_eigenvalue) return -1;
     heis_ctx_t ctx = { .Lx = Lx, .Ly = Ly, .N = Lx * Ly, .J = J, .Jz = Jz };
     long dim = 1L << ctx.N;
-    int rc = lanczos_smallest(heis_matvec, &ctx, dim,
-                               max_iters, tol,
-                               out_eigenvector, out_result);
+    double *psi_seed = NULL; long pdim = 0;
+    int rc_seed = nqs_materialise_state(a, Lx, Ly, &psi_seed, &pdim);
+    int rc = (rc_seed == 0 && pdim == dim)
+        ? lanczos_smallest_with_init(heis_matvec, &ctx, dim,
+                                       max_iters, tol,
+                                       psi_seed, out_eigenvector, out_result)
+        : lanczos_smallest(heis_matvec, &ctx, dim,
+                             max_iters, tol,
+                             out_eigenvector, out_result);
+    free(psi_seed);
     if (rc == 0 && out_result) *out_eigenvalue = out_result->eigenvalue;
+    return rc;
+}
+
+/* ===== Kagome Heisenberg =================================================
+ *
+ *   H = J Σ_<ij> S_i · S_j
+ *
+ * Bonds follow the same up-triangle / down-triangle enumeration as
+ * `local_energy_kagome_heisenberg` in `src/nqs/nqs_gradient.c`, so the
+ * Lanczos Hamiltonian matches the VMC local-energy kernel by
+ * construction.
+ * =======================================================================*/
+
+typedef struct {
+    int Lx_cells, Ly_cells, N;
+    double J;
+    int pbc;
+} kagome_heis_ctx_t;
+
+static inline int kg_site(int cx, int cy, int sub, int Ly_cells) {
+    return 3 * (cx * Ly_cells + cy) + sub;
+}
+
+static double kagome_heis_diag_energy(long state, const kagome_heis_ctx_t *ctx) {
+    double e = 0.0;
+    int Lx = ctx->Lx_cells, Ly = ctx->Ly_cells;
+    double J = ctx->J;
+    for (int cx = 0; cx < Lx; cx++) {
+        for (int cy = 0; cy < Ly; cy++) {
+            int A = kg_site(cx, cy, 0, Ly);
+            int B = kg_site(cx, cy, 1, Ly);
+            int C = kg_site(cx, cy, 2, Ly);
+            int sA = ((state >> A) & 1) ? -1 : +1;
+            int sB = ((state >> B) & 1) ? -1 : +1;
+            int sC = ((state >> C) & 1) ? -1 : +1;
+            e += 0.25 * J * (double)(sA * sB + sA * sC + sB * sC);
+
+            int cxm, cym;
+            if (ctx->pbc) {
+                cxm = (cx - 1 + Lx) % Lx;
+                cym = (cy - 1 + Ly) % Ly;
+            } else if (cx == 0 || cy == 0) {
+                continue;
+            } else {
+                cxm = cx - 1; cym = cy - 1;
+            }
+            int Bm = kg_site(cxm, cy, 1, Ly);
+            int Cm = kg_site(cx, cym, 2, Ly);
+            int sBm = ((state >> Bm) & 1) ? -1 : +1;
+            int sCm = ((state >> Cm) & 1) ? -1 : +1;
+            e += 0.25 * J * (double)(sA * sBm + sA * sCm + sBm * sCm);
+        }
+    }
+    return e;
+}
+
+/* For each bond (u, v) on an opposite-spin configuration, S^+S^- + S^-S^+
+ * flips both spins and contributes coefficient (1/2)·J to the off-
+ * diagonal matrix element. Identical structure to the square-lattice
+ * heis_matvec, just with kagome's bond list. */
+static void kagome_heis_matvec(const double *in, double *out,
+                                long dim, void *ud) {
+    kagome_heis_ctx_t *ctx = (kagome_heis_ctx_t *)ud;
+    int Lx = ctx->Lx_cells, Ly = ctx->Ly_cells;
+    double J = ctx->J;
+    int pbc = ctx->pbc;
+    for (long s = 0; s < dim; s++) {
+        double y = kagome_heis_diag_energy(s, ctx) * in[s];
+        for (int cx = 0; cx < Lx; cx++) {
+            for (int cy = 0; cy < Ly; cy++) {
+                int A = kg_site(cx, cy, 0, Ly);
+                int B = kg_site(cx, cy, 1, Ly);
+                int C = kg_site(cx, cy, 2, Ly);
+                int bonds_up[3][2] = { {A, B}, {A, C}, {B, C} };
+                for (int b = 0; b < 3; b++) {
+                    int u = bonds_up[b][0], v = bonds_up[b][1];
+                    int su = ((s >> u) & 1) ? -1 : +1;
+                    int sv = ((s >> v) & 1) ? -1 : +1;
+                    if (su != sv) {
+                        long s2 = s ^ (1L << u) ^ (1L << v);
+                        y += 0.5 * J * in[s2];
+                    }
+                }
+
+                int cxm, cym;
+                if (pbc) {
+                    cxm = (cx - 1 + Lx) % Lx;
+                    cym = (cy - 1 + Ly) % Ly;
+                } else if (cx == 0 || cy == 0) {
+                    continue;
+                } else {
+                    cxm = cx - 1; cym = cy - 1;
+                }
+                int Bm = kg_site(cxm, cy, 1, Ly);
+                int Cm = kg_site(cx, cym, 2, Ly);
+                int bonds_dn[3][2] = { {A, Bm}, {A, Cm}, {Bm, Cm} };
+                for (int b = 0; b < 3; b++) {
+                    int u = bonds_dn[b][0], v = bonds_dn[b][1];
+                    int su = ((s >> u) & 1) ? -1 : +1;
+                    int sv = ((s >> v) & 1) ? -1 : +1;
+                    if (su != sv) {
+                        long s2 = s ^ (1L << u) ^ (1L << v);
+                        y += 0.5 * J * in[s2];
+                    }
+                }
+            }
+        }
+        out[s] = y;
+    }
+}
+
+int nqs_exact_energy_kagome_heisenberg(nqs_ansatz_t *a,
+                                        int Lx_cells, int Ly_cells,
+                                        double J, int pbc,
+                                        double *out_energy) {
+    if (!a || !out_energy) return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    double *psi = NULL; long dim = 0;
+    if (nqs_materialise_state_with_cb_N(nqs_ansatz_log_amp, a, N,
+                                          &psi, &dim) != 0) return -1;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    double *Hpsi = malloc((size_t)dim * sizeof(double));
+    if (!Hpsi) { free(psi); return -1; }
+    kagome_heis_matvec(psi, Hpsi, dim, &ctx);
+    double num = 0.0, den = 0.0;
+    for (long s = 0; s < dim; s++) { num += psi[s] * Hpsi[s]; den += psi[s] * psi[s]; }
+    *out_energy = num / den;
+    free(psi); free(Hpsi);
+    return 0;
+}
+
+int nqs_lanczos_refine_kagome_heisenberg(nqs_ansatz_t *a,
+                                          int Lx_cells, int Ly_cells,
+                                          double J, int pbc,
+                                          int max_iters, double tol,
+                                          double *out_eigenvalue,
+                                          double *out_eigenvector,
+                                          lanczos_result_t *out_result) {
+    if (!a || !out_eigenvalue) return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    long dim = 1L << N;
+    double *psi_seed = NULL; long pdim = 0;
+    int rc_seed = nqs_materialise_state_with_cb_N(nqs_ansatz_log_amp, a, N,
+                                                    &psi_seed, &pdim);
+    int rc = (rc_seed == 0 && pdim == dim)
+        ? lanczos_smallest_with_init(kagome_heis_matvec, &ctx, dim,
+                                       max_iters, tol,
+                                       psi_seed, out_eigenvector, out_result)
+        : lanczos_smallest(kagome_heis_matvec, &ctx, dim,
+                             max_iters, tol,
+                             out_eigenvector, out_result);
+    free(psi_seed);
+    if (rc == 0 && out_result) *out_eigenvalue = out_result->eigenvalue;
+    return rc;
+}
+
+int nqs_lanczos_k_lowest_kagome_heisenberg(nqs_ansatz_t *a,
+                                            int Lx_cells, int Ly_cells,
+                                            double J, int pbc,
+                                            int max_iters, int k,
+                                            double *out_eigenvalues,
+                                            lanczos_result_t *out_result) {
+    if (!a || !out_eigenvalues || k <= 0) return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    long dim = 1L << N;
+    double *psi_seed = NULL; long pdim = 0;
+    int rc_seed = nqs_materialise_state_with_cb_N(nqs_ansatz_log_amp, a, N,
+                                                    &psi_seed, &pdim);
+    const double *seed = (rc_seed == 0 && pdim == dim) ? psi_seed : NULL;
+    int rc = lanczos_k_smallest_with_init(kagome_heis_matvec, &ctx, dim,
+                                            max_iters, seed, k,
+                                            out_eigenvalues, out_result);
+    free(psi_seed);
     return rc;
 }

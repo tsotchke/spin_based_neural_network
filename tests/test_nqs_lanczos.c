@@ -259,6 +259,55 @@ static void test_heisenberg_refine_matches_bethe_for_8site(void) {
     ASSERT_NEAR(E_ref, -3.37493260, 1e-4);
     nqs_ansatz_free(a);
 }
+static void test_kagome_lanczos_k_lowest_gives_exact_gap(void) {
+    /* 2×2 PBC kagome Heisenberg S=½, N=12 sites (2^N = 4096-dim
+     * Hilbert space). The k-lowest Lanczos variant must return two
+     * sorted eigenvalues whose difference is positive (a real
+     * spin gap) and the smaller eigenvalue must match the single-
+     * Ritz `nqs_lanczos_refine_kagome_heisenberg` to machine
+     * precision. This is a regression guard: a bug in the k-Ritz
+     * sort or extraction would surface as E_0 drift or a negative
+     * Δ. Budget: ~100 ms. */
+    int Lx_cells = 2, Ly_cells = 2;
+    int N = 3 * Lx_cells * Ly_cells;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz = NQS_ANSATZ_COMPLEX_RBM;
+    cfg.rbm_hidden_units = 8;
+    cfg.rng_seed = 0xCAFEu;
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    ASSERT_TRUE(a != NULL);
+
+    /* Rank-1 reference for E_0. */
+    double E0_ref = 0.0;
+    lanczos_result_t res_ref = {0};
+    int rc_ref = nqs_lanczos_refine_kagome_heisenberg(a, Lx_cells, Ly_cells,
+                                                       1.0, 1,
+                                                       200, 1e-10,
+                                                       &E0_ref, NULL, &res_ref);
+    ASSERT_EQ_INT(rc_ref, 0);
+
+    /* k-lowest with k=3. */
+    double ev[3] = {0, 0, 0};
+    lanczos_result_t res_k = {0};
+    int rc_k = nqs_lanczos_k_lowest_kagome_heisenberg(a, Lx_cells, Ly_cells,
+                                                       1.0, 1, 200, 3,
+                                                       ev, &res_k);
+    ASSERT_EQ_INT(rc_k, 0);
+    /* Sorted ascending. */
+    ASSERT_TRUE(ev[0] <= ev[1]);
+    ASSERT_TRUE(ev[1] <= ev[2]);
+    /* E_0 matches the rank-1 Lanczos to better than 10⁻⁸. */
+    ASSERT_NEAR(ev[0], E0_ref, 1e-8);
+    /* Positive spin gap — non-degenerate ground state expected at
+     * this cluster size. */
+    double gap = ev[1] - ev[0];
+    ASSERT_TRUE(gap > 0.0);
+    printf("# kagome N=12 Lanczos k=3: E_0=%.8f  E_1=%.8f  E_2=%.8f  Δ=%.6f\n",
+           ev[0], ev[1], ev[2], gap);
+
+    nqs_ansatz_free(a);
+}
+
 int main(void) {
     TEST_RUN(test_materialised_state_is_unit_normed);
     TEST_RUN(test_exact_energy_matches_mc);
@@ -267,5 +316,6 @@ int main(void) {
     TEST_RUN(test_heisenberg_refine_on_bare_rbm_hits_bounded_state);
     TEST_RUN(test_heisenberg_refine_matches_dense_ed);
     TEST_RUN(test_heisenberg_refine_matches_bethe_for_8site);
+    TEST_RUN(test_kagome_lanczos_k_lowest_gives_exact_gap);
     TEST_SUMMARY();
 }
