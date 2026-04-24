@@ -23,7 +23,7 @@ With the recent implementation of topological quantum features based on Majorana
 > Hamiltonian on kagome bonds; the scientific decision still depends
 > on ansatz choice, symmetry projection, and finite-size scaling.
 > `LIBIRREP_MIN` bumped to 1.3.0-alpha for the incoming p6mm +
-> batched-RDM primitives. Full suite 343 / 343, AddressSanitizer +
+> batched-RDM primitives. Full suite 359 / 359, AddressSanitizer +
 > UndefinedBehaviorSanitizer clean.
 >
 > **v0.4.1 follow-up (kagome diagnostics pipeline).** Three new
@@ -366,10 +366,11 @@ layered on top of the v0.4.0 foundation.
   (`NQS_HAM_KAGOME_HEISENBERG`). Three-sublattice kagome geometry,
   PBC (default) or OBC, N = 3·Lx·Ly. The target Hamiltonian for the
   open kagome-S=½ ground-state problem.
-- **Nine new analytical checkpoints + one SR-loop convergence test**
-  for the two kernels.
+- **Eleven new analytical checkpoints + one SR-loop convergence test**
+  for the two kernels (plus 16 more in the v0.4.1 follow-up —
+  see CHANGELOG).
 - **`LIBIRREP_MIN`** bumped 1.2 → 1.3.0-alpha.
-- **Full suite**: 343 / 343 passing, zero warnings under
+- **Full suite**: 359 / 359 passing, zero warnings under
   `-Wall -Wextra`, AddressSanitizer + UndefinedBehaviorSanitizer
   clean.
 

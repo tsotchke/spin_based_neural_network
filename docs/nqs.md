@@ -428,9 +428,10 @@ four decimal places), and a 60-iter kagome N=12 smoke through the
 multi-sublattice kernel.
 
 End-to-end research driver: `make research_kagome_N12_diagnostics`
-chains GS SR → χ_F → per-bond-class phase → excited-state SR on
-one N=12 PBC kagome cluster. Not part of `make test`; O(10 min)
-on an M-series Mac.
+chains GS SR → χ_F → per-bond-class phase → excited-state SR →
+Lanczos-exact E₀/E₁/gap on one N=12 PBC kagome cluster. Not part
+of `make test`; O(20 min) on an M-series Mac (last run: 1283 s
+for 500 GS + 300 excited iters).
 
 ## 8. Benchmarks
 

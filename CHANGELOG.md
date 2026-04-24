@@ -66,8 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dispatch; `N_sites = 3·Lx·Ly` is computed internally. Target for
   the kagome Heisenberg S=½ ground-state problem (gapped Z₂ vs
   gapless Dirac spin liquid).
-- Nine new analytical checkpoint tests (`tests/test_nqs_kitaev.c`
-  gains 4 KH cases, `tests/test_nqs_kagome.c` ships 5 kagome cases)
+- Eleven new analytical checkpoint tests (`tests/test_nqs_kitaev.c`
+  gains 4 KH cases, `tests/test_nqs_kagome.c` ships 7 kagome cases)
   plus one end-to-end complex-RBM + holomorphic SR convergence test
   for KH in `tests/test_nqs_holomorphic_sr.c`.
 
@@ -101,9 +101,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bond-phase probe with per-class output.
 - New `tests/test_nqs_excited.c` (4 cases): μ=0 equivalence with
   holomorphic SR, null-reference rejection, 2-site Heisenberg
-  triplet recovery to four decimal places, and a 60-iter kagome
-  N=12 smoke exercising excited SR through the multi-sublattice
-  kernel.
+  triplet recovery to four decimal places, and a kagome N=12
+  pipeline smoke exercising excited SR through the multi-sublattice
+  kernel (wiring smoke; numerical convergence lives in the research
+  driver).
+- `tests/test_nqs_lanczos.c` gains
+  `test_kagome_lanczos_k_lowest_gives_exact_gap` (1 case): k-Ritz
+  extraction returns ascending eigenvalues whose smallest matches
+  the rank-1 refine to 10⁻⁸, with a positive spin gap.
+- Follow-up suite total: **359 / 359 passing**, up from 343 at
+  v0.4.1. AddressSanitizer + UndefinedBehaviorSanitizer clean.
 
 ## [Unreleased] — v0.5 pillar landings
 

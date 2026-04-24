@@ -75,10 +75,12 @@ N=12 runs ~16M samples/s, well above the bar.
 
 1. **Run proper convergence at N=12 PBC** — first 1000-iter run
    (hidden=48, samples=2048, seed 0xC0AEED) lands at E = -5.046 ±
-   0.267 (tail mean over last 100 iters), per-site -0.4205, ED
-   E₀ = -5.238 → **relative gap +3.66 %**. Below the 2 % target,
-   but within striking distance; longer training and a wider hidden
-   layer should close it. Driver: `scripts/research_kagome_N12_convergence.c`,
+   0.267 (tail mean over last 100 iters), per-site -0.4205. This
+   is 3.66 % above the Leung-Elser literature value (-5.238 J) but
+   **7.3 % above the true GS on this cluster** (E₀ = -5.44487522 J
+   from Lanczos; see open item 6). Below the 2 % target but within
+   striking distance; longer training and a wider hidden layer
+   should close it. Driver: `scripts/research_kagome_N12_convergence.c`,
    invoked via `make research_kagome_N12`. Reference commit: see
    `git log -- scripts/research_kagome_N12_convergence.c`.
 2. **Bipartite sublattice probe** — `nqs_compute_kagome_bond_phase`
@@ -115,9 +117,9 @@ N=12 runs ~16M samples/s, well above the bar.
      - E₁ = −5.32839240 J
      - E₂ = −5.29823654 J
      - **spin gap Δ = E₁ − E₀ = 0.116483 J**
-   Feasible for N ≤ 24 (dim 2^24 = 16M, about 16 GB of working
-   memory at one double per basis state — workable on a 32 GB Mac
-   but large). The N-schedule diagnostic (Δ_S(N→∞) extrapolation)
+   Feasible for N ≤ 24 (dim 2^24 = 16M, about 128 MB of working
+   memory at one double per basis state — fits comfortably on a
+   consumer Mac). The N-schedule diagnostic (Δ_S(N→∞) extrapolation)
    now has exact anchors at N = 12, 18, 24 for cross-checking any
    VMC estimate.
 
