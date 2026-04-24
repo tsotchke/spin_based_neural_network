@@ -51,7 +51,7 @@ The table below enumerates v0.4 core-module suites. Pillar tests
 pillar code and are driven by `make test` through the same harness;
 see `tests/` for the complete list.
 
-As of v0.4.1, two Hamiltonian kernels were added to the NQS pillar
+As of v0.4.1 (kernels) and v0.4.2 (diagnostics stack), two Hamiltonian kernels were added to the NQS pillar
 (`NQS_HAM_KITAEV_HEISENBERG`, `NQS_HAM_KAGOME_HEISENBERG`); their
 coverage lives in `tests/test_nqs_kitaev.c` (9 tests including a
 legacy-vs-KH cross-check), `tests/test_nqs_kagome.c` (new, 7 tests
@@ -59,7 +59,7 @@ with an independently-derived 2×2 PBC bond-list cross-check), and
 end-to-end SR convergence tests in `tests/test_nqs_holomorphic_sr.c`
 (2 complex-RBM + 1 real-MLP paths).
 
-The v0.4.1 follow-up also ships three sample-based diagnostics and
+The v0.4.2 release ships three sample-based diagnostics and
 an exact-reference solver for the kagome ground-state question:
 
 - `tests/test_nqs_chi_F.c` (6 cases) — χ_F finiteness +

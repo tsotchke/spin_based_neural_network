@@ -1,3 +1,125 @@
+# Spin-Based Neural Computation Framework v0.4.2
+
+v0.4.2 is a **research-capability release** layered on top of v0.4.1.
+It adds the full kagome-Heisenberg diagnostic stack and an exact
+reference solver, taking the NQS pillar from "scaffold + two kernels"
+to "diagnostics complete + machine-precision anchor." No breaking
+changes.
+
+## What's new
+
+### Sample-based diagnostics on trained NQS wavefunctions
+
+Three new entry points in `include/nqs/nqs_diagnostics.h`, all
+consuming a freshly sampled batch and returning scalars without
+mutating the ansatz:
+
+- **`nqs_compute_chi_F(cfg, Lx, Ly, ansatz, sampler, &trace_S, &per_param)`**
+  — trace of the quantum geometric tensor
+  `S_{k,l} = ⟨O_k* O_l⟩ − ⟨O_k*⟩⟨O_l⟩` with
+  `O_k = ∂ log ψ / ∂θ_k`. Returns `Tr(S) = Σ_k(⟨|O_k|²⟩ − |⟨O_k⟩|²)`;
+  χ_F = Tr(S)/2 in the Zanardi–Paunković 2006 convention. Works
+  transparently on real and complex-amplitude ansätze via the
+  holomorphic-gradient path.
+
+- **`nqs_compute_kagome_bond_phase(cfg, Lx, Ly, ansatz, sampler, re[3], im[3], cnt[3])`**
+  — per-bond-class circular mean of the amplitude ratio
+  `ψ(s_{ij})/ψ(s)` on kagome. Classes are the three sublattice
+  pairs {A-B, A-C, B-C}. Marshall-like sign structure shows as
+  |⟨r⟩| ≈ 1 with arg ≈ π across all classes; frustrated / Dirac-
+  compatible phases show mixed magnitudes and phases.
+
+- **`nqs_sr_{step,run}_excited(..., ref_log_amp_fn, ref_log_amp_user, penalty_mu, ...)`**
+  — excited-state stochastic reconfiguration via the Choo–Neupert–
+  Carleo 2018 (arXiv:1810.10196) orthogonal-ansatz penalty.
+  Augments the holomorphic-SR local energy by
+  `μ · r(s) · conj(⟨r⟩)` with `r(s) = ψ_ref(s)/ψ(s)`, reusing the
+  same QGT metric + CG solve as the ground-state SR path.
+  `out_info->mean_energy` reports the physical ⟨H⟩, not the
+  augmented loss. Log-ratio clamped at `exp(±10)` for tail-event
+  safety. Validated on 2-site Heisenberg: reference cRBM reaches
+  E = −0.7528, excited run with μ = 5 reaches E = +0.2498 —
+  **4-decimal agreement with the exact triplet** E₁ = +0.25.
+
+### Full-basis Lanczos — exact reference at small N
+
+- **`nqs_lanczos_refine_kagome_heisenberg`** and its generic
+  precursor `nqs_lanczos_refine_heisenberg` build the full 2^N-dim
+  Heisenberg matvec matching the VMC local-energy kernel bond-for-
+  bond (up-triangle + down-triangle on kagome), seed Lanczos from
+  the trained state's `Re(ψ)`, and return the refined ground-state
+  energy to machine precision.
+
+- **`lanczos_k_smallest_with_init`** (in `include/mps/lanczos.h`) —
+  k smallest Ritz values extracted from one Krylov pass; the spin
+  gap E₁ − E₀ drops out as a single subtraction. NQS-level wrapper:
+  **`nqs_lanczos_k_lowest_kagome_heisenberg`**.
+
+**Research numbers on our 2×2 PBC kagome N=12 cluster** (dim = 4096):
+
+| Quantity             | Value (Lanczos, machine precision) |
+|----------------------|-----------------------------------|
+| E₀                   | **−5.44487522 J**                 |
+| E₁                   | −5.32839240 J                     |
+| E₂                   | −5.29823654 J                     |
+| **Spin gap Δ**       | **0.116483 J**                    |
+
+The Leung-Elser 1993 literature value (−5.238 J) is 3.8 % off our
+cluster's true GS — different PBC-wrap convention. Lanczos anchors
+at any N ≤ 24 (dim 2²⁴ = 16M ≈ 128 MB at one double per basis
+state) without an external ED code.
+
+### End-to-end research driver
+
+`make research_kagome_N12_diagnostics` chains:
+
+1. Stage A  — complex-RBM holomorphic SR training
+2. Stage A' — exact ⟨ψ|H|ψ⟩ + Lanczos refinement (E₀ to machine precision)
+3. Stage B  — χ_F = Tr(S)/2
+4. Stage C  — per-bond-class amplitude ratios on kagome
+5. Stage D  — excited-state SR + k-lowest Lanczos (exact E₁ and Δ)
+
+Output is a self-contained TAP-style report suitable for
+longitudinal archiving under `benchmarks/results/`. Typical run
+(500 GS + 300 excited iters): **~22 min on an M-series Mac**.
+
+A simpler MC-only convergence probe is at
+`make research_kagome_N12` (`scripts/research_kagome_N12_convergence.c`).
+
+## Benchmark additions
+
+`benchmarks/bench_nqs.c` gains sampler + full-SR-step throughput
+rows for the KH and kagome kernels, so per-Hamiltonian drift
+across releases surfaces in `benchmarks/results/`.
+
+## Test suite
+
+**359 / 359 passing**, up from 343 at v0.4.1. Zero warnings under
+`-Wall -Wextra`. `make test_asan` clean (AddressSanitizer +
+UndefinedBehaviorSanitizer).
+
+New suites:
+
+- `tests/test_nqs_chi_F.c` (6 cases): χ_F finiteness + non-
+  negativity on complex-RBM and legacy-MLP, bad-args rejection,
+  MC consistency across batch sizes, per-bond-class phase output,
+  and a rejection check for the kagome-only bond-phase helper on
+  non-kagome Hamiltonians.
+- `tests/test_nqs_excited.c` (4 cases): μ=0 equivalence with
+  holomorphic SR, null-reference rejection, 2-site Heisenberg
+  triplet recovery to four decimal places, and a kagome N=12
+  pipeline smoke.
+- `tests/test_nqs_lanczos.c` gains
+  `test_kagome_lanczos_k_lowest_gives_exact_gap`: k-Ritz ascending
+  order, E₀ matches rank-1 refine to 10⁻⁸, positive spin gap.
+
+## No breaking changes
+
+All prior v0.4.1 public symbols retain their signatures and
+semantics. New capability is opt-in via new entry points.
+
+---
+
 # Spin-Based Neural Computation Framework v0.4.1
 
 v0.4.1 is a **capability-addition release** layered on top of v0.4.0:
@@ -78,8 +200,9 @@ in the default tree until libirrep is vendored.
 
 ## Test suite + sanitizer
 
-- Full `make test`: **343 / 343 passing**, up from 333 in v0.4.0. Zero
-  warnings under `-Wall -Wextra`.
+- Full `make test` at v0.4.1: **343 / 343 passing**, up from 333 in
+  v0.4.0 (now 359 / 359 at v0.4.2). Zero warnings under
+  `-Wall -Wextra`.
 - `make test_asan` (AddressSanitizer + UndefinedBehaviorSanitizer):
   clean across the full suite. No UB, no memory errors.
 
@@ -96,14 +219,14 @@ in the default tree until libirrep is vendored.
   — necessary for multi-sublattice lattices. For every existing
   Hamiltonian this yields the same value as before.
 
-## Next
+## Next (superseded by v0.4.2)
 
+- ~~`χ_F`-from-samples helper (trace of the QGT)~~ — **landed in
+  v0.4.2** as `nqs_compute_chi_F`.
 - Point-group projection (`NQS_SYM_POINT_GROUP` ↔ libirrep's
   `irrep_pg_project`) wires up when libirrep `v1.3.0-alpha.1` lands.
-- `χ_F`-from-samples helper (trace of the QGT) is a small follow-up
-  exposed as a standalone entry point.
-- Phase-diagram research work against the kagome kernel lives in
-  a private track.
+- Open kagome-S=½ ground-state research continues publicly under
+  `docs/research/kagome_KH_plan.md` (v0.4.2+).
 
 ---
 

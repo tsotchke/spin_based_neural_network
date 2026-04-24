@@ -20,7 +20,8 @@ scheduled for v0.5 and beyond. It complements the per-feature docs:
 |---|---|
 | **v0.3** | Topological quantum computing primitives (Berry / Chern / winding / TKNN, Majorana modes, toric code, topological entanglement entropy, visualization). |
 | **v0.4 (foundation release)** | Foundation — physics improvements, engine-neutral scaffolding, assert-based test suite over every library module, benchmark harness. |
-| **v0.4.1 (current)** | Capability addition: Kitaev-Heisenberg kernel on brick-wall honeycomb; Heisenberg-on-kagome kernel (three-sublattice, target for the open S=½ gapped-Z₂-vs-gapless-Dirac question); `LIBIRREP_MIN` bumped to 1.3.0-alpha. |
+| **v0.4.1** | Capability addition: Kitaev-Heisenberg kernel on brick-wall honeycomb; Heisenberg-on-kagome kernel (three-sublattice, target for the open S=½ gapped-Z₂-vs-gapless-Dirac question); `LIBIRREP_MIN` bumped to 1.3.0-alpha. |
+| **v0.4.2 (current)** | kagome diagnostics stack + exact-reference solver: χ_F = Tr(S)/2 (`nqs_compute_chi_F`), per-bond-class phase probe (`nqs_compute_kagome_bond_phase`), excited-state VMC via Choo–Neupert–Carleo penalty (`nqs_sr_{step,run}_excited`), full-basis Lanczos refinement + multi-Ritz (`nqs_lanczos_{refine,k_lowest}_kagome_heisenberg`). End-to-end research driver (`make research_kagome_N12_diagnostics`). Exact E₀ / E₁ / spin gap Δ anchors on N ≤ 24. 359 / 359 tests passing. |
 | **v0.5** | Tier-1 research pillars: NQS, equivariant LLG, learned QEC decoders, neural-operator Boltzmann samplers, Fibonacci-anyon gates. |
 | **v0.6** | Tier-2 pillars: time-dependent NQS, MPS warm-start, foundation NQS, KAN-NQS, p-bit neuromorphic, gauge-invariant sampling, thermodynamic computing. |
 | **v0.7** | Observability — full benchmark suite, visualization modes for every pillar, reproducible experiment manifests, dashboard. |
@@ -57,8 +58,12 @@ spin_based_neural_network/
 │       equivariant_gnn/, llg/, neural_operator/, flow_matching/, qec_decoder/,
 │       fibonacci_anyons/, neuromorphic/, thermodynamic/, thqcp/) — each a
 │       self-contained module tree with its own header-and-source pair and
-│       matching tests/test_<pillar>*.c files. Interface-stable in v0.4;
-│       full implementations land incrementally in v0.5 and beyond.
+│       matching tests/test_<pillar>*.c files. The `nqs/` tree is
+│       diagnostics-complete at v0.4.2 (`nqs_diagnostics.{h,c}`,
+│       `nqs_lanczos.{h,c}` for χ_F, kagome bond phase, and exact
+│       Lanczos reference). Other pillars are interface-stable in
+│       v0.4; full implementations land incrementally in v0.5 and
+│       beyond.
 ├── tests/    — one suite per library module + per-pillar suites (see `docs/testing.md`)
 ├── benchmarks/   — `bench_*.c` suites, emit JSON under results/
 ├── scripts/  — run_benchmarks.sh, check_stack.sh
@@ -98,20 +103,42 @@ at the isotropic point.
 
 **Architecture.** `src/nqs/` with:
 
-- `nqs_ansatz.c` — builds a transformer / factored-ViT / autoregressive
-  network that emits `(log|ψ|, arg ψ)` for a patch-tokenised spin
-  configuration.
-- `nqs_sampler.c` — Metropolis with exchange / cluster moves plus an
-  exact autoregressive sampler.
-- `nqs_gradient.c` — local-energy estimator `E_loc(s) = ⟨s|Ĥ|ψ⟩/⟨s|ψ⟩`.
-- `nqs_optimizer.c` — Stochastic Reconfiguration [16] with QGT
-  preconditioning via conjugate gradient.
-- `eshkol/train_nqs.esk` — Scheme-side tape driver.
+- `nqs_ansatz.c` — MLP / RBM / complex-RBM ansätze today; transformer /
+  factored-ViT / autoregressive land once the external NN engine is
+  vendored. Emits `(log|ψ|, arg ψ)` for a spin configuration.
+- `nqs_sampler.c` — Metropolis sampler; exact autoregressive sampler
+  lands with the autoregressive ansatz.
+- `nqs_gradient.c` — local-energy estimators per Hamiltonian:
+  TFIM, Heisenberg, XXZ, J1-J2, Kitaev-Heisenberg (v0.4.1),
+  kagome Heisenberg (v0.4.1). Real + complex-amplitude paths.
+- `nqs_optimizer.c` — real-projected SR + holomorphic SR [16] with
+  QGT preconditioning via conjugate gradient. Also real-time tVMC
+  (forward-Euler + Heun) and excited-state SR via the
+  Choo–Neupert–Carleo 2018 [18c] orthogonal-ansatz penalty (v0.4.2).
+- `nqs_diagnostics.c` (v0.4.2) — sample-based χ_F = Tr(S)/2
+  (`nqs_compute_chi_F`) and kagome per-bond-class phase probe
+  (`nqs_compute_kagome_bond_phase`). Conventions from
+  Provost–Vallée 1980 [18a] and Zanardi–Paunković 2006 [18b].
+- `nqs_lanczos.c` (v0.4.2) — full-basis Lanczos refinement with
+  the trained state as Krylov seed, on TFIM, Heisenberg, and
+  kagome Heisenberg kernels. Multi-Ritz k-smallest extraction for
+  spin gaps (`lanczos_k_smallest_with_init` in `mps/lanczos.c` +
+  `nqs_lanczos_k_lowest_kagome_heisenberg`). Lanczos eigensolver
+  per [18d]. Machine-precision anchor at N ≤ 24.
+- `scripts/research_kagome_N12_diagnostics.c` — end-to-end driver
+  chaining SR + χ_F + bond-phase + excited-SR + Lanczos on one
+  N=12 PBC kagome cluster. Build target: `make
+  research_kagome_N12_diagnostics`.
+- `eshkol/train_nqs.esk` — Scheme-side tape driver (lands when
+  the Eshkol bridge activates).
 
-**References.** Carleo & Troyer [15] — original NQS. Rende et al. [17]
-— transformer optimisation for large NQS via a linear-algebra identity.
-Sorella [16] — stochastic reconfiguration. Chen & Heyl [18] — modern
-large-scale NQS optimisation.
+**References.** Carleo & Troyer [15] — original NQS. Rende et al.
+[17] — transformer optimisation for large NQS via a linear-algebra
+identity. Sorella [16] — stochastic reconfiguration. Chen & Heyl
+[18] — modern large-scale NQS optimisation. Provost & Vallée [18a],
+Zanardi & Paunković [18b] — QGT and fidelity susceptibility
+conventions. Choo, Neupert & Carleo [18c] — excited-state VMC
+penalty. Lanczos [18d] — Krylov eigensolver.
 
 ### P1.2 Equivariant GNN torques + real Landau-Lifshitz-Gilbert dynamics
 
@@ -222,11 +249,17 @@ identifier).
 13. J. Bausch, A. Senior, F. Heras, T. Edlich, A. Davies, M. Newman, C. Jones, K. Satzinger, M. Y. Niu, S. Blackwell, G. Holland, D. Kafri, J. Atalaya, C. Gidney, D. Hassabis, S. Boixo, H. Neven, and P. Kohli, "Learning high-accuracy error decoding for quantum processors," *Nature*, vol. 635, pp. 834–840, 2024. DOI: 10.1038/s41586-024-08148-8.
 14. V. Ninkovic, O. Kundacina, D. Vukobratovic, and C. Häger, "Scalable Neural Decoders for Practical Real-Time Quantum Error Correction," arXiv:2510.22724, 2025.
 
-### Neural Network Quantum States (pillar P1.1)
+### Neural Network Quantum States (pillar P1.1, diagnostics pipeline shipped v0.4.2)
 15. G. Carleo and M. Troyer, "Solving the quantum many-body problem with artificial neural networks," *Science*, vol. 355, pp. 602-606, 2017.
 16. S. Sorella, "Green Function Monte Carlo with Stochastic Reconfiguration," *Physical Review Letters*, vol. 80, pp. 4558-4561, 1998.
 17. R. Rende, L. Viteritti, L. Bardone, F. Becca, and S. Goldt, "A simple linear algebra identity to optimize large-scale neural network quantum states," *Communications Physics*, 2024. arXiv:2310.05715.
 18. A. Chen and M. Heyl, "Empowering deep neural quantum states through efficient optimization," *Nature Physics*, vol. 20, pp. 1476-1481, 2024.
+
+### Quantum geometric tensor, fidelity susceptibility, excited-state VMC, Lanczos (v0.4.2 diagnostics stack)
+18a. J. P. Provost and G. Vallée, "Riemannian structure on manifolds of quantum states," *Communications in Mathematical Physics*, vol. 76, pp. 289–301, 1980.  *(QGT / Fubini–Study metric underlying `nqs_compute_chi_F`.)*
+18b. P. Zanardi and N. Paunković, "Ground state overlap and quantum phase transitions," *Physical Review E*, vol. 74, p. 031123, 2006.  *(χ_F = Tr(S)/2 convention.)*
+18c. K. Choo, T. Neupert, and G. Carleo, "Two-dimensional frustrated J1-J2 model studied with neural network quantum states," *Physical Review B*, vol. 100, p. 125124, 2019. arXiv:1810.10196.  *(Orthogonal-ansatz penalty in `nqs_sr_step_excited`.)*
+18d. C. Lanczos, "An iteration method for the solution of the eigenvalue problem of linear differential and integral operators," *Journal of Research of the National Bureau of Standards*, vol. 45, pp. 255–282, 1950.  *(Krylov eigensolver underpinning `lanczos_{smallest,k_smallest}_with_init`.)*
 
 ### Equivariant GNNs (pillar P1.2)
 19. S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P. Mailoa, M. Kornbluth, N. Molinari, T. E. Smidt, and B. Kozinsky, "E(3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials," *Nature Communications*, vol. 13, p. 2453, 2022.

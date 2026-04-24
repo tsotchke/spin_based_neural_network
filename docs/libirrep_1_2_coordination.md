@@ -1,6 +1,6 @@
 # libirrep 1.2 coordination
 
-> **Status (2026-04-23, v0.4.1).** This document is historical — it
+> **Status (2026-04-24, v0.4.2).** This document is historical — it
 > records the 1.2 cycle now closed. libirrep 1.2.0 has shipped; see
 > `VERSION_PINS` for the current `LIBIRREP_MIN` (now `1.3.0-alpha`,
 > which ships kagome geometry, p6mm wallpaper group,

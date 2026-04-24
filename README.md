@@ -1,88 +1,157 @@
 # Spin-Based Neural Computation Framework
 
-## Overview
-The **Spin-Based Neural Computation Framework** is an advanced simulation library that combines quantum mechanics, reinforcement learning, and energy-based neural networks to study and model physical phenomena. Designed for researchers in AI, scientific computing, and statistical physics, this framework explores spin systems—such as the Ising, Kitaev, and disordered models—through machine learning and physics-informed neural networks. It has wide-ranging applications in quantum computing, materials science, and artificial intelligence, making it a versatile and powerful tool.
+A pure-C research framework for quantum spin systems, built around four
+pillars:
 
-With the recent implementation of topological quantum features based on Majorana Zero Modes, this framework now supports simulation of topological quantum computing systems with error correction capabilities through toric codes, calculation of topological invariants, and the study of topological entanglement entropy.
+1. **Neural Network Quantum States (NQS)** — variational wavefunctions
+   (MLP, RBM, complex RBM) trained by stochastic reconfiguration on
+   TFIM, Heisenberg, XXZ, J1-J2, Kitaev-Heisenberg (brick-wall
+   honeycomb), and kagome Heisenberg Hamiltonians. Sample-based
+   diagnostics (χ_F, kagome bond-phase), excited-state VMC, and
+   full-basis Lanczos refinement for machine-precision exact
+   references at N ≤ 24.
+2. **Topological quantum computing** — Berry phase, Chern / TKNN /
+   winding numbers, Hilbert-space Majorana braiding (order-8
+   non-Abelian statistics), toric-code QEC with greedy MWPM baseline,
+   Kitaev-Preskill topological entanglement entropy.
+3. **Classical spin models** — 3D Ising, anisotropic Kitaev, disordered
+   / continuous-spin models; used as substrates for statistical
+   mechanics, Monte Carlo training, and as reference Hamiltonians for
+   the NQS pillar.
+4. **Physics-informed neural networks** — PDE residual losses (heat,
+   Schrödinger, Maxwell, Navier-Stokes, wave) and energy-driven
+   reinforcement learning on spin lattices.
 
-> **v0.4 foundation note.** v0.4 significantly advances the
-> topological-QC physics: Majorana braiding now has a full Hilbert-space
-> unitary implementation with verified non-Abelian statistics, and the
-> toric code gains an explicit data-qubit model with a greedy MWPM
-> baseline decoder. See [docs/architecture_v0.4.md](docs/architecture_v0.4.md)
-> for the v0.5 roadmap (neural-network quantum states, equivariant
-> Landau-Lifshitz dynamics, learned surface-code decoders,
-> Fibonacci-anyon gates).
->
-> **v0.4.1 update.** Two new Hamiltonian kernels in the NQS pillar:
-> `NQS_HAM_KITAEV_HEISENBERG` (brick-wall honeycomb KH, real +
-> complex amplitude paths) and `NQS_HAM_KAGOME_HEISENBERG` (kagome
-> Heisenberg on a three-sublattice geometry). The kagome kernel is
-> *infrastructure* for the open kagome-S=½ ground-state question
-> (gapped Z₂ vs gapless Dirac spin liquid) — it evaluates the
-> Hamiltonian on kagome bonds; the scientific decision still depends
-> on ansatz choice, symmetry projection, and finite-size scaling.
-> `LIBIRREP_MIN` bumped to 1.3.0-alpha for the incoming p6mm +
-> batched-RDM primitives. Full suite 359 / 359, AddressSanitizer +
-> UndefinedBehaviorSanitizer clean.
->
-> **v0.4.1 follow-up (kagome diagnostics pipeline).** Three new
-> sample-based diagnostics and a spin-gap solver land on top of the
-> kagome kernel:
-> - `nqs_compute_chi_F` — Tr(S)/2 of the quantum geometric tensor,
->   the fidelity-susceptibility convergence / transition probe.
-> - `nqs_compute_kagome_bond_phase` — per-bond-class ⟨ψ(s_{ij})/ψ(s)⟩
->   for Marshall-like vs Dirac-compatible phase structure.
-> - `nqs_sr_{step,run}_excited` — excited-state VMC via the Choo–
->   Neupert–Carleo 2018 orthogonal-ansatz penalty; validated to
->   4-decimal agreement with the exact triplet on 2-site Heisenberg.
-> - `nqs_lanczos_k_lowest_kagome_heisenberg` — multi-Ritz Lanczos on
->   the full 2^N Hilbert space (dim=4096 at N=12). On our 2×2 PBC
->   cluster: E₀ = **−5.44487522 J**, E₁ = −5.32839240 J, exact
->   spin gap **Δ = 0.116483 J**. Anchors every VMC energy estimate
->   against a machine-precision reference and gives the 5-diagnostic
->   protocol's spin-gap probe exact targets at N=12, 18, 24.
->
-> End-to-end driver: `make research_kagome_N12_diagnostics` chains
-> GS SR → χ_F → bond-phase → excited-SR → Lanczos-exact E₀/E₁/gap
-> in one research artefact. See
-> [docs/research/kagome_KH_plan.md](docs/research/kagome_KH_plan.md).
+Target audiences: researchers in strongly-correlated quantum magnetism,
+topological phases, quantum error correction, and physics-informed ML.
+Pure C11, ARM NEON SIMD kernels, SDL2 for live visualisation, no Python
+runtime dependency.
 
-## Project Highlights
-- **Quantum Physics and Machine Learning**: Leverage spin-based neural networks to simulate and learn from quantum systems.
-- **Comprehensive Spin Models**: Implements Ising, Kitaev, and disordered spin models with customizable lattice parameters and interaction strengths.
-- **Topological Quantum Computing**: Simulate Majorana zero modes, calculate topological invariants, and implement toric code error correction.
-- **Interactive Visualization**: Visual representation of topological features including Berry curvature, toric code, Majorana zero modes, and topological entanglement entropy.
-- **Energy-Driven Neural Networks**: Inspired by Boltzmann machines, these networks learn from physical principles of spin configuration energies.
-- **Reinforcement Learning Integration**: Dynamically optimize spin configurations using reinforcement learning, enabling robust energy minimization.
-- **Customizable Parameters and Loss Functions**: Tailor simulations with specific lattice dimensions, couplings, activation functions, and physics-based loss functions.
-- **Extensive Logging**: Ensure reproducibility with detailed logs, supporting research and analysis.
-- **Multiple Build Options**: Optimized builds for different hardware capabilities, including ARM NEON acceleration.
+> **Current release: v0.4.2** (2026-04-24). A diagnostic-stack
+> addition on top of the v0.4.1 Kitaev-Heisenberg + kagome
+> Heisenberg local-energy kernels. Full suite **359 / 359**
+> passing, zero warnings under `-Wall -Wextra`, AddressSanitizer +
+> UndefinedBehaviorSanitizer clean. See
+> [RELEASE_NOTES.md](RELEASE_NOTES.md) for the complete notes.
+>
+> **What landed (v0.4.2 research capability)**
+> - `nqs_compute_chi_F` — fidelity susceptibility χ_F = Tr(S)/2
+>   from a sampled batch (Zanardi–Paunković 2006).
+> - `nqs_compute_kagome_bond_phase` — per-bond-class amplitude
+>   ratios ⟨ψ(s_{ij})/ψ(s)⟩ for Marshall vs Dirac-compatible
+>   phase structure.
+> - `nqs_sr_{step,run}_excited` — excited-state VMC via the
+>   Choo–Neupert–Carleo 2018 (arXiv:1810.10196) orthogonal-
+>   ansatz penalty; 4-decimal agreement with the exact 2-site
+>   Heisenberg triplet.
+> - `nqs_lanczos_k_lowest_kagome_heisenberg` — multi-Ritz
+>   Lanczos on the full 2^N Hilbert space (dim = 4096 at
+>   N = 12). On our 2×2 PBC cluster: **E₀ = −5.44487522 J**,
+>   **E₁ = −5.32839240 J**, **spin gap Δ = 0.116483 J** to
+>   machine precision. Anchors every VMC estimate against an
+>   exact reference.
+> - End-to-end driver `make research_kagome_N12_diagnostics`
+>   chains GS SR → χ_F → bond-phase → excited-SR →
+>   Lanczos-exact E₀/E₁/gap in one O(20 min) artefact.
+>
+> See
+> [docs/research/kagome_KH_plan.md](docs/research/kagome_KH_plan.md)
+> for the research program this stack supports (5-diagnostic
+> protocol for the kagome Z₂ vs Dirac spin-liquid question,
+> coordinated with [libirrep](https://github.com/tsotchke/libirrep)).
+>
+> **Cumulative since v0.4.0** — the `NQS_HAM_KITAEV_HEISENBERG`
+> and `NQS_HAM_KAGOME_HEISENBERG` local-energy kernels (v0.4.1)
+> plus the foundation upgrades from v0.4.0 (Hilbert-space
+> Majorana braiding with order-8 non-Abelian statistics, toric
+> code with explicit data qubits + greedy MWPM decoder,
+> engine-neutral scaffolding for external NN / tensor engines).
+> See [CHANGELOG.md](CHANGELOG.md) for the full history and
+> [docs/architecture_v0.4.md](docs/architecture_v0.4.md) for the
+> v0.5+ roadmap (ViT wavefunctions, equivariant LLG, learned
+> surface-code decoders, Fibonacci-anyon gates, neural-operator
+> Boltzmann samplers).
 
 ## Key Components
 
-### 1. Neural Networks
-- **Thermodynamic Energy Minimization**: Learn optimal spin states based on energy minimization, leveraging principles from statistical mechanics.
-- **Dynamic Structure**: Configurable neural network layers and neuron counts to match simulation complexity requirements.
+### 1. Neural Network Quantum States (NQS)
+Variational Monte Carlo ansätze for quantum spin Hamiltonians, with
+stochastic reconfiguration (SR) training and Lanczos post-processing.
+
+- **Hamiltonian kernels**: TFIM, Heisenberg, XXZ, J1-J2,
+  `NQS_HAM_KITAEV_HEISENBERG` (brick-wall honeycomb, CJK sign
+  convention), `NQS_HAM_KAGOME_HEISENBERG` (three-sublattice
+  kagome, PBC/OBC). Real + complex-amplitude paths.
+- **Ansätze**: legacy MLP, real / complex RBM, with Marshall-sign
+  wrapper and translation symmetry wrapper available.
+- **Optimizers**: real-projected SR, holomorphic SR for complex
+  ansätze, real-time tVMC (forward-Euler + Heun).
+- **Diagnostics (v0.4.2)**: sample-based χ_F = Tr(S)/2
+  (`nqs_compute_chi_F`), kagome per-bond-class phase probe
+  (`nqs_compute_kagome_bond_phase`), excited-state SR via
+  orthogonal-ansatz penalty (`nqs_sr_{step,run}_excited`).
+- **Exact reference (v0.4.2)**: full-basis Lanczos refinement for
+  TFIM, Heisenberg, and kagome Heisenberg
+  (`nqs_lanczos_refine_*`), with multi-Ritz extraction for spin
+  gaps (`nqs_lanczos_k_lowest_kagome_heisenberg`). Machine-
+  precision anchor at N ≤ 24.
+
+See [docs/nqs.md](docs/nqs.md) and
+[docs/research/kagome_KH_plan.md](docs/research/kagome_KH_plan.md).
 
 ### 2. Spin Models
-- **Ising Model**: A classical model for ferromagnetic interactions, extended to three-dimensional lattices for detailed phase transition studies.
-- **Kitaev Model**: A model with applications to topological quantum computing, allowing for exploration of spin liquids and complex quantum states.
-- **Spin Model**: A model incorporating classical spin and random disorder, useful for studying real-world material impurities.
+Classical lattice Hamiltonians used for statistical mechanics,
+Monte Carlo training, and as substrates for the NQS pillar.
+
+- **Ising model**: 3D lattice, ferromagnetic / antiferromagnetic
+  couplings, Metropolis dynamics.
+- **Kitaev model**: Anisotropic honeycomb model with topological
+  spin-liquid behaviour; baseline for the Kitaev-Heisenberg kernel.
+- **Disordered / continuous-spin model**: Quenched disorder
+  injection for spin-glass studies.
+
+See [docs/classical_models.md](docs/classical_models.md).
 
 ### 3. Quantum Mechanics
-- **Quantum State Calculations**: Calculate properties of quantum spins, including superposition and entanglement, integrating quantum effects directly with neural networks.
-- **Hybrid Quantum-Classical Systems**: Model interactions between quantum and classical elements in spin systems.
+- **State calculations**: Quantum spin expectation values,
+  superposition, entanglement entropy.
+- **Hybrid quantum–classical systems**: Quantum effects driven by
+  classical spin backgrounds.
+
+See [docs/quantum_mechanics.md](docs/quantum_mechanics.md).
 
 ### 4. Topological Quantum Computing
-- **Berry Phase Calculations**: Compute the Berry phase and curvature to determine topological invariants like Chern numbers and TKNN invariant.
-- **Majorana Zero Modes**: Simulate Majorana fermions and their braiding properties as described in the Majorana Zero Modes paper.
-- **Toric Code Implementation**: Error correction through the implementation of Kitaev's toric code with plaquette and vertex operators.
-- **Topological Entanglement Entropy**: Calculate the quantized entanglement entropy to identify topological order in quantum systems.
+- **Berry phase / Chern number / TKNN invariant / winding number**
+  calculations on 2D spin systems.
+- **Hilbert-space Majorana braiding** (v0.4): genuine unitaries
+  `B = (1 + γ_i γ_j)/√2` acting on the 2^{N/2}-dim fermion-parity
+  Fock basis, with `B⁴ = −I` and `B⁸ = I` (order-8 non-Abelian
+  statistics) verified.
+- **Toric-code QEC** (v0.4): explicit data-qubit model +
+  greedy-matching decoder with primal/dual path walks and
+  homology-based logical-error detection. MWPM baseline for the
+  learned decoder in v0.5.
+- **Topological entanglement entropy**: Kitaev-Preskill
+  construction; quantized γ as a topological-order indicator.
 
-### 5. Reinforcement Learning
-- **Policy and Value Optimization**: Adapts spin configurations based on calculated rewards, enabling energy-efficient configurations.
-- **Energy-Based Learning**: Works in tandem with neural networks to achieve refined spin configurations and energy states.
+See [docs/topological_features.md](docs/topological_features.md),
+[docs/berry_phase.md](docs/berry_phase.md),
+[docs/majorana_zero_modes.md](docs/majorana_zero_modes.md),
+[docs/toric_code.md](docs/toric_code.md),
+[docs/topological_entropy.md](docs/topological_entropy.md).
+
+### 5. Physics-Informed Neural Networks
+- **PDE residual losses**: heat, Schrödinger, Maxwell,
+  Navier–Stokes, wave equations as training signals on the
+  legacy MLP or (optionally) the engine-backed network.
+
+See [docs/physics_loss.md](docs/physics_loss.md).
+
+### 6. Reinforcement Learning
+- **Policy/value optimisation**: reward-based spin-configuration
+  tuning with energy-driven rewards.
+
+See [docs/reinforcement_learning.md](docs/reinforcement_learning.md).
 
 ## Directory Structure
 The project is organized for clarity and usability:
@@ -103,11 +172,16 @@ spin_based_neural_network/
 │   ├── disordered_model.c       # Quenched disorder injection
 │   ├── spin_models.c            # Continuous SpinLattice type
 │   ├── energy_utils.c           # Sigmoid energy scale / unscale
-│   ├── neural_network.c         # Legacy MLP (Adam, batch norm)
-│   ├── nn_backend.c             # v0.4 polymorphic NN handle
-│   ├── engine_adapter.c         # v0.4 engine-neutral bridge (dormant by default)
-│   ├── eshkol_bridge.c          # v0.4 Eshkol FFI bridge (dormant by default)
-│   ├── physics_loss.c           # 5 physics-informed PDE residual losses
+│   ├── neural_network.c         # Legacy MLP (Adam, batch norm, SIREN)
+│   ├── nn_backend.c             # Polymorphic NN handle (v0.4)
+│   ├── engine_adapter.c         # Engine-neutral bridge (dormant by default)
+│   ├── eshkol_bridge.c          # Eshkol FFI bridge (dormant by default)
+│   ├── libirrep_bridge.c        # libirrep bridge (gated on SPIN_NN_HAS_IRREP)
+│   ├── moonlab_bridge.c         # Moonlab bridge (gated on SPIN_NN_HAS_MOONLAB)
+│   ├── qllm_bridge.c            # qllm bridge (opaque)
+│   ├── qgtl_bridge.c            # QGTL bridge (opaque)
+│   ├── noesis_bridge.c          # Noesis reasoning-engine bridge
+│   ├── physics_loss.c           # Physics-informed PDE residual losses
 │   ├── reinforcement_learning.c # Reactive reward-based RL
 │   ├── quantum_mechanics.c      # Noise + entanglement helpers
 │   ├── majorana_modes.c         # Majorana fermions + Hilbert-space braiding (v0.4)
@@ -116,33 +190,64 @@ spin_based_neural_network/
 │   ├── topological_entropy.c    # Von Neumann + topological entanglement entropy
 │   ├── ising_chain_qubits.c     # Topological qubits from Majorana chains
 │   ├── matrix_neon.c            # ARM NEON SIMD kernels
+│   ├── nqs/                     # NQS pillar (P1.1)
+│   │   ├── nqs_ansatz.c         #   MLP / RBM / complex RBM ansätze
+│   │   ├── nqs_sampler.c        #   Metropolis sampler
+│   │   ├── nqs_gradient.c       #   Per-Hamiltonian local-energy kernels
+│   │   ├── nqs_optimizer.c      #   Real + holomorphic SR, tVMC, excited-SR
+│   │   ├── nqs_marshall.c       #   Marshall sign wrapper
+│   │   ├── nqs_translation.c    #   Translation symmetry projection
+│   │   ├── nqs_diagnostics.c    #   χ_F + kagome bond-phase (v0.4.2)
+│   │   └── nqs_lanczos.c        #   Full-basis Lanczos post-processing (v0.4.2)
+│   ├── mps/                     # MPS + DMRG + TEBD + Lanczos substrate (P2.2 / P2.6)
+│   ├── llg/                     # Landau-Lifshitz-Gilbert dynamics (P1.2)
+│   ├── equivariant_gnn/         # SO(3)-equivariant torque predictor (P1.2)
+│   ├── qec_decoder/             # Learned surface-code decoder scaffold (P1.3)
+│   ├── fibonacci_anyons/        # Fibonacci anyons + braiding (P1.3b)
+│   ├── neural_operator/         # Fourier Neural Operator + FFT (P1.4)
+│   ├── flow_matching/           # Discrete flow matching (P1.4)
+│   ├── thermodynamic/           # Hopfield + RBM-CD (P2.9)
+│   ├── thqcp/                   # THQCP scaffold
+│   ├── neuromorphic/            # p-bit / p-dit mode (P2.4)
 │   ├── topological_example.c    # Standalone topological-phases demo
 │   ├── visualization.c          # SDL2 viewer (4 modes)
 │   └── visualization_main.c     # Visualization entry point
-├── include/                     # public headers (one per src module; count tracks src/)
+├── include/                     # Public headers mirroring src/ layout
 ├── tests/                       # test_*.c suites (run all via `make test`)
 │   ├── harness.h
-│   └── test_*.c
-├── benchmarks/                  # bench_*.c suites, JSON results
+│   └── test_*.c                 # 359 tests across 50+ suites
+├── benchmarks/                  # bench_*.c suites + JSON results
 │   ├── bench_common.h
 │   ├── bench_*.c
 │   └── results/                 # Per-suite JSON output
 ├── scripts/
 │   ├── run_benchmarks.sh        # Builds and runs every benchmark suite
-│   └── check_stack.sh           # Probes for optional external dependencies
+│   ├── check_stack.sh           # Probes for optional external dependencies
+│   ├── research_kagome_N12_convergence.c   # v0.4.2 MC convergence probe
+│   └── research_kagome_N12_diagnostics.c   # v0.4.2 end-to-end diagnostic driver
 ├── docs/
-│   ├── architecture_v0.4.md     # v0.4 architecture + v0.5+ research roadmap
+│   ├── architecture_v0.4.md     # Architecture + v0.5+ research roadmap
 │   ├── testing.md               # Test harness reference + per-suite coverage
 │   ├── benchmarks.md            # JSON schema + reference numbers
-│   ├── classical_models.md      # Ising / Kitaev / disordered / spin models (v0.4)
-│   ├── training.md              # nn_backend, cadence flags, physics losses (v0.4)
-│   ├── engine_integration.md    # engine_adapter + eshkol_bridge integration (v0.4)
+│   ├── nqs.md                   # NQS pillar — kernels, ansätze, SR, diagnostics
+│   ├── training.md              # nn_backend, cadence flags, physics losses
+│   ├── engine_integration.md    # engine_adapter + eshkol_bridge integration
+│   ├── cross_project_integration.md # Cross-project vendoring / coordination
+│   ├── libirrep_1_2_coordination.md # libirrep coordination record
+│   ├── classical_models.md      # Ising / Kitaev / disordered / spin models
+│   ├── physics_loss.md          # PDE residual losses
+│   ├── quantum_mechanics.md     # State calculations + entanglement helpers
+│   ├── reinforcement_learning.md# Reward-based RL on spin lattices
 │   ├── topological_features.md  # Overview of topological features
 │   ├── berry_phase.md           # Berry phase + topological invariants
 │   ├── majorana_zero_modes.md   # Majorana modes + braiding
 │   ├── topological_entropy.md   # Entanglement entropy calculations
 │   ├── toric_code.md            # Toric code QEC
-│   └── visualization.md         # SDL2 viewer
+│   ├── visualization.md         # SDL2 viewer
+│   └── research/
+│       └── kagome_KH_plan.md    # v0.4.2 — kagome Z₂ vs Dirac open program
+├── eshkol/                      # Scheme training scripts (dormant; engine-integrated)
+├── vendor/                      # Vendored external binaries (qllm, libirrep)
 ├── Makefile
 ├── README.md
 ├── RELEASE_NOTES.md
@@ -351,65 +456,41 @@ The `matrix_neon.c` module contains advanced optimizations for critical computat
 
 ## Release Information
 
+Current release: **v0.4.2** (2026-04-24). A kagome-diagnostics +
+Lanczos reference addition on top of the v0.4.1 Kitaev-Heisenberg
+and kagome Heisenberg local-energy kernels.
 
-The current release is **v0.4.1** — a capability-addition release
-layered on top of the v0.4.0 foundation.
+**v0.4.2 headline capabilities**
 
-**v0.4.1 additions (on top of v0.4.0):**
+- Sample-based χ_F diagnostic (`nqs_compute_chi_F`).
+- Per-bond-class phase probe on kagome
+  (`nqs_compute_kagome_bond_phase`).
+- Excited-state VMC via the Choo–Neupert–Carleo orthogonal-
+  ansatz penalty (`nqs_sr_{step,run}_excited`).
+- Full-basis Lanczos refinement + multi-Ritz gap extraction for
+  kagome Heisenberg (`nqs_lanczos_{refine,k_lowest}_kagome_heisenberg`).
+- End-to-end research driver
+  (`make research_kagome_N12_diagnostics`).
+- Full suite **359 / 359** passing, AddressSanitizer +
+  UndefinedBehaviorSanitizer clean.
 
-- **Kitaev-Heisenberg kernel on brick-wall honeycomb**
-  (`NQS_HAM_KITAEV_HEISENBERG`). Real + complex-amplitude paths,
-  Chaloupka–Jackeli–Khaliullin sign convention, reduces to
-  Heisenberg at `K=0` and to pure Kitaev at `J=0`. Config fields
-  `cfg.kh_K`, `cfg.kh_J`.
-- **Kagome Heisenberg kernel**
-  (`NQS_HAM_KAGOME_HEISENBERG`). Three-sublattice kagome geometry,
-  PBC (default) or OBC, N = 3·Lx·Ly. The target Hamiltonian for the
-  open kagome-S=½ ground-state problem.
-- **Eleven new analytical checkpoints + one SR-loop convergence test**
-  for the two kernels (plus 16 more in the v0.4.1 follow-up —
-  see CHANGELOG).
-- **`LIBIRREP_MIN`** bumped 1.2 → 1.3.0-alpha.
-- **Full suite**: 359 / 359 passing, zero warnings under
-  `-Wall -Wextra`, AddressSanitizer + UndefinedBehaviorSanitizer
-  clean.
+**v0.4.1 (2026-04-23)** — Kitaev-Heisenberg and kagome Heisenberg
+local-energy kernels (`NQS_HAM_KITAEV_HEISENBERG`,
+`NQS_HAM_KAGOME_HEISENBERG`); `LIBIRREP_MIN` bumped to 1.3.0-alpha.
 
-See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the full v0.4.1 notes.
+**v0.4.0 foundation highlights** — Hilbert-space Majorana braiding
+with order-8 non-Abelian statistics, toric code with explicit data
+qubits + greedy MWPM decoder, engine-neutral scaffolding (`engine_adapter`,
+`eshkol_bridge`, `nn_backend`), training-loop decoder cadence flags,
+assert-based test suite + benchmark harness.
 
-**v0.4.0 highlights:**
-
-- **Hilbert-space Majorana-anyon braiding.** The new
-  `apply_braid_unitary()` operates as a genuine unitary
-  `B = (1 + γ_i γ_j) / √2` on the `2^(N/2)`-dim fermion-parity Fock
-  basis, with `B⁴ = −I` and `B⁸ = I` (order-8 Ising-anyon statistics)
-  verified by test. The v0.3 operator-space braiding path is retained
-  as `braid_majorana_operators_legacy()`.
-- **Toric-code error correction with explicit data qubits.** Per-link
-  `x_errors` / `z_errors` accumulators, greedy matching decoder with
-  primal-vs-dual path walks, and homology-based logical-error
-  detection. Serves as the MWPM baseline for the learned decoder
-  coming in v0.5 (pillar P1.3).
-- **Engine-neutral scaffolding.** New `engine_adapter`,
-  `eshkol_bridge`, and `nn_backend` modules. All compile dormant today
-  (`#ifdef SPIN_NN_HAS_ENGINE` guards); plug in an external NN / tensor /
-  reasoning engine (an Eshkol-native NN engine is the primary planned
-  target; Noesis is a candidate once released) in v0.5+.
-- **Training-loop cadences.** `--cadence-decoder`, `--cadence-invariants`,
-  `--lambda-logical` flags fold decoder logical-error signals into the
-  physics loss as soft penalties during training.
-- **Assert-based test suite** (`tests/test_*.c`, one binary per file,
-  driven by `harness.h`) covering every library module. Run all via
-  `make test`; see `docs/testing.md` for the per-module coverage map.
-- **Benchmark harness** (`benchmarks/bench_*.c`) emitting JSON under
-  `benchmarks/results/`. Run `./scripts/run_benchmarks.sh`.
-
-See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the full details,
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the full notes,
 [CHANGELOG.md](CHANGELOG.md) for history, and
-[docs/architecture_v0.4.md](docs/architecture_v0.4.md) for the forward
-roadmap (v0.5 research pillars: ViT wavefunctions for frustrated magnets,
+[docs/architecture_v0.4.md](docs/architecture_v0.4.md) for the v0.5+
+research roadmap (ViT wavefunctions for frustrated magnets,
 equivariant Landau-Lifshitz-Gilbert dynamics, learned surface-code
 decoders, Fibonacci-anyon universal gates, neural-operator Boltzmann
-samplers, and more).
+samplers).
 
 ## Citation
 If you use this project in your research, please cite as follows:
@@ -418,7 +499,7 @@ If you use this project in your research, please cite as follows:
 @software{SpinBasedNeuralComputation,
   author = {tsotchke},
   title = {Spin-Based Neural Computation Framework: Simulations of Topological Quantum Computing},
-  version = {0.4.0},
+  version = {0.4.2},
   year = {2026},
   url = {https://github.com/tsotchke/spin_based_neural_network}
 }
@@ -453,11 +534,17 @@ references are also carried in the relevant files under `docs/`.
 15. J. Bausch, A. Senior, F. Heras, T. Edlich, A. Davies, M. Newman, C. Jones, K. Satzinger, M. Y. Niu, S. Blackwell, G. Holland, D. Kafri, J. Atalaya, C. Gidney, D. Hassabis, S. Boixo, H. Neven, and P. Kohli, "Learning high-accuracy error decoding for quantum processors," *Nature*, vol. 635, pp. 834–840, 2024. DOI: 10.1038/s41586-024-08148-8.
 16. V. Ninkovic, O. Kundacina, D. Vukobratovic, and C. Häger, "Scalable Neural Decoders for Practical Real-Time Quantum Error Correction," arXiv:2510.22724, 2025.
 
-### Neural Network Quantum States (v0.5 pillar P1.1)
+### Neural Network Quantum States (pillar P1.1, diagnostics pipeline in v0.4.2)
 17. G. Carleo and M. Troyer, "Solving the quantum many-body problem with artificial neural networks," *Science*, vol. 355, pp. 602–606, 2017.
 18. S. Sorella, "Green Function Monte Carlo with Stochastic Reconfiguration," *Physical Review Letters*, vol. 80, pp. 4558–4561, 1998.
 19. R. Rende, L. Viteritti, L. Bardone, F. Becca, and S. Goldt, "A simple linear algebra identity to optimize large-scale neural network quantum states," *Communications Physics*, 2024. arXiv:2310.05715.
 20. A. Chen and M. Heyl, "Empowering deep neural quantum states through efficient optimization," *Nature Physics*, vol. 20, pp. 1476–1481, 2024.
+
+### Quantum geometric tensor, fidelity susceptibility, excited-state VMC, Lanczos (v0.4.2)
+20a. J. P. Provost and G. Vallée, "Riemannian structure on manifolds of quantum states," *Communications in Mathematical Physics*, vol. 76, pp. 289–301, 1980.  *(QGT / Fubini–Study metric on the variational manifold.)*
+20b. P. Zanardi and N. Paunković, "Ground state overlap and quantum phase transitions," *Physical Review E*, vol. 74, p. 031123, 2006.  *(χ_F = Tr(S)/2 convention used in `nqs_compute_chi_F`.)*
+20c. K. Choo, T. Neupert, and G. Carleo, "Two-dimensional frustrated J1-J2 model studied with neural network quantum states," *Physical Review B*, vol. 100, p. 125124, 2019. arXiv:1810.10196.  *(Orthogonal-ansatz penalty for excited states — `nqs_sr_step_excited`.)*
+20d. C. Lanczos, "An iteration method for the solution of the eigenvalue problem of linear differential and integral operators," *Journal of Research of the National Bureau of Standards*, vol. 45, pp. 255–282, 1950.  *(Krylov eigensolver underpinning `lanczos_smallest_with_init` and `lanczos_k_smallest_with_init`.)*
 
 ### Equivariant neural networks for spin dynamics (v0.5 pillar P1.2)
 21. S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P. Mailoa, M. Kornbluth, N. Molinari, T. E. Smidt, and B. Kozinsky, "E(3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials," *Nature Communications*, vol. 13, p. 2453, 2022.
@@ -482,5 +569,3 @@ indexes references used in the v0.5+ research pillars.
 ## License
 This project is licensed under the MIT License.
 
-## Conclusion
-The **Spin-Based Neural Computation Framework** provides a versatile platform for studying quantum systems, complex spin interactions, and energy-based learning model approaches to neural networks, making it ideal for researchers exploring quantum computing, spintronics, mathematical physics, complexity, and AI. By integrating reinforcement learning and comprehensive spin models, enabling exploration of quantum-inspired neural networks and physics-informed learning, it encourages insightful exploration into physical systems and computational physics.

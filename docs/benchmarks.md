@@ -1,9 +1,11 @@
 # Benchmarks
 
-v0.4 ships 4 benchmark suites under `benchmarks/`, emitting JSON records
-under `benchmarks/results/<suite>/<name>.json`. Each result is a
-self-describing record (hostname, timestamp, OS, arch, plus the measured
-metrics).
+v0.4 ships 6 benchmark suites under `benchmarks/`, emitting JSON
+records under `benchmarks/results/<suite>/<name>.json`. Each result is
+a self-describing record (hostname, timestamp, OS, arch, plus the
+measured metrics). Active suites: `bench_ising`, `bench_kitaev`,
+`bench_majorana_braid`, `bench_toric_decoder`, `bench_nqs`,
+`bench_thqcp`.
 
 ## Running
 
@@ -11,7 +13,7 @@ metrics).
 ./scripts/run_benchmarks.sh
 ```
 
-Builds all 4 suites (`make bench`) and runs them in sequence. Each run
+Builds all suites (`make bench`) and runs them in sequence. Each run
 overwrites the previous result file in place.
 
 Individual suites:
@@ -84,6 +86,31 @@ The published threshold for optimal minimum-weight perfect matching
 decoding on the toric code is ≈ 10.3 % for independent X / Z noise [5].
 The greedy decoder's effective threshold is lower (below ≈ 5 %, based on
 these curves).
+
+### `bench_nqs`
+
+Throughput across the three major NQS pipeline stages (sampler,
+local-energy kernel, full holomorphic-SR step), per Hamiltonian. Drift
+in any row between releases surfaces here before it shows up in
+downstream research numbers.
+
+Rows emitted (names map 1:1 to `benchmarks/results/nqs/*.json`):
+
+- **Generic sampler throughput** — mean-field ansatz, Metropolis
+  single-flip, at L ∈ {4, 6, 8}.
+- **Generic SR step throughput** — plain SR on TFIM at L ∈ {4, 6}.
+- **Local-energy throughput on KH** — brick-wall honeycomb 2×2,
+  complex RBM, 4096 samples.
+- **Local-energy throughput on kagome** — 2×2 PBC cluster (N=12),
+  complex RBM, 2048 samples.
+- **Sampler throughput on KH / kagome** — 2×2 clusters, complex
+  RBM (v0.4.2 additions).
+- **Holomorphic-SR-step throughput on KH / kagome** — 2×2 clusters,
+  complex RBM, 256 samples/step (v0.4.2 additions).
+
+All numbers are emitted to JSON; inspect the result files for
+hardware-specific baselines. See `docs/nqs.md §8` for the
+research-focused interpretation.
 
 ## JSON schema
 

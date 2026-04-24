@@ -9,7 +9,7 @@ this repo and the companion
 through the `agent-notes/inbox-{spin,irrep}` channel on the authors'
 working machines.*
 
-## Infrastructure shipped (public, v0.4.1)
+## Infrastructure shipped (public, v0.4.1 → v0.4.2)
 
 - `NQS_HAM_KAGOME_HEISENBERG` kernel in `src/nqs/nqs_gradient.c`, real +
   complex amplitude, PBC/OBC. 2×2 PBC → N=12, 24 bonds, coord 4.
@@ -48,7 +48,7 @@ before scaling up.
 | 24   | tightest ED anchor                   | 2–5% with projection   |
 | 30   | ED upper bound (irrep: Lanczos w/ full-reorth port) | open |
 | 36   | NQS-only territory                   | 10–20% at best         |
-| 48+  | out of scope for v0.4.1 line         | —                      |
+| 48+  | out of scope for v0.4.x line         | —                      |
 
 ## 5-diagnostic protocol (joint with libirrep)
 

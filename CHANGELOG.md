@@ -5,51 +5,94 @@ All notable changes to the Spin-Based Neural Computation Framework will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.1] — 2026-04-23 — Hamiltonian kernels: KH + kagome
+## [0.4.2] — 2026-04-24 — kagome diagnostics + Lanczos reference
 
-### Added — kagome Heisenberg research diagnostics
-- **χ_F = Tr(S)/2 sample-based helper** (`nqs_compute_chi_F` in
+### Added — sample-based diagnostics
+- **χ_F = Tr(S)/2 helper** (`nqs_compute_chi_F` in
   `include/nqs/nqs_diagnostics.h`). Returns the trace of the quantum
   geometric tensor from a freshly sampled batch via the same
   complex-gradient path holomorphic SR uses. Real and complex
-  ansätze transparently supported.
+  ansätze transparently supported. Convention: Zanardi–Paunković
+  2006 (χ_F = Tr(S)/2).
 - **Bipartite phase probe on kagome** (`nqs_compute_kagome_bond_phase`).
   Per-bond-class circular mean of the amplitude ratio
   ⟨ψ(s_{ij})/ψ(s)⟩_α for α ∈ {A-B, A-C, B-C}. Distinguishes
   Marshall-like sign structure from frustrated / Dirac-compatible
   phase profiles.
+
+### Added — excited-state VMC
 - **Excited-state stochastic reconfiguration** (`nqs_sr_{step,run}_excited`
   in `include/nqs/nqs_optimizer.h`). Implements Choo–Neupert–Carleo
   2018 (arXiv:1810.10196) orthogonal-ansatz penalty VMC. Augments
   the holomorphic-SR local energy by μ·r(s)·conj(⟨r⟩) where
-  r(s) = ψ_ref(s)/ψ(s). Validated on 2-site Heisenberg: excited-SR
-  with μ=5 recovers E₁ = +0.25 to four decimal places against an
-  exact reference.
-- **End-to-end diagnostics driver** `scripts/research_kagome_N12_diagnostics.c`,
-  wired at `make research_kagome_N12_diagnostics`. Chains GS SR →
-  χ_F → per-bond-class phase → excited-state SR → gap estimate on
-  one N=12 PBC kagome cluster. Research-scale; not part of `make
-  test`.
+  r(s) = ψ_ref(s)/ψ(s); log-ratio clamped at exp(±10) to contain
+  tail events. `out_info->mean_energy` reports the physical ⟨H⟩,
+  not the augmented loss. Validated on 2-site Heisenberg: excited-
+  SR with μ=5 recovers E₁ = +0.25 to four decimal places against
+  an exact reference.
+
+### Added — exact reference via Lanczos
 - **Kagome Heisenberg Lanczos refinement**
   (`nqs_exact_energy_kagome_heisenberg`,
   `nqs_lanczos_refine_kagome_heisenberg` in
   `include/nqs/nqs_lanczos.h`). Builds the full 2^N-dim Hamiltonian
-  matvec for the 2×2 PBC cluster (N=12, dim=4096) and refines the
-  trained cRBM's state vector to machine precision. On our specific
-  cluster E₀_exact = −5.44487522 J (3.8 % below the Leung-Elser
-  literature value — different PBC-wrap convention).
+  matvec for the 2×2 PBC cluster (N=12, dim=4096) matching the VMC
+  local-energy kernel bond-for-bond, and refines the trained cRBM
+  state to machine precision. On our specific cluster
+  E₀_exact = −5.44487522 J (3.8 % below the Leung-Elser literature
+  value — different PBC-wrap convention).
 - **Multi-Ritz Lanczos** (`lanczos_k_smallest_with_init` in
   `include/mps/lanczos.h` +
   `nqs_lanczos_k_lowest_kagome_heisenberg`). Extracts the k
-  smallest eigenvalues from one Krylov run, so the true spin gap
+  smallest eigenvalues from one Krylov run, so the spin gap
   Δ = E₁ − E₀ = 0.116483 J on N=12 drops out as one subtraction
-  alongside E₀. Feeds the spin-gap probe in the 5-diagnostic
-  protocol with an exact reference number that VMC energies can
-  now be benchmarked against directly.
-- **Benchmark rows** for sampler + holomorphic-SR-step throughput on
-  the KH and kagome kernels in `benchmarks/bench_nqs.c`, so
-  per-Hamiltonian drift across releases surfaces in
-  `benchmarks/results/`.
+  alongside E₀.
+- Existing `nqs_lanczos_refine_heisenberg` now seeds Lanczos from
+  the trained state's Re(ψ) rather than a deterministic xorshift
+  fallback, dropping convergence from full-dim to tens of Krylov
+  steps on well-trained ansätze.
+
+### Added — end-to-end research driver
+- **`scripts/research_kagome_N12_diagnostics.c`** (invoked via
+  `make research_kagome_N12_diagnostics`) chains GS SR →
+  χ_F → per-bond-class phase → excited-state SR →
+  Lanczos-exact E₀/E₁/gap on one N=12 PBC kagome cluster. Output
+  is a TAP-style report. Typical run: ~22 min on an M-series Mac.
+  Not wired into `make test`.
+- `scripts/research_kagome_N12_convergence.c` (via
+  `make research_kagome_N12`) is the simpler MC-only convergence
+  probe.
+
+### Added — benchmarks
+- Sampler + holomorphic-SR-step throughput rows for the KH and
+  kagome kernels in `benchmarks/bench_nqs.c`; bench suite now
+  covers the three major NQS pipeline stages (local-energy,
+  sampler, full-SR-step) per Hamiltonian.
+
+### Tests
+- **New `tests/test_nqs_chi_F.c`** (6 cases): χ_F finiteness +
+  non-negativity on complex-RBM and legacy-MLP ansätze, bad-args
+  rejection, MC consistency across batch sizes, and the kagome
+  bond-phase probe with per-class output + rejection on non-kagome
+  Hamiltonians.
+- **New `tests/test_nqs_excited.c`** (4 cases): μ=0 equivalence
+  with holomorphic SR, null-reference rejection, 2-site Heisenberg
+  triplet recovery to four decimal places, and a kagome N=12
+  pipeline smoke.
+- `tests/test_nqs_lanczos.c` gains
+  `test_kagome_lanczos_k_lowest_gives_exact_gap`: ascending Ritz
+  order, E₀ matches rank-1 refine to 10⁻⁸, positive gap.
+- **Total: 359 / 359 passing**, up from 343 at v0.4.1. Zero
+  warnings under `-Wall -Wextra`. AddressSanitizer +
+  UndefinedBehaviorSanitizer clean.
+
+### No breaking changes
+All v0.4.1 public symbols retain their signatures and semantics.
+Every new capability is opt-in via new entry points.
+
+---
+
+## [0.4.1] — 2026-04-23 — Hamiltonian kernels: KH + kagome
 
 ### Added
 - **Kitaev-Heisenberg local-energy kernel** (`NQS_HAM_KITAEV_HEISENBERG`)
@@ -93,24 +136,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the sampler's configured site count to consumers.
 
 ### Tests
-- Full suite: 343/343 passing (was 333 in v0.4), 0 warnings under
-  `-Wall -Wextra`, 0 regressions.
-- New `tests/test_nqs_chi_F.c` (6 cases): χ_F finiteness + non-
-  negativity on complex-RBM and legacy-MLP ansätze, bad-args
-  rejection, MC consistency across batch sizes, and the kagome
-  bond-phase probe with per-class output.
-- New `tests/test_nqs_excited.c` (4 cases): μ=0 equivalence with
-  holomorphic SR, null-reference rejection, 2-site Heisenberg
-  triplet recovery to four decimal places, and a kagome N=12
-  pipeline smoke exercising excited SR through the multi-sublattice
-  kernel (wiring smoke; numerical convergence lives in the research
-  driver).
-- `tests/test_nqs_lanczos.c` gains
-  `test_kagome_lanczos_k_lowest_gives_exact_gap` (1 case): k-Ritz
-  extraction returns ascending eigenvalues whose smallest matches
-  the rank-1 refine to 10⁻⁸, with a positive spin gap.
-- Follow-up suite total: **359 / 359 passing**, up from 343 at
-  v0.4.1. AddressSanitizer + UndefinedBehaviorSanitizer clean.
+- Full suite at v0.4.1: 343 / 343 passing (was 333 in v0.4), 0
+  warnings under `-Wall -Wextra`, 0 regressions. (See v0.4.2 for
+  the follow-up count of 359 / 359.)
 
 ## [Unreleased] — v0.5 pillar landings
 

@@ -15,16 +15,40 @@ include/nqs/
 ├── nqs_sampler.h      # Metropolis-Hastings sampler
 ├── nqs_gradient.h     # local-energy estimator + accumulator
 ├── nqs_ansatz.h       # wavefunction ansatz contract
-└── nqs_optimizer.h    # stochastic reconfiguration + CG solve
+├── nqs_optimizer.h    # SR + holomorphic SR + tVMC + excited SR
+├── nqs_marshall.h     # Marshall-sign wrapper for bipartite AFMs
+├── nqs_translation.h  # translation symmetry projection
+├── nqs_diagnostics.h  # χ_F + kagome bond phase (v0.4.2)
+└── nqs_lanczos.h      # full-basis Lanczos refinement (v0.4.2)
 
 src/nqs/
 ├── nqs_sampler.c      # single-flip MH with xorshift64 RNG
-├── nqs_gradient.c     # TFIM, Heisenberg, J1-J2 local energies
+├── nqs_gradient.c     # TFIM, Heisenberg, XXZ, J1-J2, KH, kagome Heisenberg
 ├── nqs_ansatz.c       # mean-field, real RBM, complex RBM (ViT slot reserved)
-└── nqs_optimizer.c    # SR step with matrix-free CG
+├── nqs_optimizer.c    # SR + holomorphic SR + tVMC + excited-state SR
+├── nqs_marshall.c
+├── nqs_translation.c
+├── nqs_diagnostics.c  # v0.4.2 — sample-based diagnostics
+└── nqs_lanczos.c      # v0.4.2 — exact reference solver
 
-tests/test_nqs.c       # 14 tests
-benchmarks/bench_nqs.c # sampler + SR step throughput
+tests/
+├── test_nqs.c                 # 14 foundation tests
+├── test_nqs_rbm.c             # RBM ansatz coverage
+├── test_nqs_complex_rbm.c     # complex-RBM ansatz coverage
+├── test_nqs_holomorphic_sr.c  # end-to-end holomorphic SR (TFIM, Heisenberg, KH, kagome)
+├── test_nqs_kitaev.c          # KH kernel (9 cases inc. legacy-vs-KH cross-check)
+├── test_nqs_kagome.c          # kagome Heisenberg kernel (7 cases)
+├── test_nqs_marshall.c
+├── test_nqs_translation.c
+├── test_nqs_convergence.c
+├── test_nqs_xxz.c
+├── test_nqs_tvmc.c
+├── test_nqs_lanczos.c         # 8 cases (kagome k-lowest added in v0.4.2)
+├── test_nqs_chi_F.c           # v0.4.2 — χ_F + kagome bond-phase (6 cases)
+└── test_nqs_excited.c         # v0.4.2 — excited-state SR (4 cases)
+
+benchmarks/bench_nqs.c # sampler + local-energy + SR-step throughput
+                       # across generic + KH + kagome Hamiltonians
 ```
 
 ## 2. Configuration
@@ -435,22 +459,30 @@ for 500 GS + 300 excited iters).
 
 ## 8. Benchmarks
 
-`benchmarks/bench_nqs.c` (5 records emitted per run):
+`benchmarks/bench_nqs.c` emits one record per pipeline-stage × lattice
+combination:
 
-- Metropolis sampler throughput at L ∈ {4, 6, 8}.
-- SR step throughput (256 samples/step, 20 steps) at L ∈ {4, 6}.
+- **Generic sampler throughput** at L ∈ {4, 6, 8} (mean-field ansatz).
+- **Generic SR-step throughput** (256 samples/step) at L ∈ {4, 6}.
+- **Local-energy throughput** on KH (2×2 brick-wall honeycomb,
+  complex RBM) and kagome Heisenberg (2×2 PBC cluster, N=12) —
+  silent-drift canary for the v0.4.1 kernels.
+- **Sampler throughput** on KH + kagome (v0.4.2 additions).
+- **Holomorphic-SR-step throughput** on KH + kagome (v0.4.2
+  additions), so per-Hamiltonian drift across releases surfaces
+  in `benchmarks/results/`.
 
 Reference numbers on an Apple-Silicon M-series Mac:
 
 | Metric | L = 4 | L = 6 | L = 8 |
 |---|---|---|---|
-| Sampler (samples/s) | ≈ 1.7 × 10⁷ | — (try 2 × 10⁶) | — (try 5 × 10⁵) |
-| SR step/s | ≈ 4 × 10³ | — (fewer by batch²) | — |
+| Generic sampler (samples/s) | ≈ 1.7 × 10⁷ | — (try 2 × 10⁶) | — (try 5 × 10⁵) |
+| Generic SR step/s | ≈ 4 × 10³ | — (fewer by batch²) | — |
 
-Numbers scale roughly as O(N²) per SR step for the mean-field ansatz
-(sampling + local-energy enumeration dominated). Real-world pillar
-P1.1 work should report wall-clock convergence on published
-benchmarks (e.g. J1-J2 at J2/J1 = 0.5) rather than raw throughput.
+See `benchmarks/results/nqs/*.json` for the KH + kagome pipeline
+numbers. Wall-clock convergence benchmarks on published instances
+(e.g. J1-J2 at J2/J1 = 0.5, kagome N=12 vs Lanczos-exact) are the
+meaningful research metrics; raw throughput is a regression guard.
 
 ## 9. v0.5 roadmap
 
@@ -469,6 +501,7 @@ See `architecture_v0.4.md` §P1.1 for the full pillar plan.
 
 ## 10. References
 
+### Foundational
 - G. Carleo and M. Troyer, "Solving the quantum many-body problem with
   artificial neural networks," *Science* 355 (2017).
 - S. Sorella, "Green Function Monte Carlo with Stochastic
@@ -478,3 +511,24 @@ See `architecture_v0.4.md` §P1.1 for the full pillar plan.
   quantum states," *Communications Physics* (2024).
 - A. Chen and M. Heyl, "Empowering deep neural quantum states through
   efficient optimization," *Nature Physics* 20:1476-1481 (2024).
+
+### Quantum geometric tensor + fidelity susceptibility (v0.4.2 χ_F)
+- J. P. Provost and G. Vallée, "Riemannian structure on manifolds of
+  quantum states," *Communications in Mathematical Physics* 76,
+  289–301 (1980). *(QGT / Fubini–Study metric.)*
+- P. Zanardi and N. Paunković, "Ground state overlap and quantum
+  phase transitions," *Physical Review E* 74, 031123 (2006).
+  *(χ_F = Tr(S)/2 convention used by `nqs_compute_chi_F`.)*
+
+### Excited-state VMC (v0.4.2 `nqs_sr_step_excited`)
+- K. Choo, T. Neupert, and G. Carleo, "Two-dimensional frustrated
+  J1-J2 model studied with neural network quantum states,"
+  *Physical Review B* 100, 125124 (2019). arXiv:1810.10196.
+  *(Orthogonal-ansatz penalty VMC — the recipe implemented here.)*
+
+### Lanczos post-processing (v0.4.2 exact reference)
+- C. Lanczos, "An iteration method for the solution of the eigenvalue
+  problem of linear differential and integral operators," *Journal
+  of Research of the National Bureau of Standards* 45, 255–282
+  (1950).  *(Krylov eigensolver underlying `lanczos_smallest_with_init`
+  and `lanczos_k_smallest_with_init`.)*
