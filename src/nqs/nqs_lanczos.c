@@ -18,6 +18,49 @@ static void state_to_spins(long state, int N, int *out) {
     }
 }
 
+/*
+ * Check whether dropping Im(ψ) is safe for the materialisation path.
+ *
+ * The Lanczos seed is built from Re(ψ) = |ψ|·cos(arg ψ).  This is exact
+ * for ground states that are real up to a global phase (stoquastic
+ * Hamiltonians on bipartite lattices under Marshall).  For non-stoquastic
+ * problems — kagome Heisenberg, kagome KH, frustrated J1-J2 — the ground
+ * state has a non-trivial phase structure and the projection silently
+ * discards physical information, producing wrong Lanczos eigenvalues.
+ *
+ * We compute ||Im(ψ)||² / ||ψ||² and warn when it exceeds a tolerance.
+ * The routine still proceeds — callers see the warning on stderr and can
+ * interpret their Lanczos result accordingly (or decide to fall back to
+ * a complex Krylov implementation once one is available).
+ *
+ * Returns the imaginary fraction f = ||Im(ψ)||² / (||Re(ψ)||² + ||Im(ψ)||²).
+ */
+static double nqs_lanczos_check_stoquastic(const double *lp, const double *arg_arr,
+                                           long dim, double lp_max)
+{
+    double norm_re2 = 0.0, norm_im2 = 0.0;
+    for (long s = 0; s < dim; s++) {
+        double a   = exp(lp[s] - lp_max);
+        double rc  = cos(arg_arr[s]) * a;
+        double ic  = sin(arg_arr[s]) * a;
+        norm_re2  += rc * rc;
+        norm_im2  += ic * ic;
+    }
+    double total = norm_re2 + norm_im2;
+    double frac  = (total > 0.0) ? norm_im2 / total : 0.0;
+    if (frac > 1e-6) {
+        fprintf(stderr,
+                "nqs_lanczos: WARNING — Im(ψ) accounts for %.3e of the "
+                "wavefunction norm.  The materialisation path projects onto "
+                "Re(ψ) only and is correct only for stoquastic ground states "
+                "(bipartite Heisenberg + Marshall, TFIM).  Kagome / J1-J2 / "
+                "frustrated KH ground states are non-stoquastic; Lanczos "
+                "eigenvalues returned below will be contaminated by phase "
+                "projection.\n", frac);
+    }
+    return frac;
+}
+
 int nqs_materialise_state_with_cb(nqs_log_amp_fn_t log_amp, void *user,
                                    int Lx, int Ly,
                                    double **out_psi, long *out_dim) {
@@ -41,6 +84,8 @@ int nqs_materialise_state_with_cb(nqs_log_amp_fn_t log_amp, void *user,
         arg_arr[s] = arg_s;
         if (lp_s > lp_max) lp_max = lp_s;
     }
+    /* Stoquasticity guard: warn if Im(ψ) carries significant weight. */
+    (void)nqs_lanczos_check_stoquastic(lp, arg_arr, dim, lp_max);
     double norm2 = 0.0;
     for (long s = 0; s < dim; s++) {
         /* For real wavefunctions arg ∈ {0, π}; cos(arg) = ±1. */
@@ -87,11 +132,10 @@ int nqs_materialise_state_with_cb_N(nqs_log_amp_fn_t log_amp, void *user,
         arg_arr[s] = arg_s;
         if (lp_s > lp_max) lp_max = lp_s;
     }
+    (void)nqs_lanczos_check_stoquastic(lp, arg_arr, dim, lp_max);
     double norm2 = 0.0;
     for (long s = 0; s < dim; s++) {
-        /* Store Re(ψ) = |ψ|·cos(arg ψ). For the Hermitian Heisenberg
-         * Hamiltonian the GS is real up to a global phase, so cos is
-         * the right projection for the Lanczos seed. */
+        /* For real wavefunctions arg ∈ {0, π}; cos(arg) = ±1. */
         psi[s] = cos(arg_arr[s]) * exp(lp[s] - lp_max);
         norm2 += psi[s] * psi[s];
     }

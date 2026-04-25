@@ -17,6 +17,7 @@
  * in both batch size and parameter count.
  */
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "nqs/nqs_optimizer.h"
@@ -105,7 +106,20 @@ static int cg_solve(const double *batch_grads, long batch_size, long num_params,
     for (iter = 0; iter < max_iters; iter++) {
         qgt_apply(batch_grads, batch_size, num_params, grad_mean, epsilon, p, Ap);
         double pAp = vec_dot(p, Ap, num_params);
-        if (fabs(pAp) < 1e-30) break;
+        if (!(fabs(pAp) >= 1e-30)) {
+            /* Krylov breakdown: the search direction has zero curvature
+             * under the (regularised) QGT.  Leave converged=0 so callers
+             * can detect the premature exit.  Log once so the failure is
+             * visible rather than silent. */
+            fprintf(stderr,
+                    "nqs_sr cg_solve: Krylov breakdown at iter=%d, "
+                    "pAp=%.3e, residual/rhs=%.3e (tol=%.3e). Returning "
+                    "unconverged partial step.\n",
+                    iter, pAp,
+                    (rs0 > 0.0) ? sqrt(rs_old / rs0) : 0.0,
+                    tol);
+            break;
+        }
         double alpha = rs_old / pAp;
         vec_axpy(out_delta, alpha, p, num_params);
         vec_axpy(r, -alpha, Ap, num_params);

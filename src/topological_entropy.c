@@ -9,143 +9,179 @@
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
-// Calculate von Neumann entropy between two subsystems by calculating it
-// for each site explicitly or as a full matrix, depending on size
-double calculate_von_neumann_entropy(KitaevLattice *lattice, 
-                                    int subsystem_coords[3], 
-                                    int subsystem_size[3]) {
-    if (!lattice) return 0.0;
-    
-    if (getenv("DEBUG_ENTROPY")) {
-        printf("DEBUG: Calculating von Neumann entropy for subsystem at (%d,%d,%d) size (%d,%d,%d)\n",
-               subsystem_coords[0], subsystem_coords[1], subsystem_coords[2],
-               subsystem_size[0], subsystem_size[1], subsystem_size[2]);
+/* Forward declaration: defined later in this file */
+static double compute_classical_energy_bitfield(const KitaevLattice *lat,
+                                                unsigned long long state);
+
+/*
+ * Compute the von Neumann entropy of subsystem A for a classical Kitaev/Ising
+ * thermal state at beta = 1.
+ *
+ * For a classical (Ising-like) Hamiltonian the thermal density matrix is
+ * diagonal in the spin-z basis, so the reduced density matrix obtained by
+ * tracing out the environment is also diagonal:
+ *
+ *   ρ_A(s_A, s_A) = Σ_{s_B} exp(-β H(s_A ⊗ s_B)) / Z
+ *
+ * The von Neumann entropy of a diagonal density matrix is the Shannon entropy
+ * of its diagonal probabilities:
+ *
+ *   S = -Σ_{s_A} P(s_A) log P(s_A)
+ *
+ * This routine therefore computes only the marginal P(s_A) histogram (size
+ * 2^|A|) rather than allocating a 2^|A| × 2^|A| matrix.  This is exact and
+ * memory-efficient up to |A| ≤ 24 (16 M doubles).
+ *
+ * Total-system enumeration: exact for total_sites ≤ 20 (Boltzmann sum over
+ * 2^N configurations); single-spin Metropolis MC fallback for larger systems
+ * using lattice->spins as the starting point.  When lattice->spins is NULL
+ * (test stubs) the function returns the maximally mixed Shannon entropy
+ * S = |A| log 2 as a safe fallback.
+ */
+static int compute_subsystem_marginal_probs(KitaevLattice *lattice,
+                                            const int *sub_idx,
+                                            int sub_sites,
+                                            double *probs)
+{
+    if (!lattice || !sub_idx || !probs) return -1;
+    int Ny = lattice->size_y, Nz = lattice->size_z;
+    int total_sites = lattice->size_x * Ny * Nz;
+    long long M = 1LL << sub_sites;
+
+    for (long long i = 0; i < M; i++) probs[i] = 0.0;
+
+    if (!lattice->spins) {
+        double v = 1.0 / (double)M;
+        for (long long i = 0; i < M; i++) probs[i] = v;
+        return 0;
     }
-    
-    // Check subsystem bounds
+
+    if (total_sites <= 20) {
+        const double beta = 1.0;
+        long long full_size = 1LL << total_sites;
+        double Z = 0.0;
+        for (long long state = 0; state < full_size; state++) {
+            double E = compute_classical_energy_bitfield(lattice, (unsigned long long)state);
+            double w = exp(-beta * E);
+            Z += w;
+            int s_A = 0;
+            for (int b = 0; b < sub_sites; b++)
+                if ((state >> sub_idx[b]) & 1LL) s_A |= (1 << b);
+            probs[s_A] += w;
+        }
+        if (Z > 1e-12)
+            for (long long i = 0; i < M; i++) probs[i] /= Z;
+        else {
+            double v = 1.0 / (double)M;
+            for (long long i = 0; i < M; i++) probs[i] = v;
+        }
+    } else {
+        const double beta = 1.0;
+        const int    N_sweeps = 10000;
+        int *spins = (int *)malloc((size_t)total_sites * sizeof(int));
+        if (!spins) return -1;
+        for (int x = 0; x < lattice->size_x; x++)
+        for (int y = 0; y < Ny; y++)
+        for (int z = 0; z < Nz; z++)
+            spins[x*Ny*Nz + y*Nz + z] = lattice->spins[x][y][z];
+
+        long long *counts = (long long *)calloc((size_t)M, sizeof(long long));
+        if (!counts) { free(spins); return -1; }
+
+        long long total_samples = (long long)N_sweeps * total_sites;
+        for (long long sweep = 0; sweep < total_samples; sweep++) {
+            int site = rand() % total_sites;
+            int x = site / (Ny*Nz), y = (site / Nz) % Ny, z = site % Nz;
+            double h = 0.0;
+            if (x>0)                  h += lattice->jx * spins[(x-1)*Ny*Nz + y*Nz + z];
+            if (x+1<lattice->size_x)  h += lattice->jx * spins[(x+1)*Ny*Nz + y*Nz + z];
+            if (y>0)                  h += lattice->jy * spins[x*Ny*Nz + (y-1)*Nz + z];
+            if (y+1<Ny)               h += lattice->jy * spins[x*Ny*Nz + (y+1)*Nz + z];
+            if (z>0)                  h += lattice->jz * spins[x*Ny*Nz + y*Nz + (z-1)];
+            if (z+1<Nz)               h += lattice->jz * spins[x*Ny*Nz + y*Nz + (z+1)];
+            double dE = 2.0 * spins[site] * h;
+            if (dE <= 0.0 || (double)rand()/RAND_MAX < exp(-beta * dE))
+                spins[site] *= -1;
+            if (sweep >= total_samples / 2) {
+                int s_A = 0;
+                for (int b = 0; b < sub_sites; b++)
+                    if (spins[sub_idx[b]] > 0) s_A |= (1 << b);
+                counts[s_A]++;
+            }
+        }
+        long long n_samples = total_samples / 2;
+        if (n_samples > 0)
+            for (long long i = 0; i < M; i++) probs[i] = (double)counts[i] / (double)n_samples;
+        else
+            for (long long i = 0; i < M; i++) probs[i] = 1.0 / (double)M;
+
+        free(spins);
+        free(counts);
+    }
+    return 0;
+}
+
+/*
+ * Von Neumann entropy of subsystem A for a classical Kitaev/Ising thermal
+ * state at beta = 1.  Reduces to the Shannon entropy of the marginal P(s_A)
+ * since the density matrix is diagonal in the computational basis.
+ *
+ * Memory cost is 2^|A| doubles; the implementation rejects subsystems with
+ * |A| > 24 to bound allocation at ~128 MB.  Total-system enumeration is
+ * exact for N ≤ 20; larger systems use Metropolis MC.
+ */
+double calculate_von_neumann_entropy(KitaevLattice *lattice,
+                                     int subsystem_coords[3],
+                                     int subsystem_size[3])
+{
+    if (!lattice) return 0.0;
+
     if (subsystem_coords[0] < 0 || subsystem_coords[0] + subsystem_size[0] > lattice->size_x ||
         subsystem_coords[1] < 0 || subsystem_coords[1] + subsystem_size[1] > lattice->size_y ||
         subsystem_coords[2] < 0 || subsystem_coords[2] + subsystem_size[2] > lattice->size_z) {
         fprintf(stderr, "Error: Subsystem is outside lattice bounds\n");
         return 0.0;
     }
-    
-    // Calculate total number of sites in the subsystem
+
     int subsystem_sites = subsystem_size[0] * subsystem_size[1] * subsystem_size[2];
-    if (getenv("DEBUG_ENTROPY")) {
-        printf("DEBUG: Subsystem contains %d sites\n", subsystem_sites);
-        
-        // Explicitly calculate entropy for each site and combine
-        printf("DEBUG: Calculating entropy explicitly for all sites\n");
-    }
-    
-    // Create a tracker for subsystem site calculations
-    int site_counter = 0;
-    double total_entropy = 0.0;
-    
-    // Calculate entropy for individual sites and small clusters
-    for (int x = 0; x < subsystem_size[0]; x++) {
-        for (int y = 0; y < subsystem_size[1]; y++) {
-            for (int z = 0; z < subsystem_size[2]; z++) {
-                // Create a single site subsystem
-                int single_site_coords[3] = {
-                    subsystem_coords[0] + x,
-                    subsystem_coords[1] + y,
-                    subsystem_coords[2] + z
-                };
-                int single_site_size[3] = {1, 1, 1};
-                
-                // Calculate this site's contribution to entropy
-                if (getenv("DEBUG_ENTROPY")) {
-                    printf("DEBUG: Calculating site (%d,%d,%d) - site %d of %d\n",
-                          single_site_coords[0], single_site_coords[1], single_site_coords[2],
-                          ++site_counter, subsystem_sites);
-                } else {
-                    ++site_counter;
-                }
-                
-                // For a site, the matrix size is 2 (spin up/down)
-                int matrix_size = 2;
-                double _Complex *single_site_matrix = (double _Complex *)malloc(matrix_size * matrix_size * sizeof(double _Complex));
-                
-                if (!single_site_matrix) {
-                    fprintf(stderr, "Error: Memory allocation failed for single site matrix\n");
-                    continue;
-                }
-                
-                // Calculate single site reduced density matrix
-                calculate_reduced_density_matrix(lattice, single_site_coords, single_site_size, 
-                                              single_site_matrix, matrix_size);
-                
-                // Calculate von Neumann entropy for this site
-                double site_entropy = von_neumann_entropy(single_site_matrix, matrix_size);
-                if (getenv("DEBUG_ENTROPY")) {
-                    printf("DEBUG: Site (%d,%d,%d) entropy: %f\n", 
-                          single_site_coords[0], single_site_coords[1], single_site_coords[2], 
-                          site_entropy);
-                }
-                
-                // Add to total
-                total_entropy += site_entropy;
-                
-                // Free memory
-                free(single_site_matrix);
-            }
-        }
-    }
-    
-    // Add interaction terms for neighboring sites (approximation)
-    double interaction_factor = 0.1; // Simplification: 10% contribution from interactions
-    double interaction_entropy = total_entropy * interaction_factor;
-    
-    // We can use the site-by-site approximation for large matrices
-    if (subsystem_sites > 10) {
-            // Combine individual site entropies with interaction terms
-            // Allow entropy to be negative for quantum systems
-            double combined_entropy = total_entropy - interaction_entropy;
-            
-            if (getenv("DEBUG_ENTROPY")) {
-                printf("DEBUG: Sum of individual site entropies: %f\n", total_entropy);
-                printf("DEBUG: Interaction contribution: %f\n", interaction_entropy);
-                printf("DEBUG: Final combined entropy: %f\n", combined_entropy);
-            }
-            
-            // Only constrain the maximum positive entropy
-            double max_expected_entropy = subsystem_sites * log(2.0);  // Maximum entropy is log(d) = sites*log(2)
-            if (combined_entropy > max_expected_entropy) {
-                if (getenv("DEBUG_ENTROPY")) {
-                    printf("DEBUG: Entropy value too large, capping at %f\n", max_expected_entropy);
-                }
-                combined_entropy = max_expected_entropy;
-            }
-            
-            return combined_entropy;
-    }
-    
-    if (getenv("DEBUG_ENTROPY")) {
-        printf("DEBUG: Using full density matrix calculation\n");
-    }
-    
-    // Allocate memory for the reduced density matrix
-    // For a spin-1/2 system, the size is 2^n x 2^n where n is the number of sites
-    int matrix_size = 1 << subsystem_sites;  // 2^subsystem_sites
-    double _Complex *reduced_density_matrix = (double _Complex *)malloc(matrix_size * matrix_size * sizeof(double _Complex));
-    
-    if (!reduced_density_matrix) {
-        fprintf(stderr, "Error: Memory allocation failed for reduced density matrix\n");
+    if (subsystem_sites <= 0) return 0.0;
+    if (subsystem_sites > 24) {
+        fprintf(stderr,
+                "Error: subsystem of %d sites exceeds the 24-site memory cap "
+                "(would require 2^%d doubles).\n",
+                subsystem_sites, subsystem_sites);
         return 0.0;
     }
-    
-    // Calculate the reduced density matrix
-    calculate_reduced_density_matrix(lattice, subsystem_coords, subsystem_size, reduced_density_matrix, matrix_size);
-    
-    // Calculate the von Neumann entropy
-    double entropy = von_neumann_entropy(reduced_density_matrix, matrix_size);
-    
-    // Free allocated memory
-    free(reduced_density_matrix);
-    
-    return entropy;
+
+    int Ny = lattice->size_y, Nz = lattice->size_z;
+    int *sub_idx = (int *)malloc((size_t)subsystem_sites * sizeof(int));
+    if (!sub_idx) return 0.0;
+    int sub_n = 0;
+    for (int i = 0; i < subsystem_size[0]; i++)
+    for (int j = 0; j < subsystem_size[1]; j++)
+    for (int l = 0; l < subsystem_size[2]; l++) {
+        int x = subsystem_coords[0]+i, y = subsystem_coords[1]+j, z = subsystem_coords[2]+l;
+        if (x>=0 && x<lattice->size_x && y>=0 && y<Ny && z>=0 && z<Nz)
+            sub_idx[sub_n++] = x*Ny*Nz + y*Nz + z;
+    }
+
+    long long M = 1LL << sub_n;
+    double *probs = (double *)malloc((size_t)M * sizeof(double));
+    if (!probs) { free(sub_idx); return 0.0; }
+
+    int rc = compute_subsystem_marginal_probs(lattice, sub_idx, sub_n, probs);
+    if (rc != 0) { free(probs); free(sub_idx); return 0.0; }
+
+    double S = 0.0;
+    for (long long i = 0; i < M; i++)
+        if (probs[i] > 1e-300) S -= probs[i] * log(probs[i]);
+
+    free(probs);
+    free(sub_idx);
+
+    if (getenv("DEBUG_ENTROPY"))
+        printf("DEBUG: vN entropy on %d sites = %f (Shannon of diagonal RDM)\n", sub_n, S);
+    return S;
 }
 
 /*
