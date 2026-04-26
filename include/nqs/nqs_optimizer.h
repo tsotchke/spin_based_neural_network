@@ -235,6 +235,56 @@ int nqs_tvmc_step_heun(const nqs_config_t *cfg, double dt,
                         void *log_amp_user,
                         nqs_sr_step_info_t *out_info);
 
+/*
+ * MinSR (Chen & Heyl, Nat. Phys. 20:1476, 2024, arXiv:2302.01941;
+ * Rende et al., Comm. Phys. 7:260, 2024, arXiv:2310.05715).
+ *
+ * Solves the same SR linear system   (S + ε I) δ = F   but in the
+ * smaller N_s × N_s sample-space Gram matrix
+ *
+ *     T_{ij} = (1/N_s) Σ_k O_c(s_i)_k O_c(s_j)_k,
+ *
+ * via the push-through identity
+ *
+ *     (O_c^T O_c / N_s + ε I)⁻¹ O_c^T  =  O_c^T (T + ε I)⁻¹.
+ *
+ * Concretely:
+ *   1.  ε_i = E_loc(s_i) − ⟨E_loc⟩
+ *   2.  Form T (N_s × N_s) and add ε I   (cost O(N_s² N_p))
+ *   3.  Cholesky-solve (T + ε I) y = ε for y   (cost O(N_s³))
+ *   4.  δ_k = (1/N_s) Σ_i O_c(s_i)_k · y_i      (cost O(N_s N_p))
+ *   5.  θ ← θ − lr · δ
+ *
+ * Vs. matrix-free CG SR: identical math, but Krylov dimension is
+ * bounded by N_s rather than N_p, and the linear-system memory drops
+ * from N_p × N_p to N_s × N_s.  This is the recipe that scales NQS to
+ * the 10⁵–10⁶-parameter ansätze used at the 2024-2026 frontier.
+ *
+ * Use when N_p ≫ N_s (e.g. ResNet / ViT NQS).  For N_p ≲ N_s the
+ * matrix-free CG path may be marginally cheaper.
+ *
+ * `out_info->cg_iterations` reports 0 (Cholesky is direct) and
+ * `out_info->converged` is 1 on a successful Cholesky factorisation,
+ * 0 when the regularised T failed to be PSD (numerical breakdown).
+ */
+int nqs_sr_step_minsr_full(const nqs_config_t *cfg,
+                            int size_x, int size_y,
+                            nqs_ansatz_t *ansatz,
+                            nqs_sampler_t *sampler,
+                            nqs_log_amp_fn_t log_amp_fn,
+                            void *log_amp_user,
+                            nqs_gradient_fn_t gradient_fn,
+                            void *grad_user,
+                            nqs_sr_step_info_t *out_info);
+
+int nqs_sr_run_minsr(const nqs_config_t *cfg,
+                      int size_x, int size_y,
+                      nqs_ansatz_t *ansatz,
+                      nqs_sampler_t *sampler,
+                      nqs_log_amp_fn_t log_amp_fn,
+                      void *log_amp_user,
+                      double *out_energy_trace);
+
 #ifdef __cplusplus
 }
 #endif

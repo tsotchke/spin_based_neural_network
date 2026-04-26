@@ -957,3 +957,224 @@ int nqs_tvmc_step_real_time(const nqs_config_t *cfg, double dt,
     free(R_mean); free(I_mean); free(F); free(delta);
     return 0;
 }
+
+/* ====================================================================
+ *                            MinSR
+ *
+ * Sample-space Stochastic Reconfiguration (Chen & Heyl 2024;
+ * Rende et al. 2024).  Solves
+ *
+ *     (S + ε I) δ = F                                        (1)
+ *
+ * where S = O_c^T O_c / N_s and F = O_c^T ε / N_s, in the smaller
+ * N_s × N_s sample-space Gram matrix
+ *
+ *     T = O_c O_c^T / N_s                                    (2)
+ *
+ * via the push-through identity
+ *
+ *     (O_c^T O_c / N_s + ε I)⁻¹ O_c^T = O_c^T (T + ε I)⁻¹.   (3)
+ *
+ * Substituting δ = O_c^T y / N_s into (1) and applying (3):
+ *
+ *     (T + ε I) y = ε     (solve for y, length N_s)
+ *     δ_k        = (1/N_s) Σ_i O_c(s_i)_k · y_i.
+ *
+ * Memory: T is N_s × N_s instead of N_p × N_p.  Compute is dominated
+ * by the symmetric outer product O_c O_c^T (cost O(N_s² N_p / 2) using
+ * the lower triangle).  Cholesky on T runs in O(N_s³) — negligible
+ * compared to the outer product when N_p ≫ N_s.
+ * ==================================================================== */
+
+/* In-place lower-triangular Cholesky factorisation.  On success the
+ * lower triangle of A holds L such that A = L L^T (upper triangle is
+ * zeroed).  Returns 0 on success, -1 if A is not PSD. */
+static int cholesky_factor_lower(double *A, int n) {
+    for (int j = 0; j < n; j++) {
+        double diag = A[j * n + j];
+        for (int k = 0; k < j; k++) diag -= A[j * n + k] * A[j * n + k];
+        if (!(diag > 0.0)) return -1;
+        double Ljj = sqrt(diag);
+        A[j * n + j] = Ljj;
+        double inv = 1.0 / Ljj;
+        for (int i = j + 1; i < n; i++) {
+            double s = A[i * n + j];
+            for (int k = 0; k < j; k++) s -= A[i * n + k] * A[j * n + k];
+            A[i * n + j] = s * inv;
+        }
+    }
+    for (int i = 0; i < n; i++)
+        for (int j = i + 1; j < n; j++) A[i * n + j] = 0.0;
+    return 0;
+}
+
+/* Solve L L^T x = b, given L from cholesky_factor_lower. */
+static void cholesky_solve_lower(const double *L, int n,
+                                 const double *b, double *x) {
+    double *z = (double *)malloc((size_t)n * sizeof(double));
+    if (!z) return;
+    for (int i = 0; i < n; i++) {
+        double s = b[i];
+        for (int k = 0; k < i; k++) s -= L[i * n + k] * z[k];
+        z[i] = s / L[i * n + i];
+    }
+    for (int i = n - 1; i >= 0; i--) {
+        double s = z[i];
+        for (int k = i + 1; k < n; k++) s -= L[k * n + i] * x[k];
+        x[i] = s / L[i * n + i];
+    }
+    free(z);
+}
+
+int nqs_sr_step_minsr_full(const nqs_config_t *cfg,
+                            int size_x, int size_y,
+                            nqs_ansatz_t *ansatz,
+                            nqs_sampler_t *sampler,
+                            nqs_log_amp_fn_t log_amp_fn,
+                            void *log_amp_user,
+                            nqs_gradient_fn_t gradient_fn,
+                            void *grad_user,
+                            nqs_sr_step_info_t *out_info) {
+    if (!cfg || !ansatz || !sampler) return -1;
+    int N = nqs_sampler_num_sites(sampler);
+    long num_params = nqs_ansatz_num_params(ansatz);
+    if (num_params <= 0) return -1;
+    if (!log_amp_fn) { log_amp_fn = nqs_ansatz_log_amp; log_amp_user = ansatz; }
+
+    int Ns = cfg->num_samples;
+    int *batch        = (int *)   malloc((size_t)Ns * (size_t)N * sizeof(int));
+    double *energies  = (double *)malloc((size_t)Ns * sizeof(double));
+    double *grads     = (double *)malloc((size_t)Ns * (size_t)num_params * sizeof(double));
+    double *grad_mean = (double *)calloc((size_t)num_params, sizeof(double));
+    double *delta     = (double *)calloc((size_t)num_params, sizeof(double));
+    if (!batch || !energies || !grads || !grad_mean || !delta) {
+        free(batch); free(energies); free(grads); free(grad_mean); free(delta);
+        return -1;
+    }
+
+    /* 1. Sample, local energies, per-sample gradients. */
+    nqs_sampler_batch(sampler, Ns, batch);
+    nqs_local_energy_batch(cfg, size_x, size_y, batch, Ns,
+                           log_amp_fn, log_amp_user, energies);
+    for (int i = 0; i < Ns; i++) {
+        int *sp    = &batch[(size_t)i * (size_t)N];
+        double *gp = &grads[(size_t)i * (size_t)num_params];
+        if (gradient_fn) gradient_fn(grad_user, ansatz, sp, N, gp);
+        else             nqs_ansatz_logpsi_gradient(ansatz, sp, N, gp);
+    }
+
+    /* 2. Means and centred residuals. */
+    double e_mean = 0.0, e_sq_mean = 0.0;
+    for (int i = 0; i < Ns; i++) {
+        e_mean    += energies[i];
+        e_sq_mean += energies[i] * energies[i];
+    }
+    e_mean    /= (double)Ns;
+    e_sq_mean /= (double)Ns;
+
+    for (long k = 0; k < num_params; k++) {
+        double s = 0.0;
+        for (int i = 0; i < Ns; i++) s += grads[(size_t)i * (size_t)num_params + k];
+        grad_mean[k] = s / (double)Ns;
+    }
+    double *eps = (double *)malloc((size_t)Ns * sizeof(double));
+    if (!eps) {
+        free(batch); free(energies); free(grads); free(grad_mean); free(delta);
+        return -1;
+    }
+    for (int i = 0; i < Ns; i++) eps[i] = energies[i] - e_mean;
+
+    /* 3. Centre `grads` in place to become O_c, then form
+     *    T_{ij} = (1/N_s) Σ_k O_c[i,k] O_c[j,k] for j ≤ i. */
+    for (int i = 0; i < Ns; i++) {
+        double *gi = &grads[(size_t)i * (size_t)num_params];
+        for (long k = 0; k < num_params; k++) gi[k] -= grad_mean[k];
+    }
+
+    double *T = (double *)malloc((size_t)Ns * (size_t)Ns * sizeof(double));
+    if (!T) {
+        free(batch); free(energies); free(grads); free(grad_mean);
+        free(delta); free(eps);
+        return -1;
+    }
+    double inv_Ns = 1.0 / (double)Ns;
+    for (int i = 0; i < Ns; i++) {
+        double *gi = &grads[(size_t)i * (size_t)num_params];
+        for (int j = 0; j <= i; j++) {
+            double *gj = &grads[(size_t)j * (size_t)num_params];
+            double s = 0.0;
+            for (long k = 0; k < num_params; k++) s += gi[k] * gj[k];
+            double tij = s * inv_Ns;
+            T[i * Ns + j] = tij;
+            T[j * Ns + i] = tij;
+        }
+        T[i * Ns + i] += cfg->sr_diag_shift;
+    }
+
+    /* 4. Cholesky-solve (T + εI) y = ε with one retry on PSD failure. */
+    int converged = 0;
+    double *y = (double *)calloc((size_t)Ns, sizeof(double));
+    if (!y) {
+        free(batch); free(energies); free(grads); free(grad_mean);
+        free(delta); free(eps); free(T);
+        return -1;
+    }
+    int chol = cholesky_factor_lower(T, Ns);
+    if (chol != 0) {
+        for (int i = 0; i < Ns; i++) T[i * Ns + i] += 1e-6;
+        chol = cholesky_factor_lower(T, Ns);
+    }
+    if (chol == 0) {
+        cholesky_solve_lower(T, Ns, eps, y);
+        converged = 1;
+    } else {
+        fprintf(stderr,
+                "nqs_sr_step_minsr: Cholesky breakdown after retry; "
+                "increase sr_diag_shift or num_samples. Update set to 0.\n");
+        memset(y, 0, (size_t)Ns * sizeof(double));
+    }
+
+    /* 5. δ_k = (1/N_s) Σ_i O_c[i,k] y[i].  `grads` still holds O_c. */
+    for (long k = 0; k < num_params; k++) {
+        double s = 0.0;
+        for (int i = 0; i < Ns; i++)
+            s += grads[(size_t)i * (size_t)num_params + k] * y[i];
+        delta[k] = s * inv_Ns;
+    }
+
+    /* 6. θ ← θ - lr · δ. */
+    nqs_ansatz_apply_update(ansatz, delta, -cfg->learning_rate);
+
+    if (out_info) {
+        out_info->mean_energy      = e_mean;
+        out_info->variance_energy  = e_sq_mean - e_mean * e_mean;
+        out_info->update_norm      = vec_norm(delta, num_params) * cfg->learning_rate;
+        out_info->acceptance_ratio = nqs_sampler_acceptance_ratio(sampler);
+        out_info->cg_iterations    = 0;
+        out_info->converged        = converged;
+    }
+
+    free(batch); free(energies); free(grads); free(grad_mean);
+    free(delta); free(eps); free(T); free(y);
+    return 0;
+}
+
+int nqs_sr_run_minsr(const nqs_config_t *cfg,
+                     int size_x, int size_y,
+                     nqs_ansatz_t *ansatz,
+                     nqs_sampler_t *sampler,
+                     nqs_log_amp_fn_t log_amp_fn,
+                     void *log_amp_user,
+                     double *out_energy_trace) {
+    if (!cfg || !ansatz || !sampler) return -1;
+    nqs_sampler_thermalize(sampler);
+    for (int it = 0; it < cfg->num_iterations; it++) {
+        nqs_sr_step_info_t info;
+        int rc = nqs_sr_step_minsr_full(cfg, size_x, size_y, ansatz, sampler,
+                                         log_amp_fn, log_amp_user,
+                                         NULL, NULL, &info);
+        if (rc != 0) return rc;
+        if (out_energy_trace) out_energy_trace[it] = info.mean_energy;
+    }
+    return 0;
+}
