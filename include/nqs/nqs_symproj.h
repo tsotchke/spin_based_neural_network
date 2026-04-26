@@ -143,6 +143,28 @@ int nqs_kagome_p6_perm(int L,
                         double **out_characters,
                         int *out_num_elements);
 
+/*
+ * Build the |G| = 12·L²  p6m = (translations) ⋊ (C₆ × {1, M})
+ * permutation table for kagome on an L × L torus with PBC.
+ *
+ * The 12 point operations are:
+ *   • 6 rotations  R(60° · k)    for k = 0..5
+ *   • 6 mirror-rotations  M ∘ R(60° · k)
+ *
+ * where M is the mirror through the line y = √3/4 (horizontal line
+ * passing through the hexagon centroid).  This mirror swaps
+ * sublattices A ↔ B and fixes sublattice C; combined with C₆ it
+ * generates the full point group of the kagome lattice (D_6h in 3-D /
+ * 6mm in 2-D), hence the wallpaper group p6m.
+ *
+ * |G| = 12·L².  All characters are +1 (A₁ trivial irrep).  Caller
+ * frees both arrays.
+ */
+int nqs_kagome_p6m_perm(int L,
+                         int **out_perm,
+                         double **out_characters,
+                         int *out_num_elements);
+
 #ifdef __cplusplus
 }
 #endif

@@ -342,6 +342,83 @@ static void test_symproj_output_is_invariant_p6(void) {
     nqs_ansatz_free(a);
 }
 
+/* p6m (translations × C₆ × {1, M}) — 12·L² orbit on L × L kagome torus. */
+static void test_p6m_perm_is_proper(void) {
+    int L = 3;
+    int N = 3 * L * L;
+    int *perm = NULL;
+    double *chars = NULL;
+    int G = 0;
+    int rc = nqs_kagome_p6m_perm(L, &perm, &chars, &G);
+    ASSERT_EQ_INT(rc, 0);
+    ASSERT_EQ_INT(G, 12 * L * L);
+    int *seen = (int *)calloc((size_t)N, sizeof(int));
+    for (int g = 0; g < G; g++) {
+        memset(seen, 0, (size_t)N * sizeof(int));
+        for (int i = 0; i < N; i++) {
+            int j = perm[(size_t)g * N + i];
+            ASSERT_TRUE(j >= 0 && j < N);
+            ASSERT_TRUE(seen[j] == 0);
+            seen[j] = 1;
+        }
+        ASSERT_NEAR(chars[g], 1.0, 1e-12);
+    }
+    /* Identity (op=0, tx=ty=0) is row 0. */
+    for (int i = 0; i < N; i++) ASSERT_EQ_INT(perm[i], i);
+
+    /* Mirror M (op=6, tx=ty=0) is row 6 · L²; M² = identity. */
+    int row_M = 6 * L * L;
+    for (int i = 0; i < N; i++) {
+        int j = perm[(size_t)row_M * N + i];
+        int k = perm[(size_t)row_M * N + j];
+        ASSERT_EQ_INT(k, i);
+    }
+    free(seen); free(perm); free(chars);
+}
+
+static void test_symproj_output_is_invariant_p6m(void) {
+    int L = 3;
+    int N = 3 * L * L;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz = NQS_ANSATZ_RBM;
+    cfg.rbm_hidden_units = 6;
+    cfg.rng_seed = 0xDEADC0DEu;
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    ASSERT_TRUE(a != NULL);
+
+    int *perm = NULL;
+    double *chars = NULL;
+    int G = 0;
+    ASSERT_EQ_INT(nqs_kagome_p6m_perm(L, &perm, &chars, &G), 0);
+
+    nqs_symproj_wrapper_t w = {
+        .base_log_amp       = nqs_ansatz_log_amp,
+        .base_user          = a,
+        .num_sites          = N,
+        .num_group_elements = G,
+        .perm               = perm,
+        .characters         = chars,
+    };
+
+    int *spins = (int *)malloc((size_t)N * sizeof(int));
+    for (int i = 0; i < N; i++) spins[i] = ((i * 11 + 5) % 7 < 3) ? +1 : -1;
+
+    double base_lp, base_arg;
+    nqs_symproj_log_amp(spins, N, &w, &base_lp, &base_arg);
+
+    int *transformed = (int *)malloc((size_t)N * sizeof(int));
+    for (int g = 0; g < G; g++) {
+        for (int i = 0; i < N; i++) transformed[i] = spins[perm[(size_t)g * N + i]];
+        double lp, arg;
+        nqs_symproj_log_amp(transformed, N, &w, &lp, &arg);
+        ASSERT_NEAR(lp, base_lp, 1e-9);
+        ASSERT_NEAR(cos(arg), cos(base_arg), 1e-9);
+    }
+
+    free(spins); free(transformed); free(perm); free(chars);
+    nqs_ansatz_free(a);
+}
+
 int main(void) {
     TEST_RUN(test_translation_perm_is_proper);
     TEST_RUN(test_p2_perm_doubles_translation);
@@ -351,5 +428,7 @@ int main(void) {
     TEST_RUN(test_symproj_output_is_invariant_p3);
     TEST_RUN(test_p6_perm_is_proper);
     TEST_RUN(test_symproj_output_is_invariant_p6);
+    TEST_RUN(test_p6m_perm_is_proper);
+    TEST_RUN(test_symproj_output_is_invariant_p6m);
     TEST_SUMMARY();
 }

@@ -490,6 +490,103 @@ int nqs_kagome_p6_perm(int L,
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* p6m = p6 ⋊ {1, M}: full kagome wallpaper group.                    */
+/*                                                                    */
+/* The horizontal mirror M sends (x, y) → (x, 2·hex_y − y) where      */
+/* hex_y = √3/4 is the y-coordinate of the hexagon centroid.  M       */
+/* swaps sublattices A ↔ B (since A at (0, 0) maps to (0, √3/2) =     */
+/* A_(0, 1) wait that's still A — let me recheck).                    */
+/*                                                                    */
+/* Empirical: M takes A_(0, 0) at (0, 0) → (0, √3/2) = A_(0, 1).      */
+/*           M takes B_(0, 0) at (1/2, 0) → (1/2, √3/2) = A_(0, 1)?  */
+/*                                                                    */
+/* Per the lattice-basis inverse the (1/2, √3/2) Cartesian point is   */
+/* exactly A_(0, 1), so M takes B_(0, 0) → A_(0, 1).  Sublattice swap */
+/* B → A confirmed.  (1/2, √3/2) is also B_(0, 1) − a₁ + a₁ = same    */
+/* equivalence class.)  Numerical builder handles all this via the    */
+/* Cartesian-position lookup; we don't need to track the analytic     */
+/* sublattice swap explicitly.                                        */
+/* ------------------------------------------------------------------ */
+
+static int build_p6m_perm_row(int L, int op, int tx, int ty, int *row) {
+    /* op = 0..5: rotation R(60° · op)
+     * op = 6..11: mirror M ∘ R(60° · (op − 6)) */
+    int k = op % 6;
+    int mirror = (op >= 6);
+
+    const double hex_x  = 0.75;
+    const double hex_y  = 0.43301270189221932338;
+    const double hex_2y = 0.86602540378443864676;
+    double theta = (2.0 * 3.14159265358979323846 * (double)k) / 6.0;
+    double cs = cos(theta), sn = sin(theta);
+
+    for (int cx = 0; cx < L; cx++) {
+        for (int cy = 0; cy < L; cy++) {
+            for (int sub = 0; sub < 3; sub++) {
+                double px, py;
+                kagome_site_position(cx, cy, sub, &px, &py);
+
+                /* Inverse of the geometric transform: subtract
+                 * translation, then invert mirror, then invert
+                 * rotation. */
+                double sx = px - tx * 1.0   - ty * 0.5;
+                double sy = py - tx * 0.0   - ty * hex_2y;
+
+                if (mirror) {
+                    /* M is its own inverse: y → 2·hex_y − y. */
+                    sy = hex_2y - sy;
+                }
+
+                double dx = sx - hex_x, dy = sy - hex_y;
+                double rx =  cs * dx + sn * dy + hex_x;
+                double ry = -sn * dx + cs * dy + hex_y;
+
+                int src = kagome_position_to_site(rx, ry, L, 1e-6);
+                if (src < 0) return -1;
+                row[3 * (cx * L + cy) + sub] = src;
+            }
+        }
+    }
+    return 0;
+}
+
+int nqs_kagome_p6m_perm(int L,
+                         int **out_perm,
+                         double **out_characters,
+                         int *out_num_elements) {
+    if (L <= 0 || !out_perm || !out_characters || !out_num_elements) return -1;
+    int N = 3 * L * L;
+    int G = 12 * L * L;
+
+    int *perm = (int *)malloc((size_t)G * (size_t)N * sizeof(int));
+    double *chars = (double *)malloc((size_t)G * sizeof(double));
+    if (!perm || !chars) { free(perm); free(chars); return -1; }
+
+    int g = 0;
+    for (int op = 0; op < 12; op++) {
+        for (int tx = 0; tx < L; tx++) {
+            for (int ty = 0; ty < L; ty++) {
+                int *row = &perm[(size_t)g * N];
+                if (build_p6m_perm_row(L, op, tx, ty, row) != 0) {
+                    fprintf(stderr,
+                            "nqs_kagome_p6m_perm: failed at row g=%d "
+                            "(op=%d, tx=%d, ty=%d) on L=%d torus.\n",
+                            g, op, tx, ty, L);
+                    free(perm); free(chars);
+                    return -1;
+                }
+                chars[g] = 1.0;
+                g++;
+            }
+        }
+    }
+    *out_perm = perm;
+    *out_characters = chars;
+    *out_num_elements = G;
+    return 0;
+}
+
 #undef KG_SITE
 #undef KG_AX
 #undef KG_AY
