@@ -69,8 +69,10 @@ int fft_real_to_complex(const double *x_real, int n, double _Complex *X_out) {
     if (fft_is_power_of_two(n)) {
         return fft_complex_inplace(X_out, n, 0);
     }
-    /* Fallback: Bluestein / naive DFT. Since the FNO layer only calls
-     * power-of-two sizes in practice, fall back to naive-DFT here. */
+    /* Naive O(n²) DFT for non-power-of-two n.  The FNO layer only calls
+     * power-of-two sizes in practice; this branch keeps the API total.
+     * A Bluestein chirp-z transform would restore O(n log n) for arbitrary
+     * n but is deferred until a non-PoT caller actually exists. */
     double _Complex *temp = malloc((size_t)n * sizeof(double _Complex));
     if (!temp) return -1;
     for (int k = 0; k < n; k++) {

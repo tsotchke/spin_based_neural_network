@@ -31,11 +31,12 @@ extern "C" {
 #endif
 
 typedef enum {
-    NOESIS_BRIDGE_OK         =  0,
-    NOESIS_BRIDGE_EDISABLED  = -1,
-    NOESIS_BRIDGE_ENOT_READY = -2,
-    NOESIS_BRIDGE_ELIB       = -3,
-    NOESIS_BRIDGE_EARG       = -4
+    NOESIS_BRIDGE_OK              =  0,
+    NOESIS_BRIDGE_EDISABLED       = -1, /* compiled out (no SPIN_NN_HAS_NOESIS) */
+    NOESIS_BRIDGE_ENOT_READY      = -2, /* not initialised / refcount == 0      */
+    NOESIS_BRIDGE_ELIB            = -3, /* underlying library reported error    */
+    NOESIS_BRIDGE_EARG            = -4, /* invalid argument                     */
+    NOESIS_BRIDGE_ENOT_IMPLEMENTED = -5 /* compiled in but body is a placeholder*/
 } noesis_bridge_status_t;
 
 /* --- availability + versioning ------------------------------------- */

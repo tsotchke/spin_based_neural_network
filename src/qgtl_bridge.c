@@ -56,10 +56,11 @@ int qgtl_bridge_compute_qgt(const double *batch_grads,
     if (!batch_grads || !out_G || batch_size <= 0 || num_params <= 0)
         return QGTL_BRIDGE_EARG;
 #ifdef SPIN_NN_HAS_QGTL
-    /* Live path: call QGTL's hierarchical-tensor QGT. Not implemented
-     * in this commit — returns EDISABLED until the linkage lands. */
+    /* Compiled-in path is reserved for the QGTL hierarchical-tensor QGT,
+     * but the bridge body is still a placeholder.  Distinguish from the
+     * compile-out case so callers can detect the difference. */
     (void)batch_grads; (void)batch_size; (void)num_params; (void)out_G;
-    return QGTL_BRIDGE_EDISABLED;
+    return QGTL_BRIDGE_ENOT_IMPLEMENTED;
 #else
     (void)batch_grads; (void)batch_size; (void)num_params; (void)out_G;
     return QGTL_BRIDGE_EDISABLED;

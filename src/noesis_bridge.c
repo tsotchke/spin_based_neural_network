@@ -62,10 +62,11 @@ int noesis_bridge_should_open_window(const noesis_trajectory_snapshot_t *snap,
     *out_decision = 0;
     if (out_confidence) *out_confidence = 0.0;
 #ifdef SPIN_NN_HAS_NOESIS
-    /* Live bridge: call into noesis's proof-trace classifier. Not
-     * implemented in this commit — returns the deterministic fallback
-     * until the Eshkol-FFI wiring lands. */
-    return NOESIS_BRIDGE_EDISABLED;
+    /* Compiled-in path is reserved for the Noesis proof-trace classifier
+     * via Eshkol FFI, but the bridge body is still a placeholder.
+     * Distinguish from the compile-out case so callers can tell the
+     * difference. */
+    return NOESIS_BRIDGE_ENOT_IMPLEMENTED;
 #else
     return NOESIS_BRIDGE_EDISABLED;
 #endif

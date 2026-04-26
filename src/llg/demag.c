@@ -13,6 +13,7 @@
  * (minus sign: demag opposes). In k-space: H_dz(k) = -N_zz(k) M_z(k).
  */
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "llg/demag.h"
@@ -20,7 +21,17 @@
 
 llg_demag_2d_t *llg_demag_2d_create(int Lx, int Ly) {
     if (Lx <= 0 || Ly <= 0) return NULL;
-    if (!fft_is_power_of_two(Lx) || !fft_is_power_of_two(Ly)) return NULL;
+    if (!fft_is_power_of_two(Lx) || !fft_is_power_of_two(Ly)) {
+        fprintf(stderr,
+                "llg_demag_2d_create: requires power-of-two grid dims, "
+                "got %dx%d. Pad the input field to the next power of two "
+                "(e.g. %d x %d) and crop the result, or rebuild against a "
+                "Bluestein FFT once one ships.\n",
+                Lx, Ly,
+                1 << (int)ceil(log2((double)Lx)),
+                1 << (int)ceil(log2((double)Ly)));
+        return NULL;
+    }
     llg_demag_2d_t *d = calloc(1, sizeof(*d));
     if (!d) return NULL;
     d->Lx = Lx; d->Ly = Ly;

@@ -28,11 +28,12 @@ extern "C" {
 #endif
 
 typedef enum {
-    QGTL_BRIDGE_OK         =  0,
-    QGTL_BRIDGE_EDISABLED  = -1,
-    QGTL_BRIDGE_ENOT_READY = -2,
-    QGTL_BRIDGE_ELIB       = -3,
-    QGTL_BRIDGE_EARG       = -4
+    QGTL_BRIDGE_OK              =  0,
+    QGTL_BRIDGE_EDISABLED       = -1, /* compiled out (no SPIN_NN_HAS_QGTL)   */
+    QGTL_BRIDGE_ENOT_READY      = -2, /* not initialised / no refcount        */
+    QGTL_BRIDGE_ELIB            = -3, /* underlying library returned an error */
+    QGTL_BRIDGE_EARG            = -4, /* invalid argument                     */
+    QGTL_BRIDGE_ENOT_IMPLEMENTED = -5 /* compiled in but body is a placeholder*/
 } qgtl_bridge_status_t;
 
 /* --- availability ------------------------------------------------- */

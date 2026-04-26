@@ -1,28 +1,47 @@
 /*
  * src/qec_decoder/qec_decoder.c
  *
- * v0.4 implementation: all decoder kinds fall back to the greedy
- * matching decoder that already lives in src/toric_code.c. The public
- * API is in place so learned decoders (transformer, Mamba) can slot
- * in behind the same interface in v0.5.
+ * v0.4 ships the GREEDY and MWPM decoders.  TRANSFORMER and MAMBA are
+ * placeholders for v0.5 (pillar P1.3); the v0.4 build silently falls
+ * back to MWPM and reports is_available = 0 so callers can detect the
+ * mismatch.  This file additionally emits a one-shot stderr warning
+ * when the fallback is taken, so production runs can never use a
+ * "learned decoder" believing the model is real.
  */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "qec_decoder/qec_decoder.h"
 
+static int g_warned_transformer = 0;
+static int g_warned_mamba       = 0;
+
 qec_decoder_t qec_decoder_create(qec_decoder_kind_t kind) {
     qec_decoder_t d;
     d.kind = kind;
-    /* GREEDY and MWPM are both shipped baselines — always available.
-     * Learned decoders (TRANSFORMER, MAMBA) require the external NN
-     * engine; without it, they transparently fall back to MWPM so the
-     * caller still gets optimal-at-small-K matching behaviour. */
     if (kind == QEC_DECODER_GREEDY || kind == QEC_DECODER_MWPM) {
         d.is_available = 1;
-    } else {
-        d.kind = QEC_DECODER_MWPM;
-        d.is_available = 0;
+        return d;
     }
+
+    /* Learned decoders unavailable in v0.4: warn once per kind and fall
+     * back to MWPM (optimal matching for small defect counts). */
+    if (kind == QEC_DECODER_TRANSFORMER && !g_warned_transformer) {
+        fprintf(stderr,
+                "qec_decoder: WARNING — QEC_DECODER_TRANSFORMER requested "
+                "but not implemented in v0.4 (planned for v0.5 pillar P1.3). "
+                "Falling back to MWPM; is_available=0 on the returned handle. "
+                "Caller should treat results as MWPM-baseline, not learned.\n");
+        g_warned_transformer = 1;
+    } else if (kind == QEC_DECODER_MAMBA && !g_warned_mamba) {
+        fprintf(stderr,
+                "qec_decoder: WARNING — QEC_DECODER_MAMBA requested but not "
+                "implemented in v0.4 (planned for v0.5 pillar P1.3). Falling "
+                "back to MWPM; is_available=0 on the returned handle.\n");
+        g_warned_mamba = 1;
+    }
+    d.kind = QEC_DECODER_MWPM;
+    d.is_available = 0;
     return d;
 }
 
@@ -55,11 +74,14 @@ int qec_decoder_tokenize(const ToricCode *code,
 
 int qec_decoder_run(const qec_decoder_t *dec, ToricCode *code) {
     if (!dec || !code) return -1;
+    /* qec_decoder_create normalises kind to GREEDY or MWPM; the learned
+     * cases here are unreachable but kept defensively in case a future
+     * caller bypasses create. */
     switch (dec->kind) {
         case QEC_DECODER_GREEDY:
             return toric_code_decode_greedy(code);
         case QEC_DECODER_MWPM:
-        case QEC_DECODER_TRANSFORMER:  /* fallback when no NN engine */
+        case QEC_DECODER_TRANSFORMER:
         case QEC_DECODER_MAMBA:
         default:
             return toric_code_decode_mwpm(code);

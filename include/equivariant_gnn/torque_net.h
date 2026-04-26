@@ -1,18 +1,32 @@
 /*
  * include/equivariant_gnn/torque_net.h
  *
- * Minimal E(3)-equivariant torque predictor for the micromagnetic LLG
- * integrator (pillar P1.2). Pure C, no libirrep dependency — uses
- * only geometrically-invariant primitive building blocks (cross,
- * dot, triple product) whose equivariance under SO(3) rotations of
- * the input node features is trivially verifiable.
+ * SO(3)-covariant torque predictor for the micromagnetic LLG integrator
+ * (pillar P1.2 — "pragmatic baseline" tier).  Pure C, no libirrep
+ * dependency.  Uses geometrically-covariant primitives (cross, dot,
+ * triple product) so the predicted torque rotates correctly under any
+ * rigid-body rotation of the input field.
  *
- * This is the "pragmatic baseline" promised by architecture_v0.4.md
- * §P1.2; a full NequIP / MACE tower using the libirrep NequIP layer
- * lands once libirrep ≥ 1.1 is vendored. The torque predicted here
- * is demonstrably rotation-covariant, meaning it can replace the
- * analytic B_eff in the LLG integrator without breaking the equations'
- * symmetry group.
+ * Scope and limits — what this is, and what it is NOT:
+ *
+ *   * Covariant under proper rotations R ∈ SO(3) — verified to ~1e-10
+ *     by torque_net_equivariance_residual on random rotations.  Each
+ *     of the five terms is a polar or axial vector; their sum stays a
+ *     vector under SO(3).
+ *
+ *   * NOT a full E(3)-equivariant network: there is no machinery for
+ *     translations beyond using relative displacements, no enforcement
+ *     of time-reversal parity (m is t-odd, torque is t-odd, but the
+ *     individual w0..w4 mix even and odd terms with no parity gating),
+ *     and no irrep tensor-product tower (no l > 1 features, no MACE-
+ *     style many-body messages).  Calling this "E(3)-equivariant" in
+ *     the NequIP / MACE sense would be wrong.
+ *
+ *   * Five learnable scalar weights only.  Function class is the linear
+ *     span of the five labelled-vector terms below; expressivity is
+ *     limited.  For real micromagnetic ground states this fits a few
+ *     leading terms (exchange-driven, DMI-like, Zeeman); finer features
+ *     require the libirrep tower (planned for v0.5 P1.2).
  *
  * Architecture:
  *   For each node i with vector feature m_i ∈ R³, neighbours j with
@@ -26,14 +40,14 @@
  *         + w4 · m_j
  *       ] · φ(||r_ij||)
  *
- *   Each term in brackets is a proper vector under SO(3); the radial
- *   modulator φ is a scalar function of the bond length. A linear
- *   combination of SO(3) vectors remains an SO(3) vector, hence τ_i
- *   is equivariant.
+ *   Each term is a proper vector under SO(3); the radial modulator φ
+ *   is a scalar function of the bond length.  A linear combination of
+ *   covariant vectors remains covariant, hence τ_i is SO(3)-covariant.
  *
- * The five weights w0..w4 are the only learnable parameters (plus an
- * exponent controlling the radial cutoff). A full 2-layer TP tower
- * would generalise this to arbitrary irrep content via libirrep.
+ * Upgrade path: replace this header's contract with a libirrep-backed
+ * variant (`torque_net_irrep.h`) once libirrep ≥ 1.1 ships full NequIP
+ * tensor-product layers; that variant will support arbitrary irrep
+ * content (l ≤ L_max), parity gating, and many-body MACE messages.
  */
 #ifndef TORQUE_NET_H
 #define TORQUE_NET_H
