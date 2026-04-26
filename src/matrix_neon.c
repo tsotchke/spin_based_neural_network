@@ -61,74 +61,51 @@ int check_neon_available() {
 }
 
 // Matrix-vector multiplication with appropriate implementation
-void matrix_vector_multiply_neon(double _Complex *matrix, double _Complex *vector, 
+void matrix_vector_multiply_neon(double _Complex *matrix, double _Complex *vector,
                                 double _Complex *result, int size) {
 #if HAS_NEON
-    // NEON-optimized implementation for ARM processors
+    /* True SIMD: vld2q_f64 loads four consecutive doubles
+     * (r0, i0, r1, i1) and de-interleaves them into two register-resident
+     * vectors {r0, r1} and {i0, i1}. The previous implementation used
+     * vsetq_lane_f64 to construct vectors lane-by-lane from scalar
+     * loads, which compiled to SISD code with no real SIMD speedup. */
     for (int i = 0; i < size; i++) {
         float64x2_t sum_real = vdupq_n_f64(0.0);
         float64x2_t sum_imag = vdupq_n_f64(0.0);
-        
-        // Process blocks of 2 complex numbers
-        for (int j = 0; j < size - 1; j += 2) {
-            // Load matrix elements (2 complex numbers)
-            double real1 = creal(matrix[i * size + j]);
-            double imag1 = cimag(matrix[i * size + j]);
-            double real2 = creal(matrix[i * size + j + 1]);
-            double imag2 = cimag(matrix[i * size + j + 1]);
-            
-            // Load vector elements (2 complex numbers)
-            double vec_real1 = creal(vector[j]);
-            double vec_imag1 = cimag(vector[j]);
-            double vec_real2 = creal(vector[j + 1]);
-            double vec_imag2 = cimag(vector[j + 1]);
-            
-            // Create NEON vectors
-            float64x2_t mat_real = vsetq_lane_f64(real1, vdupq_n_f64(0.0), 0);
-            mat_real = vsetq_lane_f64(real2, mat_real, 1);
-            
-            float64x2_t mat_imag = vsetq_lane_f64(imag1, vdupq_n_f64(0.0), 0);
-            mat_imag = vsetq_lane_f64(imag2, mat_imag, 1);
-            
-            float64x2_t vec_real = vsetq_lane_f64(vec_real1, vdupq_n_f64(0.0), 0);
-            vec_real = vsetq_lane_f64(vec_real2, vec_real, 1);
-            
-            float64x2_t vec_imag = vsetq_lane_f64(vec_imag1, vdupq_n_f64(0.0), 0);
-            vec_imag = vsetq_lane_f64(vec_imag2, vec_imag, 1);
-            
-            // Complex multiplication: (a+bi)(c+di) = (ac-bd) + (ad+bc)i
-            // Real part: ac - bd
-            float64x2_t temp1 = vmulq_f64(mat_real, vec_real);
-            float64x2_t temp2 = vmulq_f64(mat_imag, vec_imag);
-            float64x2_t real_part = vsubq_f64(temp1, temp2);
-            
-            // Imaginary part: ad + bc
-            float64x2_t temp3 = vmulq_f64(mat_real, vec_imag);
-            float64x2_t temp4 = vmulq_f64(mat_imag, vec_real);
-            float64x2_t imag_part = vaddq_f64(temp3, temp4);
-            
-            // Accumulate
+
+        int j = 0;
+        for (; j <= size - 2; j += 2) {
+            const double *mp = (const double *)&matrix[i * size + j];
+            const double *vp = (const double *)&vector[j];
+
+            float64x2x2_t mat_pair = vld2q_f64(mp);  /* {r,r}, {i,i}  matrix */
+            float64x2x2_t vec_pair = vld2q_f64(vp);  /* {r,r}, {i,i}  vector */
+            float64x2_t mat_real = mat_pair.val[0];
+            float64x2_t mat_imag = mat_pair.val[1];
+            float64x2_t vec_real = vec_pair.val[0];
+            float64x2_t vec_imag = vec_pair.val[1];
+
+            /* (a+bi)(c+di) = (ac − bd) + (ad + bc)i. Use FMA pairs. */
+            float64x2_t real_part = vfmsq_f64(vmulq_f64(mat_real, vec_real),
+                                              mat_imag, vec_imag);
+            float64x2_t imag_part = vfmaq_f64(vmulq_f64(mat_real, vec_imag),
+                                              mat_imag, vec_real);
             sum_real = vaddq_f64(sum_real, real_part);
             sum_imag = vaddq_f64(sum_imag, imag_part);
         }
-        
-        // Extract and sum the results
+
         double real_sum = vgetq_lane_f64(sum_real, 0) + vgetq_lane_f64(sum_real, 1);
         double imag_sum = vgetq_lane_f64(sum_imag, 0) + vgetq_lane_f64(sum_imag, 1);
-        
-        // Handle leftover element if size is odd
-        if (size % 2 != 0) {
-            int j = size - 1;
+
+        /* Tail (size is odd): handle the last column scalar-style. */
+        if (j < size) {
             double real = creal(matrix[i * size + j]);
             double imag = cimag(matrix[i * size + j]);
             double vec_real = creal(vector[j]);
             double vec_imag = cimag(vector[j]);
-            
-            // Complex multiplication
             real_sum += real * vec_real - imag * vec_imag;
             imag_sum += real * vec_imag + imag * vec_real;
         }
-        
         result[i] = real_sum + imag_sum * I;
     }
 #else

@@ -1,20 +1,21 @@
 /*
  * include/flow_matching/flow_matching.h
  *
- * Discrete flow-matching sampler scaffold for v0.5 pillar P1.4. v0.4
- * ships a reference continuous-time Markov chain (CTMC) implementation
- * that interpolates between a trivial source distribution (uniform ±1
- * spins) and a target Ising configuration via a user-supplied rate
- * schedule. This is the interface the learned score / rate network
- * will satisfy in v0.5.
+ * Discrete flow-matching sampler scaffold for v0.5 pillar P1.4.
  *
- * The CTMC is formulated as in Campbell et al. 2024 / Gat et al. 2024:
- * at each of `num_steps` discrete times, a per-site flip rate
- *     λ_i(t) = (1 - t) / (t + ε)
- * drives each spin toward its target value. An Euler step samples
- *     P(flip at i) = 1 - exp(-λ_i(t) · dt · [s_i ≠ target_i])
- * so that as t → 1 the chain converges to the conditioned target.
- * Unconditional sampling uses an unconditional schedule (see below).
+ * v0.4 status: ships a reference continuous-time Markov chain (CTMC)
+ * with a single CONSTANT rate c = cfg->integrated_rate, applied
+ * uniformly across the num_steps Euler steps.  The "schedule" knob is
+ * collapsed to a scalar; a learned schedule λ(t) coming from a score /
+ * rate network is what v0.5 P1.4 will install behind the same C API.
+ * See `flow_matching_sample_biased_rates` for the per-site variant.
+ *
+ * The CTMC is formulated as in Campbell et al. 2024 / Gat et al. 2024.
+ * For the conditional sampler each spin has flip probability
+ *     P(flip at i) = 1 - exp(-c · dt · [s_i ≠ target_i])
+ * per Euler step, so as t → 1 the chain converges to the target with
+ * total integrated rate ∫₀¹ λ dt = c.  Unconditional sampling uses
+ * detailed-balanced rates parameterised by a per-site bias.
  */
 #ifndef FLOW_MATCHING_H
 #define FLOW_MATCHING_H

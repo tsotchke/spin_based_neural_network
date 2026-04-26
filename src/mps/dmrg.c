@@ -1,18 +1,31 @@
 /*
  * src/mps/dmrg.c
  *
- * Two-site DMRG for the 1D XXZ chain with open boundary conditions.
- * Everything is self-contained: the MPO is hard-coded as the standard
- * bond-dim-5 XXZ form, tensor contractions are written out explicitly,
- * the two-site eigenproblem is solved matrix-free by the shared
- * Lanczos driver in mps/lanczos.c, and the Schmidt decomposition uses
- * the Jacobi SVD in mps/svd.c. No BLAS/LAPACK.
+ * Two-site DMRG for nearest-neighbour 1D spin-½ chains with open
+ * boundary conditions.  Hamiltonian dispatched at runtime via
+ * cfg->ham:
+ *
+ *   MPS_HAM_TFIM       — H = -J Σ σ^z σ^z - Γ Σ σ^x         (bond dim 3,
+ *                         packed into the same 5×5 MPO cage)
+ *   MPS_HAM_HEISENBERG — H =  J Σ S · S                     (bond dim 5,
+ *                         isotropic Jx = Jy = Jz = J)
+ *   MPS_HAM_XXZ        — H =  J Σ (Sx Sx + Sy Sy) + Jz Sz Sz (bond dim 5)
+ *
+ * All three share the canonical bond-dim-5 nearest-neighbour MPO
+ * scaffold; longer-range or 3-site Hamiltonians would require enlarging
+ * MPO_BW and the env tensor allocations together (an extension point,
+ * not a hidden assumption).
+ *
+ * Tensor contractions are written out explicitly; the two-site
+ * eigenproblem is solved matrix-free by the shared Lanczos driver in
+ * mps/lanczos.c; the Schmidt decomposition uses the Jacobi SVD in
+ * mps/svd.c.  No BLAS / LAPACK dependency.
  *
  * Bond dimensions grow during the first sweep from 1 to at most D_max
  * and are truncated on each two-site split by keeping the D_max
  * largest singular values of the merged tensor.
  *
- * Physical index convention: 0 = ↑, 1 = ↓. Spin operators:
+ * Physical index convention: 0 = ↑, 1 = ↓.  Spin operators:
  *   S^z = diag(+½, -½)
  *   S^+ = [[0, 1], [0, 0]]   (|↓⟩ → |↑⟩)
  *   S^- = [[0, 0], [1, 0]]   (|↑⟩ → |↓⟩)
@@ -26,7 +39,7 @@
 #include "mps/lanczos.h"
 
 #define MPS_D 2     /* physical dim (spin-1/2) */
-#define MPO_BW 5    /* MPO bond dim for XXZ */
+#define MPO_BW 5    /* MPO bond dim — fits XXZ / Heisenberg / TFIM */
 
 typedef struct {
     int D_left, D_right;   /* MPS bond dimensions at left/right of this site */
