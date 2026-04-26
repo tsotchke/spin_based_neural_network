@@ -33,6 +33,47 @@ double wave_loss(double ising_energy, double kitaev_energy, double spin_energy,
                  IsingLattice* ising_lattice, KitaevLattice* kitaev_lattice, SpinLattice* spin_lattice,
                  double dt, double dx);
 
+/*
+ * Variational micromagnetic loss (P2.7).  Returns the discretised
+ * Landau–Lifshitz free-energy functional
+ *
+ *   E[m] = J_ex Σ_<ij> ||m_i − m_j||²
+ *        + K_u  Σ_i (1 − (m_i · ẑ)²)
+ *        − μ₀ Σ_i B · m_i
+ *
+ * (exchange + uniaxial anisotropy + Zeeman) on the SpinLattice with the
+ * supplied parameters.  This is the energy-minimisation form preferred
+ * over residual minimisation for stability — the loss vanishes at the
+ * micromagnetic ground state of the chosen parameters.  Demag and DMI
+ * terms remain to be added in v0.5 (P1.2).
+ */
+double micromagnetic_loss(SpinLattice* spin_lattice,
+                          double J_ex, double K_u,
+                          double Bx, double By, double Bz);
+
+/*
+ * Hard-constraint projection: rescale every m_i to unit norm in-place.
+ * No-op for zero vectors (left at zero).  Use after each integrator step
+ * or training update to enforce |m|=1 to machine precision instead of
+ * accumulating drift.  Returns the maximum |m_i| − 1 deviation observed
+ * before projection (a useful drift diagnostic).
+ */
+double project_spin_lattice_to_unit_sphere(SpinLattice* spin_lattice);
+
+/*
+ * Fourier-feature embedding for PINN coordinate inputs (P2.7).
+ *
+ * Maps n_in coordinates x ∈ [0,1)^{n_in} to a 2·n_in·n_freqs vector of
+ * (sin, cos) pairs at logarithmically-spaced frequencies 2π·2^k for
+ * k = 0..n_freqs-1.  This is the standard NeRF-style embedding that lets
+ * a small MLP fit high-frequency content; pair with SIREN activations
+ * (neural_network.c) for the full P2.7 PINN stack.
+ *
+ * out[] must have at least 2 · n_in · n_freqs slots.
+ */
+void fourier_features(const double* coords, int n_in,
+                      int n_freqs, double* out);
+
 // Function prototypes for int*** lattices (Ising and Kitaev)
 double divergence(int*** u_x, int*** u_y, Spin*** u_z, int x, int y, int z, int size_x, int size_y, int size_z, double dx);
 double laplacian_3d(int*** lattice, int x, int y, int z, int size_x, int size_y, int size_z, double dx);

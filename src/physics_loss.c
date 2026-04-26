@@ -22,8 +22,18 @@ double compute_physics_loss(double ising_energy, double kitaev_energy, double sp
         return navier_stokes_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx);
     } else if (strcmp(loss_type, "wave") == 0) {
         return wave_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx);
+    } else if (strcmp(loss_type, "micromagnetic") == 0) {
+        /* Variational micromagnetic free energy: exchange + anisotropy + Zeeman.
+         * Default coefficients chosen so the loss is O(1) on a unit-cube lattice
+         * with applied field along z. v0.5 P1.2 will replace these with a
+         * MicromagneticParams struct fed from CLI. */
+        return micromagnetic_loss(spin_lattice,
+                                  /*J_ex*/ 1.0, /*K_u*/ 0.1,
+                                  /*Bx*/ 0.0, /*By*/ 0.0, /*Bz*/ 0.5);
     } else {
-        // Default to Heat loss if an unknown type is specified
+        fprintf(stderr,
+                "compute_physics_loss: unknown loss_type '%s'; defaulting to heat\n",
+                loss_type);
         return heat_loss(ising_energy, kitaev_energy, spin_energy, ising_lattice, kitaev_lattice, spin_lattice, dt, dx);
     }
 }
@@ -356,35 +366,131 @@ double wave_loss(double ising_energy, double kitaev_energy, double spin_energy,
     int size_x = ising_lattice->size_x;
     int size_y = ising_lattice->size_y;
     int size_z = ising_lattice->size_z;
-    
+
     double total_loss = 0.0;
-    
+
     // Ising lattice as wave field
     for (int x = 0; x < size_x; x++) {
         for (int y = 0; y < size_y; y++) {
             for (int z = 0; z < size_z; z++) {
                 // Current wave amplitude
                 double u = ising_lattice->spins[x][y][z];
-                
+
                 // Compute Laplacian of wave field
                 double d2udx2 = laplacian_3d(ising_lattice->spins, x, y, z, size_x, size_y, size_z, dx);
-                
+
                 // Compute second-order time derivative
                 // (this is a simplification; ideally, you'd want to store two previous time steps)
                 double u_prev = kitaev_lattice->spins[x][y][z];
                 double u_next = spin_lattice->spins[x][y][z].sx; // Using sx component as an example
                 double d2udt2 = (u_next - 2.0 * u + u_prev) / (dt * dt);
-                
+
                 // Compute wave equation residual
                 double residual = d2udt2 - C * C * d2udx2;
-                
+
                 // Add to total loss
                 total_loss += residual * residual;
             }
         }
     }
-    
+
     // Scale and normalize the loss
     double scaled_loss = total_loss * scale_factor / (size_x * size_y * size_z);
     return scaled_loss;
+}
+
+/*
+ * Variational micromagnetic free energy: exchange + uniaxial anisotropy
+ * + Zeeman.  Returns E[m] / N (per-spin average) for stable scaling.
+ *
+ *   E_ex   = J_ex Σ_<ij> ||m_i − m_j||²       (sum over (+x,+y,+z) bonds, OBC)
+ *   E_anis = K_u  Σ_i (1 − (m_i · ẑ)²)        (easy-axis along z)
+ *   E_Zeeman = −μ₀ Σ_i B · m_i
+ *
+ * Demag and DMI are deferred to v0.5 P1.2 (require the irrep / FFT pipeline).
+ */
+double micromagnetic_loss(SpinLattice* spin_lattice,
+                          double J_ex, double K_u,
+                          double Bx, double By, double Bz)
+{
+    if (!spin_lattice) return 0.0;
+    int size_x = spin_lattice->size_x;
+    int size_y = spin_lattice->size_y;
+    int size_z = spin_lattice->size_z;
+    long N = (long)size_x * size_y * size_z;
+    if (N <= 0) return 0.0;
+
+    double E = 0.0;
+    for (int x = 0; x < size_x; x++) {
+        for (int y = 0; y < size_y; y++) {
+            for (int z = 0; z < size_z; z++) {
+                Spin m = spin_lattice->spins[x][y][z];
+
+                /* Exchange (open BC: each interior bond counted once) */
+                if (x + 1 < size_x) {
+                    Spin n = spin_lattice->spins[x+1][y][z];
+                    double dx_ = m.sx - n.sx, dy_ = m.sy - n.sy, dz_ = m.sz - n.sz;
+                    E += J_ex * (dx_*dx_ + dy_*dy_ + dz_*dz_);
+                }
+                if (y + 1 < size_y) {
+                    Spin n = spin_lattice->spins[x][y+1][z];
+                    double dx_ = m.sx - n.sx, dy_ = m.sy - n.sy, dz_ = m.sz - n.sz;
+                    E += J_ex * (dx_*dx_ + dy_*dy_ + dz_*dz_);
+                }
+                if (z + 1 < size_z) {
+                    Spin n = spin_lattice->spins[x][y][z+1];
+                    double dx_ = m.sx - n.sx, dy_ = m.sy - n.sy, dz_ = m.sz - n.sz;
+                    E += J_ex * (dx_*dx_ + dy_*dy_ + dz_*dz_);
+                }
+
+                /* Uniaxial anisotropy along ẑ */
+                double mz_n = m.sz;
+                E += K_u * (1.0 - mz_n * mz_n);
+
+                /* Zeeman */
+                E -= MU0 * (Bx * m.sx + By * m.sy + Bz * m.sz);
+            }
+        }
+    }
+    return E / (double)N;
+}
+
+double project_spin_lattice_to_unit_sphere(SpinLattice* spin_lattice)
+{
+    if (!spin_lattice) return 0.0;
+    int size_x = spin_lattice->size_x;
+    int size_y = spin_lattice->size_y;
+    int size_z = spin_lattice->size_z;
+    double max_dev = 0.0;
+    for (int x = 0; x < size_x; x++) {
+        for (int y = 0; y < size_y; y++) {
+            for (int z = 0; z < size_z; z++) {
+                Spin *m = &spin_lattice->spins[x][y][z];
+                double n = sqrt(m->sx*m->sx + m->sy*m->sy + m->sz*m->sz);
+                if (n > 1e-300) {
+                    double dev = fabs(n - 1.0);
+                    if (dev > max_dev) max_dev = dev;
+                    double inv = 1.0 / n;
+                    m->sx *= inv; m->sy *= inv; m->sz *= inv;
+                }
+            }
+        }
+    }
+    return max_dev;
+}
+
+void fourier_features(const double* coords, int n_in,
+                      int n_freqs, double* out)
+{
+    if (!coords || !out || n_in <= 0 || n_freqs <= 0) return;
+    int idx = 0;
+    for (int i = 0; i < n_in; i++) {
+        double x = coords[i];
+        double freq = 2.0 * 3.141592653589793238;
+        for (int k = 0; k < n_freqs; k++) {
+            out[idx++] = sin(freq * x);
+            out[idx++] = cos(freq * x);
+            freq *= 2.0;
+        }
+    }
 }

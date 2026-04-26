@@ -125,7 +125,12 @@ int main(int argc, char *argv[]) {
         {"cadence-decoder", required_argument, 0, 0},
         {"decoder-error-rate", required_argument, 0, 0},
         {"cadence-invariants", required_argument, 0, 0},
+        {"cadence-entropy", required_argument, 0, 0},
         {"lambda-logical", required_argument, 0, 0},
+        {"lambda-chern", required_argument, 0, 0},
+        {"lambda-topological", required_argument, 0, 0},
+        {"target-chern", required_argument, 0, 0},
+        {"target-gamma", required_argument, 0, 0},
         {"log", required_argument, 0, 0},
         {"seed", required_argument, 0, 0},
         {"help", no_argument, 0, 'h'},
@@ -185,8 +190,18 @@ int main(int argc, char *argv[]) {
                     tcfg.decoder_error_rate = atof(optarg);
                 } else if (strcmp("cadence-invariants", long_options[option_index].name) == 0) {
                     tcfg.cadence_invariants = atoi(optarg);
+                } else if (strcmp("cadence-entropy", long_options[option_index].name) == 0) {
+                    tcfg.cadence_entropy = atoi(optarg);
                 } else if (strcmp("lambda-logical", long_options[option_index].name) == 0) {
                     tcfg.lambda_logical = atof(optarg);
+                } else if (strcmp("lambda-chern", long_options[option_index].name) == 0) {
+                    tcfg.lambda_chern = atof(optarg);
+                } else if (strcmp("lambda-topological", long_options[option_index].name) == 0) {
+                    tcfg.lambda_topological = atof(optarg);
+                } else if (strcmp("target-chern", long_options[option_index].name) == 0) {
+                    tcfg.target_chern = atof(optarg);
+                } else if (strcmp("target-gamma", long_options[option_index].name) == 0) {
+                    tcfg.target_gamma = atof(optarg);
                 } else if (strcmp("seed", long_options[option_index].name) == 0) {
                     if (strcmp(optarg, "time") == 0) {
                         rng_seed_from_time = 1;
@@ -375,11 +390,26 @@ int main(int argc, char *argv[]) {
             }
         }
         if (tcfg.cadence_invariants > 0 && (iter % tcfg.cadence_invariants) == 0) {
-            /* cheap invariants probe; result is advisory only in v0.4, not
-             * folded into loss yet (full fold arrives with v0.5 pillar P1.2). */
+            /* Compute Chern / winding / TKNN and fold (C - C_target)^2 into
+             * the physics loss when lambda_chern > 0. */
             TopologicalInvariants *probe =
                 calculate_all_invariants(kitaev_lattice, NULL);
+            if (probe && probe->num_invariants > 0 && tcfg.lambda_chern > 0.0) {
+                double chern_meas = probe->invariants[0];   /* Chern number */
+                double dC = chern_meas - tcfg.target_chern;
+                physics_loss += tcfg.lambda_chern * dC * dC;
+            }
             if (probe) free_topological_invariants(probe);
+        }
+        if (tcfg.cadence_entropy > 0 && (iter % tcfg.cadence_entropy) == 0
+            && tcfg.lambda_topological > 0.0) {
+            /* Kitaev–Preskill TEE at the configured cadence; fold |γ - γ*|^2
+             * with weight lambda_topological. Expensive; users opt in via
+             * --cadence-entropy. */
+            EntanglementData ed = {0};
+            double gamma = calculate_topological_entropy(kitaev_lattice, &ed);
+            double dg = gamma - tcfg.target_gamma;
+            physics_loss += tcfg.lambda_topological * dg * dg;
         }
         physics_loss += tcfg.lambda_logical * logical_flag;
 

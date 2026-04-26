@@ -15,11 +15,17 @@
  *                             (logical error yes/no) into the physics loss
  *   - decoder_error_rate      per-iteration physical error rate for P0.1
  *                             decoder-feedback sampling
- *   - lambda_topological      weight on |γ_topo - log 2|^2 added to loss
+ *   - lambda_topological      weight on |γ_topo - target_gamma|^2 added to loss
  *   - lambda_logical          weight on logical-error indicator from decoder
+ *   - lambda_chern            weight on (C - target_chern)^2 added to loss when
+ *                             invariants are evaluated (cadence_invariants > 0)
+ *   - target_chern            target Chern number for the topological loss term
+ *   - target_gamma            target TEE γ (defaults to log 2 for Z₂ order)
  */
 #ifndef TRAINING_CONFIG_H
 #define TRAINING_CONFIG_H
+
+#include <math.h>
 
 typedef struct {
     int    cadence_entropy;
@@ -28,6 +34,9 @@ typedef struct {
     double decoder_error_rate;
     double lambda_topological;
     double lambda_logical;
+    double lambda_chern;
+    double target_chern;
+    double target_gamma;
     int    verbose;
 } training_config_t;
 
@@ -39,6 +48,9 @@ static inline training_config_t training_config_defaults(void) {
     c.decoder_error_rate = 0.03;
     c.lambda_topological = 0.1;
     c.lambda_logical     = 1.0;
+    c.lambda_chern       = 0.0;    /* opt-in: disable Chern fold by default */
+    c.target_chern       = 1.0;    /* QAH with C = +1 */
+    c.target_gamma       = 0.69314718055994530942; /* log(2) — Z₂ topological order */
     c.verbose            = 0;
     return c;
 }
