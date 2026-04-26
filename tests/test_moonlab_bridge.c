@@ -1,7 +1,7 @@
 /*
  * tests/test_moonlab_bridge.c
  *
- * Bridge into ~/Desktop/quantum_simulator (libquantumsim, "Moonlab").
+ * Bridge into the Moonlab quantum simulator (libquantumsim).
  * Default build exercises the dormant path; moonlab-enabled build
  * runs a distance-3 surface-code round trip through moonlab's MWPM
  * decoder as ground truth for the joint-decoder program.

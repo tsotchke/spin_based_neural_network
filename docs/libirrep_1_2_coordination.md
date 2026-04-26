@@ -5,10 +5,9 @@
 > `VERSION_PINS` for the current `LIBIRREP_MIN` (now `1.3.0-alpha`,
 > which ships kagome geometry, p6mm wallpaper group,
 > `config_project.h`, `rdm.h`, `sym_group.h`, `spin_project.h`, and a
-> half-integer path in `tensor_product.h`). Live coordination notes
-> between the two projects go through
-> `/Users/tyr/Desktop/agent-notes/inbox-spin/` and
-> `/Users/tyr/Desktop/agent-notes/inbox-irrep/`.
+> half-integer path in `tensor_product.h`). Live cross-project
+> coordination is tracked in this repo and in
+> [github.com/tsotchke/libirrep](https://github.com/tsotchke/libirrep).
 
 Companion document to [`docs/cross_project_integration.md`](cross_project_integration.md).
 Tracks the technical commitments between this repo (`spin_based_neural_network`)

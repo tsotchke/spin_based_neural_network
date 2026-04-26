@@ -5,6 +5,178 @@ All notable changes to the Spin-Based Neural Computation Framework will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] — 2026-04-26 — MinSR + kagome p6m + audit corrections
+
+A correctness-and-capability release: a top-to-bottom audit replaced
+silently-wrong physics in four legacy modules, and four new
+literature-grade capabilities landed on top.  No public-API breaks.
+
+### Added — variational stack
+
+- **MinSR optimiser** (`nqs_sr_step_minsr_full`, `nqs_sr_run_minsr` in
+  `include/nqs/nqs_optimizer.h`).  Sample-space stochastic
+  reconfiguration via the Chen-Heyl 2024 / Rende-Goldt 2024
+  push-through identity:
+  `(O_c^T O_c / N_s + ε I)^{-1} O_c^T = O_c^T (T + ε I)^{-1}`
+  with `T = O_c O_c^T / N_s` the N_s × N_s sample-space Gram matrix.
+  Drops the linear-system memory from N_p² to N_s² and bounds the
+  Krylov dimension by N_s.  Cholesky-factor + back-solve, no BLAS.
+  Same RNG seed → same δθ as the matrix-free CG path.
+
+- **Full kagome wallpaper-group symmetry projection**
+  (`include/nqs/nqs_symproj.h`, `src/nqs/nqs_symproj.c`).  Generic
+  `nqs_symproj_wrapper_t` takes any `|G| × N` permutation table plus
+  a 1-D character vector; ships with builders for p1 (translations),
+  p2 (× C₂ at A), p3 (× C₃ at up-triangle centroid), p6
+  (× C₆ at hexagon centroid (a₁+a₂)/2), and p6m (12 point ops).
+  6-fold rotation centre identified numerically by
+  `tools/find_kagome_p6_center.c`.
+
+- **µMAG-lite trajectory benchmark**
+  (`tests/test_torque_net_micromagnetic_trajectory.c`).  Reference
+  Heisenberg + Zeeman LLG trajectory → torque_net fit on the
+  (m_t, B_eff_t) pairs → torque_net-driven LLG from same initial
+  state.  Trajectory L_∞ agreement: 1.1e-16 over 40 RK4 steps;
+  fit residual 5e-16; w4 recovered exactly (0.800000 vs 0.800000).
+  First end-to-end physical validation of the LLG pillar.
+
+### Added — torque_net basis extension
+
+- **L=2 quadrupolar features** (`include/equivariant_gnn/torque_net.h`).
+  Four new vector terms built from rank-2 contractions of
+  {m_i, m_j, r̂}: `(m_i · r̂) m_j`, `(m_i · m_j) m_j`,
+  `(m_i · m_j) r̂`, `(m_j · r̂) r̂`.  Total basis: 5 → 9 weights.
+  Fit replaced 5×5 Gauss elim with generic 9×9 partial-pivoting solve.
+
+- **Time-reversal classification + `zero_t_even_weights` helper**.
+  Header now documents each term's t-parity (B_eff is t-odd; basis
+  splits into t-odd {w1, w3, w4, w6, w8} and t-even
+  {w0, w2, w5, w7}).  `torque_net_time_reversal_residual` and
+  `torque_net_zero_t_even_weights` enforce the strict-t-odd contract
+  for conservative LLG.  Backwards-compatible: the four golden tests
+  still produce bit-exact outputs with the new basis.
+
+### Added — physics_loss + main loop
+
+- **Variational `micromagnetic_loss`** (`include/physics_loss.h`):
+  exchange + uniaxial anisotropy + Zeeman energy functional.
+  Wired as the `"micromagnetic"` `loss_type` in
+  `compute_physics_loss`.
+- **`project_spin_lattice_to_unit_sphere`**: hard |m|=1 constraint
+  with drift diagnostic.
+- **`fourier_features`**: NeRF-style sin/cos embedding for PINN
+  coordinate inputs.
+- **Topological observables fold into `physics_loss`** when the
+  invariants and entropy cadences are configured.  New CLI flags:
+  `--cadence-entropy`, `--lambda-chern`, `--lambda-topological`,
+  `--target-chern`, `--target-gamma`.
+
+### Changed — physics correctness
+
+- **Berry phase / Chern number**.  `get_eigenstate` now returns the
+  exact lower-band Bloch state of the Qi-Wu-Zhang square-lattice
+  model (was: a fake plane-wave).  `calculate_chern_number` uses the
+  Fukui-Hatsugai-Suzuki gauge-invariant lattice-plaquette sum (was:
+  a magnetic-monopole heuristic).  Yields exact integer Chern
+  numbers to machine precision for gapped systems.  Print labels
+  for "FQHE C=1/3" and "Z₂ TI C=1" removed; replaced with correct
+  QAH / trivial / higher-Chern classification.
+- **Topological entanglement entropy**.
+  `calculate_von_neumann_entropy`'s 10%-interaction heuristic for
+  >10-site subsystems replaced with real Shannon entropy of the
+  marginal P(s_A) computed via exact Boltzmann enumeration (N≤20)
+  or Metropolis MC (N>20).  Memory-efficient diagonal-only path
+  caps |A| at 24 sites.
+- **Majorana physics**.  `calculate_majorana_parity` no longer
+  returns `rand()` — deterministic ±1 from the Kitaev-2001 BdG
+  ground-state.  `detect_majorana_zero_modes` now diagonalises the
+  2N × 2N BdG Hamiltonian and returns an end-localisation measure
+  derived from the lowest-|E| eigenvector (was: a parameter-driven
+  heuristic).
+- **NQS optimiser CG breakdown** in `nqs_sr_step_*` is now signalled
+  via `converged=0` plus an iter/residual stderr message (was:
+  silent break with `converged=1` left from the previous
+  successful step).
+- **NQS Lanczos materialisation** emits a stoquasticity warning
+  when `‖Im ψ‖² / ‖ψ‖²` exceeds 1e-6.  Kagome / J1-J2 / frustrated
+  KH ground states are non-stoquastic; the `Re(ψ) = |ψ| cos(arg ψ)`
+  projection silently discarded physical phase content there.
+- **`matrix_neon` complex matvec** uses `vld2q_f64` + `vfma{q,sq}`
+  for true 2-wide SIMD (was: `vsetq_lane_f64` lane-by-lane build,
+  which compiled to scalar SISD).
+- **`qec_decoder`** transformer / Mamba kinds were silently falling
+  back to MWPM with only `is_available = 0`.  Added one-shot
+  per-kind stderr warnings at create time so a production run can
+  no longer believe a "learned decoder" is real.
+- **`torque_net` header** rewritten to state SO(3) covariance
+  honestly (was: claimed "E(3)-equivariant"; only 5 scalar weights,
+  no parity gating, no irrep tower).  Upgrade path documented.
+- **`noesis_bridge` / `qgtl_bridge`** distinguish "compiled out"
+  (`_EDISABLED`) from "compiled in but body is a placeholder"
+  (`_ENOT_IMPLEMENTED`).  The live path was previously
+  indistinguishable from the disabled path.
+- **`mps/dmrg` docstring**: clarified that the bond-dim-5 MPO
+  dispatches between TFIM, Heisenberg, and XXZ (was: described as
+  "hard-coded XXZ").
+- **`flow_matching` docstring**: v0.4 ships a constant rate, v0.5+
+  will install a learned schedule; previously the field name and
+  docstring suggested the schedule was already there.
+- **`llg/demag`** silent NULL return on non-power-of-two grids
+  replaced with an actionable stderr message naming the
+  next-power-of-two pad size.
+
+### Fixed — documentation
+
+- TEE sign convention in `docs/visualization.md`: `γ = +log(D) > 0`
+  (was: `S_topo = -log(2)`, sign error).
+- Chern-number classification in `docs/berry_phase.md` §4.2:
+  removed false claims that Z₂ topological insulators have integer
+  Chern number and that FQHE Chern is 1/3 (Chern is always integer;
+  Z₂ TI has Z₂ index, not Chern).
+- KitaevLattice naming in `docs/classical_models.md`: clarified
+  this is a classical anisotropic Ising lattice, **not** the
+  quantum Kitaev honeycomb model — the quantum phase diagram is
+  used by `berry_phase.c` and `topological_entropy.c` to
+  parameterise the quantum analogue.
+- Removed duplicate §3.5 in `docs/topological_entropy.md`.
+- Bluestein FFT comment in `src/neural_operator/fft.c`: now
+  honestly says "naive O(n²) DFT for non-PoT n; Bluestein deferred".
+
+### Build
+
+- **libirrep is now a git submodule at `vendor/libirrep`**.  After
+  cloning, run `git submodule update --init --recursive` once; then
+  `make IRREP_ENABLE=1 test_libirrep_bridge test_torque_net_irrep`
+  builds libirrep from the submodule (`make -C vendor/libirrep lib`)
+  and links the bridge in one shot.  No external path required;
+  system installs still work via `IRREP_ROOT=/some/install`.
+- Removed pre-existing hardcoded local paths from
+  `include/moonlab_bridge.h`, `include/noesis_bridge.h`,
+  `tests/test_moonlab_bridge.c`, and `docs/libirrep_1_2_coordination.md`
+  (replaced with github URLs and `/path/to/...` placeholders).
+
+### Tests
+
+- New: `test_nqs_minsr` (MinSR vs CG-SR equivalence on TFIM 2×2),
+  `test_nqs_symproj` (translation + p2 + p3 + p6 + p6m closure and
+  end-to-end ψ-invariance under full orbits),
+  `test_torque_net_micromagnetic_trajectory` (LLG trajectory match
+  to machine precision after fit).
+- Extended: `test_torque_net.c` adds isolated L=2 equivariance, full
+  9-weight fit, and t-parity subset assertions.  `test_physics_loss.c`
+  covers the new variational micromagnetic loss, hard-constraint
+  projection, and Fourier-feature embedding.
+
+### No breaking changes
+
+All v0.4.2 public symbols retain their signatures and semantics.
+The `torque_net_params_t` struct gained four new weight fields
+(w5..w8) inserted before `r_cut`; positional initialisers in the
+test suite were converted to designated initialisers as a result.
+External code using designated initialisers is unaffected.
+
+---
+
 ## [0.4.2] — 2026-04-24 — kagome diagnostics + Lanczos reference
 
 ### Added — sample-based diagnostics

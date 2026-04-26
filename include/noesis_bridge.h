@@ -2,7 +2,7 @@
  * include/noesis_bridge.h
  *
  * Lazy bridge to Noesis, the neuro-symbolic cognitive architecture
- * built on Eshkol (~/Desktop/noesis, github.com/tsotchke/noesis).
+ * built on Eshkol (https://github.com/tsotchke/noesis).
  * Primary use case in this framework: a *learned-classifier open
  * policy* for the THQCP coupling scheduler, where noesis's
  * proof-tree + calibrated-uncertainty machinery decides whether a

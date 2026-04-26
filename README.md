@@ -27,50 +27,72 @@ topological phases, quantum error correction, and physics-informed ML.
 Pure C11, ARM NEON SIMD kernels, SDL2 for live visualisation, no Python
 runtime dependency.
 
-> **Current release: v0.4.2** (2026-04-24). A diagnostic-stack
-> addition on top of the v0.4.1 Kitaev-Heisenberg + kagome
-> Heisenberg local-energy kernels. Full suite **359 / 359**
-> passing, zero warnings under `-Wall -Wextra`, AddressSanitizer +
-> UndefinedBehaviorSanitizer clean. See
-> [RELEASE_NOTES.md](RELEASE_NOTES.md) for the complete notes.
+> **Current release: v0.4.3** (2026-04-26). A correctness +
+> capability release on top of v0.4.2: a top-to-bottom audit
+> replaced silently-wrong physics in four legacy modules (Berry
+> phase / Chern number, topological entanglement entropy, Majorana
+> zero-mode detection + parity, NQS optimiser breakdown signalling),
+> and four literature-grade additions landed alongside.  All 62
+> test suites pass, zero warnings under `-Wall -Wextra`,
+> AddressSanitizer + UndefinedBehaviorSanitizer clean.  See
+> [RELEASE_NOTES.md](RELEASE_NOTES.md) for the full notes.
 >
-> **What landed (v0.4.2 research capability)**
-> - `nqs_compute_chi_F` — fidelity susceptibility χ_F = Tr(S)/2
->   from a sampled batch (Zanardi–Paunković 2006).
-> - `nqs_compute_kagome_bond_phase` — per-bond-class amplitude
->   ratios ⟨ψ(s_{ij})/ψ(s)⟩ for Marshall vs Dirac-compatible
->   phase structure.
-> - `nqs_sr_{step,run}_excited` — excited-state VMC via the
->   Choo–Neupert–Carleo 2018 (arXiv:1810.10196) orthogonal-
->   ansatz penalty; 4-decimal agreement with the exact 2-site
->   Heisenberg triplet.
-> - `nqs_lanczos_k_lowest_kagome_heisenberg` — multi-Ritz
->   Lanczos on the full 2^N Hilbert space (dim = 4096 at
->   N = 12). On our 2×2 PBC cluster: **E₀ = −5.44487522 J**,
->   **E₁ = −5.32839240 J**, **spin gap Δ = 0.116483 J** to
->   machine precision. Anchors every VMC estimate against an
->   exact reference.
-> - End-to-end driver `make research_kagome_N12_diagnostics`
->   chains GS SR → χ_F → bond-phase → excited-SR →
->   Lanczos-exact E₀/E₁/gap in one O(20 min) artefact.
+> **What landed (v0.4.3 capabilities)**
+> - **MinSR optimiser** (`nqs_sr_run_minsr`) — sample-space
+>   stochastic reconfiguration via the Chen-Heyl 2024 / Rende-Goldt
+>   2024 push-through identity.  Drops linear-system memory from
+>   N_p² to N_s²; same δθ as the CG-SR path on the same RNG seed.
+>   Required for ansätze with N_p ≫ N_s.
+> - **Full kagome wallpaper-group symmetry projection**
+>   (`nqs_kagome_{translation,p2,p3,p6,p6m}_perm` +
+>   `nqs_symproj_log_amp` / `nqs_symproj_gradient`) — generic
+>   permutation-table wrapper plus builders for every standard
+>   subgroup of p6m.  6-fold rotation centre identified
+>   numerically by `tools/find_kagome_p6_center.c`.
+> - **9-term torque_net** with L=2 quadrupolar features and
+>   time-reversal classification.  `torque_net_zero_t_even_weights`
+>   enforces the strict-t-odd contract for conservative LLG.
+> - **µMAG-lite trajectory benchmark** — first end-to-end physical
+>   validation of the LLG pillar.  Reference Heisenberg+Zeeman LLG
+>   trajectory → torque_net fit → torque_net-driven LLG.  L_∞
+>   trajectory error: 1.1e-16 over 40 RK4 steps.
 >
-> See
-> [docs/research/kagome_KH_plan.md](docs/research/kagome_KH_plan.md)
-> for the research program this stack supports (5-diagnostic
-> protocol for the kagome Z₂ vs Dirac spin-liquid question,
-> coordinated with [libirrep](https://github.com/tsotchke/libirrep)).
+> **Audit corrections (silently-wrong physics fixed)**
+> - Berry phase / Chern number: real QWZ Bloch states +
+>   Fukui-Hatsugai-Suzuki gauge-invariant lattice sum
+>   (was: fake plane-wave + magnetic-monopole heuristic).
+> - Topological entanglement entropy: real Shannon entropy of the
+>   marginal P(s_A) (was: a 10% interaction fudge factor for
+>   subsystem > 10 sites).
+> - Majorana parity + zero-mode detection: deterministic Kitaev-2001
+>   result + real BdG diagonalisation (was: `rand()` and a
+>   parameter-driven heuristic).
+> - NQS optimiser CG breakdown is now signalled with iter / residual
+>   instead of being masked as `converged = 1`.
 >
-> **Cumulative since v0.4.0** — the `NQS_HAM_KITAEV_HEISENBERG`
-> and `NQS_HAM_KAGOME_HEISENBERG` local-energy kernels (v0.4.1)
-> plus the foundation upgrades from v0.4.0 (Hilbert-space
-> Majorana braiding with order-8 non-Abelian statistics, toric
-> code with explicit data qubits + greedy MWPM decoder,
-> engine-neutral scaffolding for external NN / tensor engines).
-> See [CHANGELOG.md](CHANGELOG.md) for the full history and
+> See [CHANGELOG.md](CHANGELOG.md) for the full v0.4.3 entry, and
 > [docs/architecture_v0.4.md](docs/architecture_v0.4.md) for the
-> v0.5+ roadmap (ViT wavefunctions, equivariant LLG, learned
-> surface-code decoders, Fibonacci-anyon gates, neural-operator
-> Boltzmann samplers).
+> v0.5+ roadmap (factored-attention ViT wavefunctions, real µMAG
+> #1/#3/#4, foundation NQS, learned surface-code decoders).
+>
+> **Cumulative since v0.4.0** — the diagnostic stack and exact
+> Lanczos reference solver (v0.4.2: `nqs_compute_chi_F`,
+> `nqs_compute_kagome_bond_phase`, `nqs_sr_{step,run}_excited`,
+> `nqs_lanczos_k_lowest_kagome_heisenberg`); the
+> `NQS_HAM_KITAEV_HEISENBERG` and `NQS_HAM_KAGOME_HEISENBERG`
+> local-energy kernels (v0.4.1); plus the foundation upgrades from
+> v0.4.0 (Hilbert-space Majorana braiding with order-8 non-Abelian
+> statistics, toric code with explicit data qubits + greedy MWPM
+> decoder, engine-neutral scaffolding for external NN / tensor
+> engines).
+>
+> [libirrep](https://github.com/tsotchke/libirrep) is vendored as a
+> git submodule at `vendor/libirrep`.  After cloning this repo, fetch
+> it with `git submodule update --init --recursive`; then
+> `make IRREP_ENABLE=1 test_libirrep_bridge` builds libirrep from the
+> submodule and runs the bridge tests automatically.  No external
+> path needed.  System installs are still supported via
+> `IRREP_ROOT=/some/install`.
 
 ## Key Components
 

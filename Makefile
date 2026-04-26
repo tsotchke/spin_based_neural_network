@@ -37,18 +37,57 @@ BIN_DIR = build
 # on https://github.com/tsotchke/eshkol) and Noesis (reasoning engine,
 # not yet publicly released). Enable by pointing ENGINE_ROOT at the
 # engine install and building with `make ENGINE_ENABLE=1`.
-# ---- libirrep integration (dormant by default) ---------------------------
-# Enable with: make IRREP_ENABLE=1 IRREP_ROOT=/path/to/libirrep/install
-# The libirrep_bridge.c translation unit links against the library's
-# public C ABI. Version support starts at libirrep 1.0.
+# ---- libirrep integration (vendored as a submodule) ----------------------
+# libirrep is vendored at vendor/libirrep via `git submodule`. After
+# cloning this repo run
+#     git submodule update --init --recursive
+# to fetch it from github.com/tsotchke/libirrep.
+#
+# To enable the linkage:        make IRREP_ENABLE=1 [target]
+# Override the path explicitly: make IRREP_ENABLE=1 IRREP_ROOT=/path/to/libirrep
+# Override the lib-search dir:  make IRREP_ENABLE=1 IRREP_LIBDIR=/some/lib
+#
+# When IRREP_ROOT is the in-tree submodule and the static/shared lib has
+# not been built yet, `make libirrep` (or any target that depends on it)
+# will run libirrep's own `make lib` for you.  Public ABI compatibility
+# starts at libirrep 1.0; verified against 1.3.x.
 IRREP_ENABLE ?= 0
 ifeq ($(IRREP_ENABLE),1)
-  IRREP_ROOT    ?= /usr/local/libirrep
-  IRREP_INCLUDE := $(IRREP_ROOT)/include
-  IRREP_LIBDIR  := $(IRREP_ROOT)/lib
+  ifneq ($(wildcard vendor/libirrep/include/irrep/irrep.h),)
+    IRREP_ROOT ?= vendor/libirrep
+  else
+    IRREP_ROOT ?= /usr/local/libirrep
+  endif
+  IRREP_INCLUDE ?= $(IRREP_ROOT)/include
+  ifeq ($(wildcard $(IRREP_ROOT)/lib/.),)
+    IRREP_LIBDIR ?= $(IRREP_ROOT)/build/lib
+  else
+    IRREP_LIBDIR ?= $(IRREP_ROOT)/lib
+  endif
   IRREP_LIB     ?= libirrep
   IRREP_CFLAGS  := -I$(IRREP_INCLUDE) -DSPIN_NN_HAS_IRREP=1
   IRREP_LDFLAGS := -L$(IRREP_LIBDIR) -l$(IRREP_LIB) -Wl,-rpath,$(IRREP_LIBDIR)
+endif
+
+# Phony target: build libirrep from the vendored submodule.
+# Tests that link libirrep depend on this; running `make libirrep` by
+# itself rebuilds the vendored static + shared libs.  Skipped (no-op)
+# when IRREP_ENABLE != 1 or IRREP_ROOT is not the submodule.
+.PHONY: libirrep
+libirrep:
+ifeq ($(IRREP_ENABLE),1)
+  ifeq ($(IRREP_ROOT),vendor/libirrep)
+	@if [ ! -f vendor/libirrep/include/irrep/irrep.h ]; then \
+	  echo "vendor/libirrep is empty. Run: git submodule update --init --recursive"; \
+	  exit 1; \
+	fi
+	@echo "==> Building vendored libirrep at $(IRREP_ROOT)"
+	@$(MAKE) -C $(IRREP_ROOT) lib
+  else
+	@echo "(skipping vendored libirrep build: IRREP_ROOT=$(IRREP_ROOT) is not the submodule)"
+  endif
+else
+	@echo "(skipping libirrep: IRREP_ENABLE=0)"
 endif
 
 MOONLAB_ENABLE ?= 0
@@ -430,12 +469,12 @@ test_pillar_integration: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_pillar_integration \
 	    tests/test_pillar_integration.c $(NQS_SRCS) $(MPS_SRCS) $(LDFLAGS)
 
-test_libirrep_bridge: $(BIN_DIR)
+test_libirrep_bridge: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
 	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) -o $(BIN_DIR)/test_libirrep_bridge \
 	    tests/test_libirrep_bridge.c src/libirrep_bridge.c \
 	    $(LDFLAGS) $(IRREP_LDFLAGS)
 
-test_torque_net_irrep: $(BIN_DIR)
+test_torque_net_irrep: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
 	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) -o $(BIN_DIR)/test_torque_net_irrep \
 	    tests/test_torque_net_irrep.c src/libirrep_bridge.c \
 	    $(LDFLAGS) $(IRREP_LDFLAGS)

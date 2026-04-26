@@ -1,3 +1,106 @@
+# Spin-Based Neural Computation Framework v0.4.3
+
+v0.4.3 is a **correctness + capability release** layered on top of
+v0.4.2.  An end-to-end audit replaced silently-wrong physics in
+four legacy modules, and four new literature-grade capabilities
+landed alongside the corrections.  No public-API breaks.
+
+## Highlights
+
+- **MinSR optimiser** (Chen-Heyl 2024 / Rende-Goldt 2024) — solves
+  the SR system in the N_s × N_s sample-space Gram matrix instead
+  of the N_p × N_p quantum geometric tensor.  Drops linear-system
+  memory from O(N_p²) to O(N_s²); same δθ as the CG-SR path on the
+  same RNG seed.  Required for ansätze with N_p ≫ N_s (deep ResNet,
+  ViT, …).
+- **Full kagome wallpaper-group symmetry projection** —
+  `nqs_kagome_{translation,p2,p3,p6,p6m}_perm` build permutation
+  tables for every standard subgroup of p6m.  6-fold centre at
+  (a₁ + a₂)/2 identified numerically; all builders verified by
+  group-closure tests + end-to-end ψ-invariance under the full
+  orbit.
+- **9-term torque_net** with L=2 quadrupolar features and
+  time-reversal classification — basis splits cleanly into t-odd
+  {w1, w3, w4, w6, w8} (B_eff-compatible) and t-even {w0, w2, w5, w7};
+  `torque_net_zero_t_even_weights` enforces the strict-t-odd contract
+  for conservative LLG.
+- **µMAG-lite trajectory benchmark** — first end-to-end physical
+  validation of the LLG pillar.  Reference Heisenberg+Zeeman LLG
+  trajectory → torque_net fit → torque_net-driven LLG.  Trajectory
+  L_∞ agreement: 1.1e-16 over 40 RK4 steps (machine precision).
+
+## Audit corrections (silently-wrong physics fixed)
+
+- **Berry phase / Chern number**: replaced fake plane-wave
+  eigenstate + magnetic-monopole heuristic with QWZ Bloch states +
+  Fukui-Hatsugai-Suzuki gauge-invariant lattice plaquette sum.
+  Yields exact integer Chern numbers to machine precision.
+- **Topological entanglement entropy**: replaced the 10%
+  "interaction correction" heuristic with real Shannon entropy of
+  the marginal P(s_A), via exact Boltzmann enumeration (N≤20) or
+  Metropolis MC.
+- **Majorana zero-mode detection + parity**: replaced
+  parameter-driven heuristic and `rand()`-returning parity with
+  real BdG diagonalisation and the deterministic Kitaev-2001 result.
+- **NQS optimiser CG breakdown** is now logged with iteration and
+  residual instead of being silently masked as `converged=1`.
+- **NQS Lanczos materialisation** emits a stoquasticity warning
+  when the `Re(ψ)`-only projection discards significant phase
+  content — flags non-stoquastic kagome / J1-J2 / KH cases that the
+  earlier path silently mishandled.
+- **`matrix_neon` complex matvec** rewritten with `vld2q_f64` +
+  `vfma{q,sq}` for actual 2-wide SIMD (the earlier
+  `vsetq_lane_f64`-by-lane construction compiled to scalar SISD).
+- **`qec_decoder`** transformer / Mamba kinds now emit a one-shot
+  per-kind stderr warning at `qec_decoder_create()` time so the MWPM
+  fallback is visible (was: silent fallback with `is_available=0`
+  the only signal).
+
+## libirrep linkage
+
+[libirrep](https://github.com/tsotchke/libirrep) is now vendored as
+a git submodule at `vendor/libirrep`.  After cloning, fetch it with
+
+```
+git submodule update --init --recursive
+```
+
+then `make IRREP_ENABLE=1 test_libirrep_bridge test_torque_net_irrep`
+builds libirrep from the submodule and runs the bridge tests in one
+shot — no external paths or pre-installed dependency required.  When
+enabled, 9 additional tests run (Clebsch-Gordan unit elements,
+Wigner-D identity at zero, spherical-harmonic addition theorem to
+~6e-17).  System installs are still supported via
+`IRREP_ROOT=/some/install`.  The default build (without
+`IRREP_ENABLE=1`) remains libirrep-free.
+
+## What's not in this release
+
+- **Factored-attention ViT NQS** (Rende et al. 2024): 3-4 weeks of
+  dedicated work.  MinSR + p6m projection are the two pieces it
+  needs from this release.
+- **Foundation NQS** (Hamiltonian-conditioned across the KH phase
+  diagram): long-horizon.
+- **Real µMAG #1, #3, #4**: µMAG-lite covers the synthetic-target
+  slice; NIST-spec problems require dedicated parameter
+  conversion + reference-data work.
+- **Learned QEC decoders** (transformer, Mamba): the literature
+  ceiling vs MWPM in the depolarising-only regime is ~10–25 % LER,
+  not the 1.5× margin seen with hardware-specific (leakage / soft
+  I-Q) wins.  Honest fallback documentation lands here; the
+  implementation stays in scope for v0.5+ if the hardware modelling
+  catches up.
+
+## No breaking changes
+
+All v0.4.2 public symbols retain their signatures and semantics.
+`torque_net_params_t` gained four new weight fields (w5..w8)
+inserted before `r_cut`; downstream code using designated
+initialisers is unaffected.  Test files that used positional
+initialisers were updated.
+
+---
+
 # Spin-Based Neural Computation Framework v0.4.2
 
 v0.4.2 is a **research-capability release** layered on top of v0.4.1.

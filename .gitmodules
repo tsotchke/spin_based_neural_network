@@ -1,0 +1,3 @@
+[submodule "vendor/libirrep"]
+	path = vendor/libirrep
+	url = https://github.com/tsotchke/libirrep.git

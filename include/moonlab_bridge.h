@@ -1,16 +1,16 @@
 /*
  * include/moonlab_bridge.h
  *
- * Lazy bridge to the Moonlab quantum simulator
- * (~/Desktop/quantum_simulator, libquantumsim). Moonlab supplies a
- * reference dense state-vector + surface-code + Fibonacci-anyon stack
- * that this framework cross-validates its own topological-QC pieces
- * against — the ground-truth anchor for the learned-decoder / joint-
- * training program (research-plan §neuromorphic-QEC).
+ * Lazy bridge to the Moonlab quantum simulator (libquantumsim).
+ * Moonlab supplies a reference dense state-vector + surface-code +
+ * Fibonacci-anyon stack that this framework cross-validates its own
+ * topological-QC pieces against — the ground-truth anchor for the
+ * learned-decoder / joint-training program (research-plan
+ * §neuromorphic-QEC).
  *
  * Gated behind -DSPIN_NN_HAS_MOONLAB=1 so the default build remains
  * dependency-free. Enable with
- *     make MOONLAB_ENABLE=1 MOONLAB_ROOT=/Users/tyr/Desktop/quantum_simulator
+ *     make MOONLAB_ENABLE=1 MOONLAB_ROOT=/path/to/quantum_simulator
  */
 #ifndef MOONLAB_BRIDGE_H
 #define MOONLAB_BRIDGE_H
