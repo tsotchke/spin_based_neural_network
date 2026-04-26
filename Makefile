@@ -348,6 +348,12 @@ test_nqs_symproj: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_symproj \
 	    tests/test_nqs_symproj.c $(NQS_SRCS) $(LDFLAGS)
 
+test_torque_net_micromagnetic_trajectory: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_torque_net_micromagnetic_trajectory \
+	    tests/test_torque_net_micromagnetic_trajectory.c \
+	    src/equivariant_gnn/torque_net.c \
+	    src/llg/llg.c $(LDFLAGS)
+
 # Research-scale convergence runner for the kagome Heisenberg S=1/2
 # open ground-state question. Takes minutes, NOT wired into `make test`.
 # Run manually: `make research_kagome_N12 && ./build/research_kagome_N12`.
@@ -519,7 +525,7 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
       test_nqs_kitaev test_nqs_lanczos test_nqs_marshall test_nqs_translation \
       test_nqs_tvmc test_nqs_xxz test_nqs_kagome test_nqs_chi_F test_nqs_excited test_nqs_minsr test_nqs_symproj \
       test_hopfield test_rbm_cd \
-      test_torque_net test_torque_net_llg test_torque_net_golden \
+      test_torque_net test_torque_net_llg test_torque_net_golden test_torque_net_micromagnetic_trajectory \
       test_torque_net_heisenberg_fit \
       test_siren \
       test_thqcp_coupling test_noesis_bridge test_qgtl_bridge test_qllm_bridge \
@@ -569,6 +575,7 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
 	@$(BIN_DIR)/test_torque_net_llg
 	@$(BIN_DIR)/test_torque_net_golden
 	@$(BIN_DIR)/test_torque_net_heisenberg_fit
+	@$(BIN_DIR)/test_torque_net_micromagnetic_trajectory
 	@$(BIN_DIR)/test_siren
 	@$(BIN_DIR)/test_thqcp_coupling
 	@$(BIN_DIR)/test_noesis_bridge
