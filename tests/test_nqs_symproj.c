@@ -173,10 +173,91 @@ static void test_symproj_output_is_invariant_p2(void) {
     nqs_ansatz_free(a);
 }
 
+/* p3 (translations × C₃) — 3·L² orbit on an L × L kagome torus. */
+static void test_p3_perm_is_proper(void) {
+    int L = 3;
+    int N = 3 * L * L;
+    int *perm = NULL;
+    double *chars = NULL;
+    int G = 0;
+    int rc = nqs_kagome_p3_perm(L, &perm, &chars, &G);
+    ASSERT_EQ_INT(rc, 0);
+    ASSERT_EQ_INT(G, 3 * L * L);
+    int *seen = (int *)calloc((size_t)N, sizeof(int));
+    for (int g = 0; g < G; g++) {
+        memset(seen, 0, (size_t)N * sizeof(int));
+        for (int i = 0; i < N; i++) {
+            int j = perm[(size_t)g * N + i];
+            ASSERT_TRUE(j >= 0 && j < N);
+            ASSERT_TRUE(seen[j] == 0);
+            seen[j] = 1;
+        }
+        ASSERT_NEAR(chars[g], 1.0, 1e-12);
+    }
+    /* Identity (k = 0, tx = ty = 0) is row 0. */
+    for (int i = 0; i < N; i++) ASSERT_EQ_INT(perm[i], i);
+
+    /* C₃³ = identity on every site.  Row L² has (k=1, tx=0, ty=0).
+     * Apply C₃ three times via the perm composition g·(g·(g·s))_i. */
+    int row_C3 = L * L;
+    for (int i = 0; i < N; i++) {
+        int j = perm[(size_t)row_C3 * N + i];
+        int k = perm[(size_t)row_C3 * N + j];
+        int l = perm[(size_t)row_C3 * N + k];
+        ASSERT_EQ_INT(l, i);
+    }
+    free(seen); free(perm); free(chars);
+}
+
+static void test_symproj_output_is_invariant_p3(void) {
+    int L = 3;
+    int N = 3 * L * L;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz = NQS_ANSATZ_RBM;
+    cfg.rbm_hidden_units = 6;
+    cfg.rng_seed = 0xCAFEFACEu;
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    ASSERT_TRUE(a != NULL);
+
+    int *perm = NULL;
+    double *chars = NULL;
+    int G = 0;
+    ASSERT_EQ_INT(nqs_kagome_p3_perm(L, &perm, &chars, &G), 0);
+
+    nqs_symproj_wrapper_t w = {
+        .base_log_amp       = nqs_ansatz_log_amp,
+        .base_user          = a,
+        .num_sites          = N,
+        .num_group_elements = G,
+        .perm               = perm,
+        .characters         = chars,
+    };
+
+    int *spins = (int *)malloc((size_t)N * sizeof(int));
+    for (int i = 0; i < N; i++) spins[i] = (i % 3 == 0) ? +1 : -1;
+
+    double base_lp, base_arg;
+    nqs_symproj_log_amp(spins, N, &w, &base_lp, &base_arg);
+
+    int *transformed = (int *)malloc((size_t)N * sizeof(int));
+    for (int g = 0; g < G; g++) {
+        for (int i = 0; i < N; i++) transformed[i] = spins[perm[(size_t)g * N + i]];
+        double lp, arg;
+        nqs_symproj_log_amp(transformed, N, &w, &lp, &arg);
+        ASSERT_NEAR(lp, base_lp, 1e-9);
+        ASSERT_NEAR(cos(arg), cos(base_arg), 1e-9);
+    }
+
+    free(spins); free(transformed); free(perm); free(chars);
+    nqs_ansatz_free(a);
+}
+
 int main(void) {
     TEST_RUN(test_translation_perm_is_proper);
     TEST_RUN(test_p2_perm_doubles_translation);
     TEST_RUN(test_symproj_output_is_invariant_translation);
     TEST_RUN(test_symproj_output_is_invariant_p2);
+    TEST_RUN(test_p3_perm_is_proper);
+    TEST_RUN(test_symproj_output_is_invariant_p3);
     TEST_SUMMARY();
 }

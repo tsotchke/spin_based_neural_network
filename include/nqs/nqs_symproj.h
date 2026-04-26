@@ -94,6 +94,28 @@ int nqs_kagome_p2_perm(int Lx, int Ly,
                         double **out_characters,
                         int *out_num_elements);
 
+/*
+ * Build the |G| = 3·L²  p3 = (translations) ⋊ (C₃ around up-triangle
+ * centroid) permutation table for kagome on an L × L torus with PBC.
+ *
+ * C₃ rotation: 120° around the centroid of up-triangle (0, 0), located
+ * at (1/4, √3/12) in Cartesian coordinates.  The rotation cycles
+ * sublattices A → B → C → A and shifts cell coordinates by an amount
+ * that depends on the original site (computed numerically; the cell
+ * shift per site is non-trivial because the rotation centre is offset
+ * from the lattice origin).
+ *
+ * Requires Lx = Ly = L; rectangular tori cannot host C₃.  Returns -1
+ * with an explanatory stderr message on rectangular input.
+ *
+ * Allocates *out_perm of length 3·L²·N (N = 3·L²) and *out_characters
+ * of length 3·L² (all +1 for the A₁ trivial irrep).  Caller frees both.
+ */
+int nqs_kagome_p3_perm(int L,
+                        int **out_perm,
+                        double **out_characters,
+                        int *out_num_elements);
+
 #ifdef __cplusplus
 }
 #endif

@@ -265,4 +265,159 @@ int nqs_kagome_p2_perm(int Lx, int Ly,
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* p3 (translations × C₃) on an L × L kagome torus.                   */
+/*                                                                    */
+/* The C₃ centre is the up-triangle (0, 0) centroid at                */
+/*   τ₀ = (¼, √3/12)                                                  */
+/* in Cartesian coordinates.  C₃ around τ₀ cycles sublattices         */
+/* A → B → C → A and shifts cells in a way that depends on the site,  */
+/* so we compute the permutation numerically: rotate each Cartesian   */
+/* position, then invert the lattice basis to recover (cell, sub).    */
+/* ------------------------------------------------------------------ */
+
+/* a₁ = (1, 0), a₂ = (½, √3/2). */
+#define KG_AX 1.0
+#define KG_AY 0.0
+#define KG_BX 0.5
+#define KG_BY 0.86602540378443864676      /* √3/2 */
+#define KG_RB_X 0.5                        /* B at a₁/2 */
+#define KG_RB_Y 0.0
+#define KG_RC_X 0.25                       /* C at a₂/2 */
+#define KG_RC_Y 0.43301270189221932338     /* √3/4 */
+
+static void kagome_site_position(int cx, int cy, int sub,
+                                 double *x, double *y) {
+    double rsx = (sub == 1) ? KG_RB_X : (sub == 2) ? KG_RC_X : 0.0;
+    double rsy = (sub == 1) ? KG_RB_Y : (sub == 2) ? KG_RC_Y : 0.0;
+    *x = cx * KG_AX + cy * KG_BX + rsx;
+    *y = cx * KG_AY + cy * KG_BY + rsy;
+}
+
+/* Invert a Cartesian position to (cx, cy, sub) on an L × L kagome torus
+ * (PBC).  Returns site index in [0, 3L²) on success, -1 on failure.
+ *
+ * Strategy: try each of the 3 sublattices.  For sublattice s with
+ * offset r_s, solve cx · a₁ + cy · a₂ = (x − r_s.x, y − r_s.y) for real
+ * (cx, cy).  Round to nearest integer mod L; accept if the round-off
+ * residual is within tol. */
+static int kagome_position_to_site(double x, double y, int L, double tol) {
+    /* Inverse of [a₁  a₂] = [[1, 1/2], [0, √3/2]]:
+     *   (a₁ a₂)^{-1} = [[1, -1/√3], [0, 2/√3]]
+     * cx_real = x' - y'/√3
+     * cy_real = (2/√3) y' */
+    const double inv_sqrt3 = 0.57735026918962576451;
+    const double two_over_sqrt3 = 1.15470053837925152902;
+    for (int sub = 0; sub < 3; sub++) {
+        double rsx = (sub == 1) ? KG_RB_X : (sub == 2) ? KG_RC_X : 0.0;
+        double rsy = (sub == 1) ? KG_RB_Y : (sub == 2) ? KG_RC_Y : 0.0;
+        double xs = x - rsx, ys = y - rsy;
+        double cx_real = xs - ys * inv_sqrt3;
+        double cy_real = ys * two_over_sqrt3;
+        /* Round to nearest integer. */
+        long cx_int = (long)floor(cx_real + 0.5);
+        long cy_int = (long)floor(cy_real + 0.5);
+        if (fabs(cx_real - (double)cx_int) < tol &&
+            fabs(cy_real - (double)cy_int) < tol) {
+            int cx = (int)(((cx_int % L) + L) % L);
+            int cy = (int)(((cy_int % L) + L) % L);
+            return 3 * (cx * L + cy) + sub;
+        }
+    }
+    return -1;
+}
+
+/* Compose one C₃ point op (k = 0 → identity, k = 1 → 120°, k = 2 →
+ * 240°) with a translation (tx, ty) and write the resulting permutation
+ * row.  Returns 0 on success, -1 if any site failed to invert. */
+static int build_p3_perm_row(int L, int k, int tx, int ty, int *row) {
+    int N = 3 * L * L;
+    /* C₃ centre: up-triangle (0, 0) centroid. */
+    const double tau_x = 0.25;
+    const double tau_y = 0.14433756729740643112;   /* √3/12 */
+    /* Rotation matrix R(120° · k). */
+    double theta = (2.0 * 3.14159265358979323846 * (double)k) / 3.0;
+    double cs = cos(theta), sn = sin(theta);
+
+    for (int cx = 0; cx < L; cx++) {
+        for (int cy = 0; cy < L; cy++) {
+            for (int sub = 0; sub < 3; sub++) {
+                /* Source-side site.  We want π_g(i) = the site that
+                 * spins[π_g(i)] should be picked up at output index i.
+                 * Convention: g · s evaluated at i = s_{π_g(i)}.  So
+                 * π_g is the *inverse* permutation of the geometric
+                 * transformation.  For a rotation R, the geometric
+                 * transformation maps site at position p to position
+                 * R p.  So spins at the new site = spins at original
+                 * site at position R^{-1} p_new.
+                 *
+                 * Concretely: row index i corresponds to output site
+                 * (cx, cy, sub) at position p_i.  We compute p_src =
+                 * R^{-1} (p_i − τ₀) + τ₀, shifted by translation (in
+                 * lattice basis), then look up which (cx', cy', sub')
+                 * has that Cartesian position. */
+                double px, py;
+                kagome_site_position(cx, cy, sub, &px, &py);
+                /* Apply inverse rotation R^{-1} = R(−θ). */
+                double dx = px - tau_x, dy = py - tau_y;
+                double sx = cs * dx + sn * dy + tau_x;
+                double sy = -sn * dx + cs * dy + tau_y;
+                /* Apply inverse translation: p_src ← p_src − tx · a₁ − ty · a₂. */
+                sx -= tx * KG_AX + ty * KG_BX;
+                sy -= tx * KG_AY + ty * KG_BY;
+                int src = kagome_position_to_site(sx, sy, L, 1e-6);
+                if (src < 0) return -1;
+                row[3 * (cx * L + cy) + sub] = src;
+            }
+        }
+    }
+    (void)N;
+    return 0;
+}
+
+int nqs_kagome_p3_perm(int L,
+                        int **out_perm,
+                        double **out_characters,
+                        int *out_num_elements) {
+    if (L <= 0 || !out_perm || !out_characters || !out_num_elements) return -1;
+    int N = 3 * L * L;
+    int G = 3 * L * L;
+
+    int *perm = (int *)malloc((size_t)G * (size_t)N * sizeof(int));
+    double *chars = (double *)malloc((size_t)G * sizeof(double));
+    if (!perm || !chars) { free(perm); free(chars); return -1; }
+
+    int g = 0;
+    for (int k = 0; k < 3; k++) {
+        for (int tx = 0; tx < L; tx++) {
+            for (int ty = 0; ty < L; ty++) {
+                int *row = &perm[(size_t)g * N];
+                if (build_p3_perm_row(L, k, tx, ty, row) != 0) {
+                    fprintf(stderr,
+                            "nqs_kagome_p3_perm: failed to build row "
+                            "g=%d (k=%d, tx=%d, ty=%d) on L=%d torus.\n",
+                            g, k, tx, ty, L);
+                    free(perm); free(chars);
+                    return -1;
+                }
+                chars[g] = 1.0;            /* A₁ trivial irrep */
+                g++;
+            }
+        }
+    }
+
+    *out_perm = perm;
+    *out_characters = chars;
+    *out_num_elements = G;
+    return 0;
+}
+
 #undef KG_SITE
+#undef KG_AX
+#undef KG_AY
+#undef KG_BX
+#undef KG_BY
+#undef KG_RB_X
+#undef KG_RB_Y
+#undef KG_RC_X
+#undef KG_RC_Y
