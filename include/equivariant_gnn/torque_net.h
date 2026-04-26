@@ -72,19 +72,25 @@ typedef struct {
  * traceless part of m ⊗ m projected onto r̂ or m).  All nine terms are
  * proper SO(3) vectors under rotation of (m_i, m_j, r̂_ij).
  *
- * Polar (true) vectors flip under inversion P; axial vectors don't.
- * Time-reversal: m is t-odd, so any term with an odd power of m is
- * t-odd (matches dm/dt being t-odd).  Each term below is t-odd.
+ * Time-reversal classification.  The torque_net output is fed to the
+ * LLG integrator as an effective field B_eff.  B_eff is t-odd (it is
+ * itself a magnetic-field-like quantity), so a strict micromagnetic
+ * model uses only t-odd terms — i.e. odd power of m.  Terms with even
+ * power of m (w0, w2, w5, w7) are t-even and break time-reversal
+ * symmetry.  They are kept in the basis as a useful function-class
+ * extension (e.g. for itinerant-electron effective fields where the
+ * physics genuinely is t-symmetry-breaking), but a clean conservative
+ * LLG run should zero them — see torque_net_zero_t_even_weights().
  *
- *   w0: (m_j · r̂_ij) · m_i               — L=1, polar
- *   w1:  m_j × r̂_ij                       — L=1, axial
- *   w2:  m_i × m_j                         — L=1, axial
- *   w3: (m_i · m_j) · m_i                  — L=1, polar
- *   w4:  m_j                               — L=1, polar
- *   w5: (m_i · r̂_ij) · m_j               — L=2 from Q(m_i,m_j)·r̂
- *   w6: (m_i · m_j) · m_j                  — L=2 from Q(m_i,m_j)·m_j
- *   w7: (m_i · m_j) · r̂_ij                — L=2 from Q(m_i,m_j)·r̂
- *   w8: (m_j · r̂_ij) · r̂_ij              — L=2 from Q(m_j)·r̂
+ *   w0: (m_j · r̂_ij) · m_i               — L=1, t-even (m²)
+ *   w1:  m_j × r̂_ij                       — L=1, t-odd  (m¹)
+ *   w2:  m_i × m_j                         — L=1, t-even (m²)
+ *   w3: (m_i · m_j) · m_i                  — L=1, t-odd  (m³)
+ *   w4:  m_j                               — L=1, t-odd  (m¹)
+ *   w5: (m_i · r̂_ij) · m_j               — L=2, t-even (m²)
+ *   w6: (m_i · m_j) · m_j                  — L=2, t-odd  (m³)
+ *   w7: (m_i · m_j) · r̂_ij                — L=2, t-even (m²)
+ *   w8: (m_j · r̂_ij) · r̂_ij              — L=2, t-odd  (m¹)
  */
 typedef struct {
     double w0;                  /* (m_j·r̂) m_i        — polar           */
@@ -121,6 +127,23 @@ double torque_net_equivariance_residual(const torque_net_graph_t *g,
                                          const double *m_in,
                                          const torque_net_params_t *p,
                                          const double *R);
+
+/* Time-reversal residual on the t-odd projection.  m is t-odd, r̂ is
+ * t-even, so a strictly t-odd output (B_eff for conservative LLG) must
+ * satisfy τ(−m) = −τ(m).  Returns
+ *     max_i ||τ(−m) + τ(m)||_∞ / ||τ(m)||_∞.
+ * Should be ≤ 1e-12 if all t-even weights (w0, w2, w5, w7) are zero;
+ * non-zero quantifies the t-symmetry breaking from those terms.  See
+ * the t-parity classification at the top of this header. */
+double torque_net_time_reversal_residual(const torque_net_graph_t *g,
+                                          const double *m_in,
+                                          const torque_net_params_t *p);
+
+/* In-place: zero the t-even weights {w0, w2, w5, w7}, leaving only the
+ * t-odd basis {w1, w3, w4, w6, w8} active.  Use to enforce strict
+ * time-reversal symmetry on a trained or hand-set parameter vector
+ * before passing to the LLG integrator. */
+void torque_net_zero_t_even_weights(torque_net_params_t *p);
 
 /* Convenience: build a 2D nearest-neighbour grid graph with periodic
  * bonds. Positions live at integer coordinates (so r_ij is a unit

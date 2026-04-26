@@ -184,6 +184,60 @@ static void test_fit_recovers_synthetic_weights(void) {
     free(m_batch); free(tau_batch);
     free(src); free(dst); free(vec);
 }
+/* The torque_net output is fed to LLG as B_eff, which is t-odd.
+ * The basis splits: t-odd terms are {w1, w3, w4, w6, w8}; t-even
+ * terms are {w0, w2, w5, w7}.  A strict-t-odd parameter vector must
+ * pass τ(−m) + τ(m) = 0; mixed t-parity does not.  zero_t_even fixes
+ * a mixed parameter vector by zeroing the four t-even weights. */
+static void test_t_odd_subset_passes_t_reversal(void) {
+    int Lx = 3, Ly = 3, N = Lx * Ly;
+    int *src, *dst; double *vec; int E;
+    torque_net_build_grid(Lx, Ly, 1, &src, &dst, &vec, &E);
+    torque_net_graph_t g = {.num_nodes = N,.num_edges = E,
+.edge_src = src,.edge_dst = dst,
+.edge_vec = vec };
+    double *m = malloc((size_t)3 * N * sizeof(double));
+    unsigned seed = 0xCAFEBEEF;
+    random_unit_vectors(N, m, &seed);
+
+    /* Strict-t-odd parameters: w0=w2=w5=w7=0. */
+    torque_net_params_t p_odd = {
+        .w1 = -0.45, .w3 = 0.18, .w4 = -0.27, .w6 = -0.19, .w8 = -0.36,
+        .r_cut = 1.5, .radial_order = 6.0
+    };
+    double r_odd = torque_net_time_reversal_residual(&g, m, &p_odd);
+    printf("# t-odd subset residual: %.3e\n", r_odd);
+    ASSERT_TRUE(r_odd < 1e-12);
+
+    /* Strict-t-even parameters give the OPPOSITE residual identity:
+     * τ(−m) = +τ(m), so τ(m) + τ(−m) = 2τ(m) → residual = 2.0 once
+     * normalised by ||τ(m)||. */
+    torque_net_params_t p_even = {
+        .w0 = 0.31, .w2 = 0.62, .w5 = 0.42, .w7 = 0.53,
+        .r_cut = 1.5, .radial_order = 6.0
+    };
+    double r_even = torque_net_time_reversal_residual(&g, m, &p_even);
+    printf("# t-even subset residual: %.3e (expect ~2)\n", r_even);
+    ASSERT_TRUE(fabs(r_even - 2.0) < 1e-10);
+
+    /* zero_t_even on a mixed param vector must produce a t-odd result. */
+    torque_net_params_t p_mixed = {
+        .w0 = 0.31, .w1 = -0.45, .w2 = 0.62, .w3 = 0.18, .w4 = -0.27,
+        .w5 = 0.42, .w6 = -0.19, .w7 = 0.53, .w8 = -0.36,
+        .r_cut = 1.5, .radial_order = 6.0
+    };
+    torque_net_zero_t_even_weights(&p_mixed);
+    double r_zeroed = torque_net_time_reversal_residual(&g, m, &p_mixed);
+    printf("# zero_t_even residual: %.3e\n", r_zeroed);
+    ASSERT_TRUE(r_zeroed < 1e-12);
+    ASSERT_NEAR(p_mixed.w0, 0.0, 0.0);
+    ASSERT_NEAR(p_mixed.w2, 0.0, 0.0);
+    ASSERT_NEAR(p_mixed.w5, 0.0, 0.0);
+    ASSERT_NEAR(p_mixed.w7, 0.0, 0.0);
+
+    free(m); free(src); free(dst); free(vec);
+}
+
 /* L=2 quadrupolar features (w5..w8) must each remain SO(3)-covariant
  * on their own.  We isolate them by zeroing w0..w4 and testing
  * equivariance term-by-term. */
@@ -274,5 +328,6 @@ int main(void) {
     TEST_RUN(test_fit_recovers_synthetic_weights);
     TEST_RUN(test_l2_terms_each_equivariant);
     TEST_RUN(test_fit_recovers_l2_weights);
+    TEST_RUN(test_t_odd_subset_passes_t_reversal);
     TEST_SUMMARY();
 }

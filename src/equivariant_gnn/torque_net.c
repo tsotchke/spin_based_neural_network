@@ -125,6 +125,39 @@ double torque_net_equivariance_residual(const torque_net_graph_t *g,
     return (den > 0.0) ? num / den : num;
 }
 
+double torque_net_time_reversal_residual(const torque_net_graph_t *g,
+                                          const double *m_in,
+                                          const torque_net_params_t *p) {
+    int N = g->num_nodes;
+    double *m_neg = malloc((size_t)3 * N * sizeof(double));
+    double *tau_pos = malloc((size_t)3 * N * sizeof(double));
+    double *tau_neg = malloc((size_t)3 * N * sizeof(double));
+    if (!m_neg || !tau_pos || !tau_neg) {
+        free(m_neg); free(tau_pos); free(tau_neg);
+        return 1.0;
+    }
+    for (int k = 0; k < 3 * N; k++) m_neg[k] = -m_in[k];
+    torque_net_forward(g, m_in,  p, tau_pos);
+    torque_net_forward(g, m_neg, p, tau_neg);
+    /* For t-odd output: τ(−m) = −τ(m), so τ(m) + τ(−m) ≡ 0. */
+    double num = 0.0, den = 0.0;
+    for (int k = 0; k < 3 * N; k++) {
+        double d = fabs(tau_pos[k] + tau_neg[k]);
+        if (d > num) num = d;
+        if (fabs(tau_pos[k]) > den) den = fabs(tau_pos[k]);
+    }
+    free(m_neg); free(tau_pos); free(tau_neg);
+    return (den > 0.0) ? num / den : num;
+}
+
+void torque_net_zero_t_even_weights(torque_net_params_t *p) {
+    if (!p) return;
+    p->w0 = 0.0;     /* (m_j·r̂) m_i        — t-even (m²) */
+    p->w2 = 0.0;     /* m_i × m_j           — t-even (m²) */
+    p->w5 = 0.0;     /* (m_i·r̂) m_j        — t-even (m²) */
+    p->w7 = 0.0;     /* (m_i·m_j) r̂         — t-even (m²) */
+}
+
 /* Per-site contribution of a single basis term k at site i, given
  * the current magnetization batch. Returns τ_i for that basis only,
  * accumulating over neighbours. 3 components per site.  */
