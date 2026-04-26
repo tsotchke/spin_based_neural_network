@@ -75,7 +75,7 @@ static void test_fits_w4_to_heisenberg_coupling(void) {
     double *tau_batch = malloc((size_t)3 * N * num_configs * sizeof(double));
     unsigned long long rng = 0x9E3779B97F4A7C15ULL;
     generate_heisenberg_training(&g, num_configs, J_true, m_batch, tau_batch, &rng);
-    torque_net_params_t p_template = { 0, 0, 0, 0, 0, 1.5, 6.0 };
+    torque_net_params_t p_template = { .r_cut = 1.5, .radial_order = 6.0 };
     torque_net_params_t p_fit;
     double residual = -1;
     int rc = torque_net_fit_weights(&g, m_batch, tau_batch, num_configs,
@@ -135,7 +135,7 @@ static void test_fits_heisenberg_plus_anisotropy(void) {
         }
         torque_net_forward(&g, m, &p_plant, &tau_batch[(size_t)s * 3 * N]);
     }
-    torque_net_params_t p_template = { 0, 0, 0, 0, 0, 1.5, 6.0 };
+    torque_net_params_t p_template = { .r_cut = 1.5, .radial_order = 6.0 };
     torque_net_params_t p_fit;
     double residual = -1;
     int rc = torque_net_fit_weights(&g, m_batch, tau_batch, num_configs,

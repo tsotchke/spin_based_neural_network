@@ -62,6 +62,7 @@ int torque_net_forward(const torque_net_graph_t *g,
         const double *mj = &m_in[3*j];
 
         double mj_dot_rhat = dot3(mj, r_hat);
+        double mi_dot_rhat = dot3(mi, r_hat);
         double mi_dot_mj   = dot3(mi, mj);
         double mj_cross_rhat[3], mi_cross_mj[3];
         cross3(mj, r_hat, mj_cross_rhat);
@@ -73,8 +74,13 @@ int torque_net_forward(const torque_net_graph_t *g,
                 p->w0 * mj_dot_rhat * mi[k]
               + p->w1 * mj_cross_rhat[k]
               + p->w2 * mi_cross_mj[k]
-              + p->w3 * mi_dot_mj * mi[k]
-              + p->w4 * mj[k]);
+              + p->w3 * mi_dot_mj  * mi[k]
+              + p->w4 * mj[k]
+              /* L=2 quadrupolar contractions to L=1 */
+              + p->w5 * mi_dot_rhat * mj[k]
+              + p->w6 * mi_dot_mj   * mj[k]
+              + p->w7 * mi_dot_mj   * r_hat[k]
+              + p->w8 * mj_dot_rhat * r_hat[k]);
         }
     }
     return 0;
@@ -166,26 +172,69 @@ static void torque_net_basis_component(const torque_net_graph_t *g,
             case 4: {
                 ti[0] += phi * mj[0]; ti[1] += phi * mj[1]; ti[2] += phi * mj[2];
             } break;
+            case 5: {
+                /* (m_i · r̂) m_j */
+                double d = dot3(mi, r_hat);
+                ti[0] += phi * d * mj[0];
+                ti[1] += phi * d * mj[1];
+                ti[2] += phi * d * mj[2];
+            } break;
+            case 6: {
+                /* (m_i · m_j) m_j */
+                double d = dot3(mi, mj);
+                ti[0] += phi * d * mj[0];
+                ti[1] += phi * d * mj[1];
+                ti[2] += phi * d * mj[2];
+            } break;
+            case 7: {
+                /* (m_i · m_j) r̂ */
+                double d = dot3(mi, mj);
+                ti[0] += phi * d * r_hat[0];
+                ti[1] += phi * d * r_hat[1];
+                ti[2] += phi * d * r_hat[2];
+            } break;
+            case 8: {
+                /* (m_j · r̂) r̂ */
+                double d = dot3(mj, r_hat);
+                ti[0] += phi * d * r_hat[0];
+                ti[1] += phi * d * r_hat[1];
+                ti[2] += phi * d * r_hat[2];
+            } break;
             default: break;
         }
     }
 }
 
-/* Gauss elimination on a 5x5 symmetric positive-definite matrix. */
-static int solve_5x5(double A[5][5], double b[5], double x[5]) {
-    for (int i = 0; i < 5; i++) {
-        double piv = A[i][i];
-        if (fabs(piv) < 1e-18) return -1;
-        for (int j = i; j < 5; j++) A[i][j] /= piv;
+/* Gauss-Jordan elimination on an n×n symmetric positive-definite system
+ * with partial pivoting on the diagonal.  In-place; on success x = A⁻¹ b
+ * (b unchanged at the call site since we work on copies via the caller). */
+static int solve_dense(double *A, double *b, double *x, int n) {
+    for (int i = 0; i < n; i++) {
+        /* Partial pivoting: find largest |A[k][i]| in column i below row i. */
+        int piv_row = i;
+        double piv_val = fabs(A[i * n + i]);
+        for (int k = i + 1; k < n; k++) {
+            double v = fabs(A[k * n + i]);
+            if (v > piv_val) { piv_val = v; piv_row = k; }
+        }
+        if (piv_val < 1e-18) return -1;
+        if (piv_row != i) {
+            for (int j = 0; j < n; j++) {
+                double tmp = A[i * n + j]; A[i * n + j] = A[piv_row * n + j]; A[piv_row * n + j] = tmp;
+            }
+            double tmp = b[i]; b[i] = b[piv_row]; b[piv_row] = tmp;
+        }
+        double piv = A[i * n + i];
+        for (int j = i; j < n; j++) A[i * n + j] /= piv;
         b[i] /= piv;
-        for (int k = 0; k < 5; k++) {
+        for (int k = 0; k < n; k++) {
             if (k == i) continue;
-            double fac = A[k][i];
-            for (int j = i; j < 5; j++) A[k][j] -= fac * A[i][j];
+            double fac = A[k * n + i];
+            for (int j = i; j < n; j++) A[k * n + j] -= fac * A[i * n + j];
             b[k] -= fac * b[i];
         }
     }
-    for (int i = 0; i < 5; i++) x[i] = b[i];
+    for (int i = 0; i < n; i++) x[i] = b[i];
     return 0;
 }
 
@@ -199,31 +248,37 @@ int torque_net_fit_weights(const torque_net_graph_t *g,
     if (!g || !m_batch || !tau_batch || num_samples <= 0 ||
         !p_template || !p_out) return -1;
     int N = g->num_nodes;
+    int K = TORQUE_NET_NUM_BASIS;
     long comp_per_sample = (long)3 * N;
 
-    /* For each sample, evaluate the five basis vectors once. */
-    double *bases = malloc((size_t)5 * comp_per_sample * num_samples * sizeof(double));
+    /* For each sample, evaluate all K basis vectors once. */
+    double *bases = malloc((size_t)K * comp_per_sample * num_samples * sizeof(double));
     if (!bases) return -1;
     for (int s = 0; s < num_samples; s++) {
         const double *m_s = &m_batch[(size_t)s * comp_per_sample];
-        for (int k = 0; k < 5; k++) {
-            double *slot = &bases[(((size_t)s * 5) + k) * comp_per_sample];
+        for (int k = 0; k < K; k++) {
+            double *slot = &bases[(((size_t)s * K) + k) * comp_per_sample];
             torque_net_basis_component(g, m_s, p_template, k, slot);
         }
     }
 
     /* Normal equations A^T A · w = A^T b. */
-    double AtA[5][5] = {{0}};
-    double Atb[5]    = {0};
+    double *AtA = calloc((size_t)K * K, sizeof(double));
+    double *Atb = calloc((size_t)K,     sizeof(double));
+    double *w   = calloc((size_t)K,     sizeof(double));
+    if (!AtA || !Atb || !w) {
+        free(bases); free(AtA); free(Atb); free(w);
+        return -1;
+    }
     for (int s = 0; s < num_samples; s++) {
-        for (int k = 0; k < 5; k++) {
-            const double *bk = &bases[(((size_t)s * 5) + k) * comp_per_sample];
-            for (int l = k; l < 5; l++) {
-                const double *bl = &bases[(((size_t)s * 5) + l) * comp_per_sample];
+        for (int k = 0; k < K; k++) {
+            const double *bk = &bases[(((size_t)s * K) + k) * comp_per_sample];
+            for (int l = k; l < K; l++) {
+                const double *bl = &bases[(((size_t)s * K) + l) * comp_per_sample];
                 double acc = 0.0;
                 for (long c = 0; c < comp_per_sample; c++) acc += bk[c] * bl[c];
-                AtA[k][l] += acc;
-                if (l != k) AtA[l][k] += acc;
+                AtA[k * K + l] += acc;
+                if (l != k) AtA[l * K + k] += acc;
             }
             const double *tau_s = &tau_batch[(size_t)s * comp_per_sample];
             double acc = 0.0;
@@ -232,13 +287,16 @@ int torque_net_fit_weights(const torque_net_graph_t *g,
         }
     }
 
-    double w[5];
-    int rc = solve_5x5(AtA, Atb, w);
-    if (rc != 0) { free(bases); return rc; }
+    int rc = solve_dense(AtA, Atb, w, K);
+    if (rc != 0) {
+        free(bases); free(AtA); free(Atb); free(w);
+        return rc;
+    }
 
     *p_out = *p_template;
     p_out->w0 = w[0]; p_out->w1 = w[1]; p_out->w2 = w[2];
     p_out->w3 = w[3]; p_out->w4 = w[4];
+    p_out->w5 = w[5]; p_out->w6 = w[6]; p_out->w7 = w[7]; p_out->w8 = w[8];
 
     if (out_residual) {
         double sq = 0.0; long ncomp = 0;
@@ -257,7 +315,7 @@ int torque_net_fit_weights(const torque_net_graph_t *g,
         *out_residual = sqrt(sq / (double)ncomp);
     }
 
-    free(bases);
+    free(bases); free(AtA); free(Atb); free(w);
     return 0;
 }
 

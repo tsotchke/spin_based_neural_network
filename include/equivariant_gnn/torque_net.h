@@ -66,15 +66,43 @@ typedef struct {
     const double *edge_vec;     /* [3 * num_edges]  r_j - r_i   */
 } torque_net_graph_t;
 
+/*
+ * Nine-term linear basis.  Terms 0–4 are the original L=1 vector basis;
+ * terms 5–8 add L=2 quadrupolar contractions to L=1 (the symmetric
+ * traceless part of m ⊗ m projected onto r̂ or m).  All nine terms are
+ * proper SO(3) vectors under rotation of (m_i, m_j, r̂_ij).
+ *
+ * Polar (true) vectors flip under inversion P; axial vectors don't.
+ * Time-reversal: m is t-odd, so any term with an odd power of m is
+ * t-odd (matches dm/dt being t-odd).  Each term below is t-odd.
+ *
+ *   w0: (m_j · r̂_ij) · m_i               — L=1, polar
+ *   w1:  m_j × r̂_ij                       — L=1, axial
+ *   w2:  m_i × m_j                         — L=1, axial
+ *   w3: (m_i · m_j) · m_i                  — L=1, polar
+ *   w4:  m_j                               — L=1, polar
+ *   w5: (m_i · r̂_ij) · m_j               — L=2 from Q(m_i,m_j)·r̂
+ *   w6: (m_i · m_j) · m_j                  — L=2 from Q(m_i,m_j)·m_j
+ *   w7: (m_i · m_j) · r̂_ij                — L=2 from Q(m_i,m_j)·r̂
+ *   w8: (m_j · r̂_ij) · r̂_ij              — L=2 from Q(m_j)·r̂
+ */
 typedef struct {
-    double w0;                  /* (m_j·r̂) m_i      — polar even      */
-    double w1;                  /* m_j × r̂           — axial odd       */
-    double w2;                  /* m_i × m_j         — axial odd       */
-    double w3;                  /* (m_i·m_j) m_i     — polar even      */
-    double w4;                  /* m_j               — polar even      */
-    double r_cut;               /* radial cutoff     — scalar          */
-    double radial_order;        /* polynomial order for cutoff         */
+    double w0;                  /* (m_j·r̂) m_i        — polar           */
+    double w1;                  /* m_j × r̂             — axial           */
+    double w2;                  /* m_i × m_j           — axial           */
+    double w3;                  /* (m_i·m_j) m_i       — polar           */
+    double w4;                  /* m_j                 — polar           */
+    double w5;                  /* (m_i·r̂) m_j        — L=2, polar      */
+    double w6;                  /* (m_i·m_j) m_j       — L=2, polar      */
+    double w7;                  /* (m_i·m_j) r̂        — L=2, polar      */
+    double w8;                  /* (m_j·r̂) r̂          — L=2, polar      */
+    double r_cut;               /* radial cutoff       — scalar          */
+    double radial_order;        /* polynomial order for cutoff           */
 } torque_net_params_t;
+
+/* Number of linear basis terms.  Used by the fitter to size the
+ * normal-equations system. */
+#define TORQUE_NET_NUM_BASIS 9
 
 /* Forward pass. Caller pre-allocates `out_torque` of length 3·num_nodes
  * and is responsible for zeroing it if needed (the function always
@@ -105,11 +133,11 @@ int torque_net_build_grid(int Lx, int Ly, int periodic,
                            double **out_edge_vec,
                            int *out_num_edges);
 
-/* Closed-form least-squares fit of the five linear weights {w0..w4}
- * to a labelled dataset {(m^(s), τ_target^(s))}. With r_cut and
- * radial_order held fixed, τ(m) is linear in the five weights, so the
- * optimal weights are obtained by solving a 5×5 normal-equations
- * system in one pass — no gradient descent needed.
+/* Closed-form least-squares fit of all TORQUE_NET_NUM_BASIS linear
+ * weights {w0..w8} to a labelled dataset {(m^(s), τ_target^(s))}.
+ * With r_cut and radial_order held fixed, τ(m) is linear in the nine
+ * weights, so the optimal weights are obtained by solving a 9×9
+ * normal-equations system in one pass — no gradient descent needed.
  *
  * Input layout:
  *   num_samples samples, each of 3·num_nodes doubles, concatenated in

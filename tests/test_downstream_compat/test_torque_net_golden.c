@@ -148,31 +148,36 @@ static void run_golden(const golden_ref_t *g) {
     free(tau); free(src); free(dst); free(vec);
 }
 static void test_golden_config_01(void) {
-    torque_net_params_t p = { 0.5, -0.7, 0.3, 0.1, -0.2, 1.5, 6.0 };
+    torque_net_params_t p = { .w0 = 0.5, .w1 = -0.7, .w2 = 0.3, .w3 = 0.1, .w4 = -0.2,
+                              .r_cut = 1.5, .radial_order = 6.0 };
     golden_ref_t g = { "config_01_minimal_open_2x2", 2, 2, 0, 4,
                        g_cfg1_m, p, expect_1 };
     run_golden(&g);
 }
 static void test_golden_config_02(void) {
-    torque_net_params_t p = { 0.2, 1.0, -0.5, 0.4, 0.0, 1.5, 6.0 };
+    torque_net_params_t p = { .w0 = 0.2, .w1 = 1.0, .w2 = -0.5, .w3 = 0.4, .w4 = 0.0,
+                              .r_cut = 1.5, .radial_order = 6.0 };
     golden_ref_t g = { "config_02_tilted_uniform_2x2", 2, 2, 0, 4,
                        g_cfg2_m, p, expect_2 };
     run_golden(&g);
 }
 static void test_golden_config_03(void) {
-    torque_net_params_t p = { -1.0, 0.0, 0.8, -0.3, 0.5, 1.5, 6.0 };
+    torque_net_params_t p = { .w0 = -1.0, .w1 = 0.0, .w2 = 0.8, .w3 = -0.3, .w4 = 0.5,
+                              .r_cut = 1.5, .radial_order = 6.0 };
     golden_ref_t g = { "config_03_neel_ztilde_2x2", 2, 2, 0, 4,
                        g_cfg3_m, p, expect_3 };
     run_golden(&g);
 }
 static void test_golden_config_04(void) {
-    torque_net_params_t p = { 0.37, -1.15, 0.42, 0.89, -0.50, 1.5, 6.0 };
+    torque_net_params_t p = { .w0 = 0.37, .w1 = -1.15, .w2 = 0.42, .w3 = 0.89, .w4 = -0.50,
+                              .r_cut = 1.5, .radial_order = 6.0 };
     golden_ref_t g = { "config_04_bloch_skyrmion_3x3_periodic", 3, 3, 1, 9,
                        g_cfg4_m, p, expect_4 };
     run_golden(&g);
 }
 static void test_golden_config_05(void) {
-    torque_net_params_t p = { 0.5, -0.7, 0.3, 0.1, -0.2, 1.5, 6.0 };
+    torque_net_params_t p = { .w0 = 0.5, .w1 = -0.7, .w2 = 0.3, .w3 = 0.1, .w4 = -0.2,
+                              .r_cut = 1.5, .radial_order = 6.0 };
     golden_ref_t g = { "config_05_stress_random_4x4_periodic", 4, 4, 1, 16,
                        g_cfg5_m, p, expect_5 };
     run_golden(&g);

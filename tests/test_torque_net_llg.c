@@ -42,7 +42,8 @@ static void test_unit_norm_preserved_under_learned_torque(void) {
     torque_net_graph_t g = {.num_nodes = N,.num_edges = E,
 .edge_src = src,.edge_dst = dst,
 .edge_vec = vec };
-    torque_net_params_t p = { 0.4, -0.2, 0.5, 0.1, -0.3, 1.5, 6.0 };
+    torque_net_params_t p = { .w0 = 0.4, .w1 = -0.2, .w2 = 0.5, .w3 = 0.1, .w4 = -0.3,
+                              .r_cut = 1.5, .radial_order = 6.0 };
     llg_torque_user_t user = {.graph = &g,.params = &p };
     double *m = malloc((size_t)3 * N * sizeof(double));
     for (int i = 0; i < N; i++) {
@@ -73,7 +74,7 @@ static void test_zero_torque_means_zero_motion(void) {
     torque_net_graph_t g = {.num_nodes = N,.num_edges = E,
 .edge_src = src,.edge_dst = dst,
 .edge_vec = vec };
-    torque_net_params_t p = { 0, 0, 0, 0, 0, 1.5, 6.0 };     /* zero weights */
+    torque_net_params_t p = { .r_cut = 1.5, .radial_order = 6.0 };  /* zero weights */
     llg_torque_user_t user = {.graph = &g,.params = &p };
     double m0[27], m[27];
     for (int i = 0; i < N; i++) {
@@ -114,7 +115,8 @@ static void test_uniform_z_stays_along_z(void) {
     torque_net_graph_t g = {.num_nodes = N,.num_edges = E,
 .edge_src = src,.edge_dst = dst,
 .edge_vec = vec };
-    torque_net_params_t p = { 1.0, 0.0, 1.0, 1.0, 1.0, 1.5, 6.0 };
+    torque_net_params_t p = { .w0 = 1.0, .w1 = 0.0, .w2 = 1.0, .w3 = 1.0, .w4 = 1.0,
+                              .r_cut = 1.5, .radial_order = 6.0 };
     llg_torque_user_t user = {.graph = &g,.params = &p };
     double m[48];
     for (int i = 0; i < N; i++) { m[3*i] = 0; m[3*i+1] = 0; m[3*i+2] = 1; }
