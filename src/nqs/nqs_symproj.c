@@ -1,0 +1,268 @@
+/*
+ * src/nqs/nqs_symproj.c
+ *
+ * Generic finite-group symmetry-projection wrapper + standard
+ * permutation builders for the kagome lattice.
+ *
+ * The math mirrors nqs_translation: log-sum-exp the contributions of
+ * each orbit member, multiply by the chosen 1-D character.  The two
+ * differences are (a) groups beyond pure translation (point ops,
+ * inversion, ...) require explicit per-element permutation tables,
+ * and (b) characters are stored explicitly so non-trivial irreps
+ * (e.g. A₂ sign irrep) plug in without code changes.
+ */
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "nqs/nqs_symproj.h"
+#include "nqs/nqs_ansatz.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+/* (g·s)_i = s_{π_g(i)}.  Caller provides scratch of size N. */
+static void apply_perm(const int *perm_g, int N,
+                       const int *src, int *dst) {
+    for (int i = 0; i < N; i++) dst[i] = src[perm_g[i]];
+}
+
+void nqs_symproj_log_amp(const int *spins, int num_sites,
+                         void *user,
+                         double *out_log_abs, double *out_arg) {
+    nqs_symproj_wrapper_t *w = (nqs_symproj_wrapper_t *)user;
+    if (!w || !w->base_log_amp || !w->perm || !w->characters) {
+        if (out_log_abs) *out_log_abs = 0;
+        if (out_arg)     *out_arg     = 0;
+        return;
+    }
+    int N = w->num_sites;
+    int G = w->num_group_elements;
+    if (num_sites != N || N <= 0 || G <= 0) {
+        if (out_log_abs) *out_log_abs = 0;
+        if (out_arg)     *out_arg     = 0;
+        return;
+    }
+
+    int *shifted = (int *)malloc((size_t)N * sizeof(int));
+    double *lp_arr  = (double *)malloc((size_t)G * sizeof(double));
+    double *cos_arr = (double *)malloc((size_t)G * sizeof(double));
+    if (!shifted || !lp_arr || !cos_arr) {
+        free(shifted); free(lp_arr); free(cos_arr);
+        if (out_log_abs) *out_log_abs = 0;
+        if (out_arg)     *out_arg     = 0;
+        return;
+    }
+
+    double max_lp = -1e300;
+    for (int g = 0; g < G; g++) {
+        apply_perm(&w->perm[(size_t)g * N], N, spins, shifted);
+        double lp, arg;
+        w->base_log_amp(shifted, N, w->base_user, &lp, &arg);
+        lp_arr[g]  = lp;
+        cos_arr[g] = w->characters[g] * cos(arg);
+        if (lp > max_lp) max_lp = lp;
+    }
+
+    double sum = 0.0;
+    for (int g = 0; g < G; g++) sum += cos_arr[g] * exp(lp_arr[g] - max_lp);
+
+    double abs_sum = fabs(sum);
+    if (abs_sum > 0.0) {
+        if (out_log_abs) *out_log_abs = log(abs_sum) + max_lp - 0.5 * log((double)G);
+        if (out_arg)     *out_arg     = (sum < 0.0) ? M_PI : 0.0;
+    } else {
+        if (out_log_abs) *out_log_abs = -1e300;
+        if (out_arg)     *out_arg     = 0.0;
+    }
+    free(shifted); free(lp_arr); free(cos_arr);
+}
+
+int nqs_symproj_gradient(void *grad_user,
+                         nqs_ansatz_t *ansatz,
+                         const int *spins, int num_sites,
+                         double *out_grad) {
+    if (!grad_user || !ansatz || !spins || !out_grad) return -1;
+    nqs_symproj_wrapper_t *w = (nqs_symproj_wrapper_t *)grad_user;
+    int N = w->num_sites;
+    int G = w->num_group_elements;
+    if (num_sites != N || N <= 0 || G <= 0) return -1;
+    long P = nqs_ansatz_num_params(ansatz);
+
+    /* Step 1: ψ_base(g·s), with characters χ(g), accumulate weighted
+     * denominator using log-sum-exp for stability. */
+    int *shifted_buf  = (int *)malloc((size_t)N * sizeof(int));
+    int **shifted_store = (int **)malloc((size_t)G * sizeof(int *));
+    double *lp_arr  = (double *)malloc((size_t)G * sizeof(double));
+    double *cos_arr = (double *)malloc((size_t)G * sizeof(double));
+    if (!shifted_buf || !shifted_store || !lp_arr || !cos_arr) {
+        free(shifted_buf); free(shifted_store); free(lp_arr); free(cos_arr);
+        return -1;
+    }
+    double max_lp = -1e300;
+    for (int g = 0; g < G; g++) {
+        shifted_store[g] = (int *)malloc((size_t)N * sizeof(int));
+        if (!shifted_store[g]) {
+            for (int gg = 0; gg < g; gg++) free(shifted_store[gg]);
+            free(shifted_buf); free(shifted_store); free(lp_arr); free(cos_arr);
+            return -1;
+        }
+        apply_perm(&w->perm[(size_t)g * N], N, spins, shifted_store[g]);
+        double lp, arg;
+        w->base_log_amp(shifted_store[g], N, w->base_user, &lp, &arg);
+        lp_arr[g]  = lp;
+        cos_arr[g] = w->characters[g] * cos(arg);
+        if (lp > max_lp) max_lp = lp;
+    }
+
+    double denom = 0.0;
+    double *contrib = (double *)malloc((size_t)G * sizeof(double));
+    if (!contrib) {
+        for (int g = 0; g < G; g++) free(shifted_store[g]);
+        free(shifted_buf); free(shifted_store); free(lp_arr); free(cos_arr);
+        return -1;
+    }
+    for (int g = 0; g < G; g++) {
+        contrib[g] = cos_arr[g] * exp(lp_arr[g] - max_lp);
+        denom += contrib[g];
+    }
+    if (denom == 0.0) {
+        memset(out_grad, 0, (size_t)P * sizeof(double));
+        for (int g = 0; g < G; g++) free(shifted_store[g]);
+        free(shifted_buf); free(shifted_store); free(lp_arr); free(cos_arr); free(contrib);
+        return 0;
+    }
+
+    /* Step 2: weighted sum of base gradients at each transformed config. */
+    double *tmp_grad = (double *)malloc((size_t)P * sizeof(double));
+    if (!tmp_grad) {
+        for (int g = 0; g < G; g++) free(shifted_store[g]);
+        free(shifted_buf); free(shifted_store); free(lp_arr); free(cos_arr); free(contrib);
+        return -1;
+    }
+    memset(out_grad, 0, (size_t)P * sizeof(double));
+    for (int g = 0; g < G; g++) {
+        double w_g = contrib[g] / denom;
+        if (w_g == 0.0) continue;
+        nqs_ansatz_logpsi_gradient(ansatz, shifted_store[g], N, tmp_grad);
+        for (long k = 0; k < P; k++) out_grad[k] += w_g * tmp_grad[k];
+    }
+    free(tmp_grad);
+    for (int g = 0; g < G; g++) free(shifted_store[g]);
+    free(shifted_buf); free(shifted_store); free(lp_arr); free(cos_arr); free(contrib);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Permutation builders for kagome.                                   */
+/* ------------------------------------------------------------------ */
+
+#define KG_SITE(cx, cy, sub, Ly) (3 * ((cx) * (Ly) + (cy)) + (sub))
+
+int nqs_kagome_translation_perm(int Lx, int Ly,
+                                int **out_perm,
+                                int *out_num_elements) {
+    if (Lx <= 0 || Ly <= 0 || !out_perm || !out_num_elements) return -1;
+    int N = 3 * Lx * Ly;
+    int G = Lx * Ly;
+    int *perm = (int *)malloc((size_t)G * (size_t)N * sizeof(int));
+    if (!perm) return -1;
+
+    int g = 0;
+    for (int tx = 0; tx < Lx; tx++) {
+        for (int ty = 0; ty < Ly; ty++) {
+            /* Translation T_{tx,ty}: site at (cx, cy, sub) gets the
+             * spin from site at (cx + tx, cy + ty, sub) — i.e.
+             * π(i) = source-site of i under the inverse shift.  We
+             * follow nqs_translation's convention: shifted[i] picks
+             * spins[(cx + tx) % Lx, (cy + ty) % Ly, sub]. */
+            int *row = &perm[(size_t)g * N];
+            for (int cx = 0; cx < Lx; cx++) {
+                int xs = (cx + tx) % Lx;
+                for (int cy = 0; cy < Ly; cy++) {
+                    int ys = (cy + ty) % Ly;
+                    for (int sub = 0; sub < 3; sub++) {
+                        row[KG_SITE(cx, cy, sub, Ly)] =
+                            KG_SITE(xs, ys, sub, Ly);
+                    }
+                }
+            }
+            g++;
+        }
+    }
+    *out_perm = perm;
+    *out_num_elements = G;
+    return 0;
+}
+
+int nqs_kagome_p2_perm(int Lx, int Ly,
+                        int **out_perm,
+                        double **out_characters,
+                        int *out_num_elements) {
+    if (Lx <= 0 || Ly <= 0 || !out_perm || !out_characters || !out_num_elements)
+        return -1;
+    int N = 3 * Lx * Ly;
+    int G = 2 * Lx * Ly;
+
+    int *perm = (int *)malloc((size_t)G * (size_t)N * sizeof(int));
+    double *chars = (double *)malloc((size_t)G * sizeof(double));
+    if (!perm || !chars) { free(perm); free(chars); return -1; }
+
+    /* Half 1: pure translations (12 generators × 1 = G/2). */
+    int g = 0;
+    for (int tx = 0; tx < Lx; tx++) {
+        for (int ty = 0; ty < Ly; ty++) {
+            int *row = &perm[(size_t)g * N];
+            for (int cx = 0; cx < Lx; cx++) {
+                int xs = (cx + tx) % Lx;
+                for (int cy = 0; cy < Ly; cy++) {
+                    int ys = (cy + ty) % Ly;
+                    for (int sub = 0; sub < 3; sub++) {
+                        row[KG_SITE(cx, cy, sub, Ly)] =
+                            KG_SITE(xs, ys, sub, Ly);
+                    }
+                }
+            }
+            chars[g] = 1.0;            /* trivial irrep */
+            g++;
+        }
+    }
+
+    /* Half 2: inversion C₂ composed with translations.  C₂ inversion
+     * through the A-site origin sends site (cx, cy, sub) to:
+     *
+     *   sub = A: (-cx,    -cy)
+     *   sub = B: (-cx-1,  -cy)         (since -a₁/2 = -a₁ + a₁/2)
+     *   sub = C: (-cx,    -cy-1)        (since -a₂/2 = -a₂ + a₂/2)
+     *
+     * Sublattice index is preserved.  We then compose with translation
+     * (tx, ty), i.e. the "shifted" array picks from the C₂-transformed
+     * site shifted further by (tx, ty). */
+    for (int tx = 0; tx < Lx; tx++) {
+        for (int ty = 0; ty < Ly; ty++) {
+            int *row = &perm[(size_t)g * N];
+            for (int cx = 0; cx < Lx; cx++) {
+                for (int cy = 0; cy < Ly; cy++) {
+                    for (int sub = 0; sub < 3; sub++) {
+                        int dx = (sub == 1) ? -1 : 0;  /* B → -a₁ */
+                        int dy = (sub == 2) ? -1 : 0;  /* C → -a₂ */
+                        int xs = ((-cx + dx + tx) % Lx + Lx) % Lx;
+                        int ys = ((-cy + dy + ty) % Ly + Ly) % Ly;
+                        row[KG_SITE(cx, cy, sub, Ly)] =
+                            KG_SITE(xs, ys, sub, Ly);
+                    }
+                }
+            }
+            chars[g] = 1.0;            /* A₁ trivial irrep */
+            g++;
+        }
+    }
+
+    *out_perm = perm;
+    *out_characters = chars;
+    *out_num_elements = G;
+    return 0;
+}
+
+#undef KG_SITE

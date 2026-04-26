@@ -104,6 +104,7 @@ FOUNDATION_SRCS = src/nn_backend.c src/eshkol_bridge.c
 NQS_SRCS  = src/nqs/nqs_sampler.c src/nqs/nqs_gradient.c \
             src/nqs/nqs_ansatz.c  src/nqs/nqs_optimizer.c \
             src/nqs/nqs_marshall.c src/nqs/nqs_translation.c \
+            src/nqs/nqs_symproj.c \
             src/nqs/nqs_diagnostics.c
 MPS_SRCS  = src/mps/lanczos.c src/mps/mps.c src/mps/svd.c src/mps/dmrg.c src/mps/tebd.c
 LLG_SRCS  = src/llg/llg.c src/llg/exchange_field.c src/llg/demag.c
@@ -343,6 +344,10 @@ test_nqs_minsr: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_minsr \
 	    tests/test_nqs_minsr.c $(NQS_SRCS) $(LDFLAGS)
 
+test_nqs_symproj: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_symproj \
+	    tests/test_nqs_symproj.c $(NQS_SRCS) $(LDFLAGS)
+
 # Research-scale convergence runner for the kagome Heisenberg S=1/2
 # open ground-state question. Takes minutes, NOT wired into `make test`.
 # Run manually: `make research_kagome_N12 && ./build/research_kagome_N12`.
@@ -512,7 +517,7 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
       test_matrix_neon test_nqs test_libirrep_bridge \
       test_nqs_convergence test_nqs_rbm test_nqs_complex_rbm test_nqs_holomorphic_sr \
       test_nqs_kitaev test_nqs_lanczos test_nqs_marshall test_nqs_translation \
-      test_nqs_tvmc test_nqs_xxz test_nqs_kagome test_nqs_chi_F test_nqs_excited test_nqs_minsr \
+      test_nqs_tvmc test_nqs_xxz test_nqs_kagome test_nqs_chi_F test_nqs_excited test_nqs_minsr test_nqs_symproj \
       test_hopfield test_rbm_cd \
       test_torque_net test_torque_net_llg test_torque_net_golden \
       test_torque_net_heisenberg_fit \
@@ -552,6 +557,7 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
 	@$(BIN_DIR)/test_nqs_chi_F
 	@$(BIN_DIR)/test_nqs_excited
 	@$(BIN_DIR)/test_nqs_minsr
+	@$(BIN_DIR)/test_nqs_symproj
 	@$(BIN_DIR)/test_nqs_lanczos
 	@$(BIN_DIR)/test_nqs_marshall
 	@$(BIN_DIR)/test_nqs_translation
