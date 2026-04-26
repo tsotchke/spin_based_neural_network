@@ -252,6 +252,96 @@ static void test_symproj_output_is_invariant_p3(void) {
     nqs_ansatz_free(a);
 }
 
+/* p6 (translations × C₆) — 6·L² orbit on an L × L kagome torus. */
+static void test_p6_perm_is_proper(void) {
+    int L = 3;
+    int N = 3 * L * L;
+    int *perm = NULL;
+    double *chars = NULL;
+    int G = 0;
+    int rc = nqs_kagome_p6_perm(L, &perm, &chars, &G);
+    ASSERT_EQ_INT(rc, 0);
+    ASSERT_EQ_INT(G, 6 * L * L);
+    int *seen = (int *)calloc((size_t)N, sizeof(int));
+    for (int g = 0; g < G; g++) {
+        memset(seen, 0, (size_t)N * sizeof(int));
+        for (int i = 0; i < N; i++) {
+            int j = perm[(size_t)g * N + i];
+            ASSERT_TRUE(j >= 0 && j < N);
+            ASSERT_TRUE(seen[j] == 0);
+            seen[j] = 1;
+        }
+        ASSERT_NEAR(chars[g], 1.0, 1e-12);
+    }
+    /* Identity (k=0, tx=ty=0) is row 0. */
+    for (int i = 0; i < N; i++) ASSERT_EQ_INT(perm[i], i);
+
+    /* C₆⁶ = identity on every site.  Row L² has (k=1, tx=ty=0). */
+    int row_C6 = L * L;
+    for (int i = 0; i < N; i++) {
+        int j = i;
+        for (int p = 0; p < 6; p++) j = perm[(size_t)row_C6 * N + j];
+        ASSERT_EQ_INT(j, i);
+    }
+    /* C₆³ = C₂.  Composing C₆ three times must give a permutation that
+     * agrees with what C₂ would (within p6 there is one C₂ per cell). */
+    int row_C6cubed_target = -1;  /* don't have direct row index without p2; */
+    /* Just verify (C₆³)² = identity. */
+    for (int i = 0; i < N; i++) {
+        int j = i;
+        for (int p = 0; p < 3; p++) j = perm[(size_t)row_C6 * N + j];
+        int k = j;
+        for (int p = 0; p < 3; p++) k = perm[(size_t)row_C6 * N + k];
+        ASSERT_EQ_INT(k, i);
+    }
+    (void)row_C6cubed_target;
+    free(seen); free(perm); free(chars);
+}
+
+static void test_symproj_output_is_invariant_p6(void) {
+    int L = 3;
+    int N = 3 * L * L;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz = NQS_ANSATZ_RBM;
+    cfg.rbm_hidden_units = 6;
+    cfg.rng_seed = 0xFEEDBEEFu;
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    ASSERT_TRUE(a != NULL);
+
+    int *perm = NULL;
+    double *chars = NULL;
+    int G = 0;
+    ASSERT_EQ_INT(nqs_kagome_p6_perm(L, &perm, &chars, &G), 0);
+
+    nqs_symproj_wrapper_t w = {
+        .base_log_amp       = nqs_ansatz_log_amp,
+        .base_user          = a,
+        .num_sites          = N,
+        .num_group_elements = G,
+        .perm               = perm,
+        .characters         = chars,
+    };
+
+    int *spins = (int *)malloc((size_t)N * sizeof(int));
+    /* Mixed configuration to make the projection non-trivial. */
+    for (int i = 0; i < N; i++) spins[i] = ((i * 7 + 3) % 5 < 2) ? +1 : -1;
+
+    double base_lp, base_arg;
+    nqs_symproj_log_amp(spins, N, &w, &base_lp, &base_arg);
+
+    int *transformed = (int *)malloc((size_t)N * sizeof(int));
+    for (int g = 0; g < G; g++) {
+        for (int i = 0; i < N; i++) transformed[i] = spins[perm[(size_t)g * N + i]];
+        double lp, arg;
+        nqs_symproj_log_amp(transformed, N, &w, &lp, &arg);
+        ASSERT_NEAR(lp, base_lp, 1e-9);
+        ASSERT_NEAR(cos(arg), cos(base_arg), 1e-9);
+    }
+
+    free(spins); free(transformed); free(perm); free(chars);
+    nqs_ansatz_free(a);
+}
+
 int main(void) {
     TEST_RUN(test_translation_perm_is_proper);
     TEST_RUN(test_p2_perm_doubles_translation);
@@ -259,5 +349,7 @@ int main(void) {
     TEST_RUN(test_symproj_output_is_invariant_p2);
     TEST_RUN(test_p3_perm_is_proper);
     TEST_RUN(test_symproj_output_is_invariant_p3);
+    TEST_RUN(test_p6_perm_is_proper);
+    TEST_RUN(test_symproj_output_is_invariant_p6);
     TEST_SUMMARY();
 }

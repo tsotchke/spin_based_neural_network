@@ -412,6 +412,84 @@ int nqs_kagome_p3_perm(int L,
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* p6 (translations × C₆) on an L × L kagome torus.                   */
+/*                                                                    */
+/* C₆ centre: hexagon centroid at (a₁ + a₂)/2 = (3/4, √3/4).          */
+/* This is the unique 6-fold rotation centre per unit cell (verified  */
+/* by tools/find_kagome_p6_centre).  Same numerical perm-building     */
+/* strategy as p3, just with 6 rotations instead of 3.                */
+/* ------------------------------------------------------------------ */
+
+static int build_p6_perm_row(int L, int k, int tx, int ty, int *row) {
+    /* C₆ centre in Cartesian. */
+    const double hex_x = 0.75;
+    const double hex_y = 0.43301270189221932338;   /* √3/4 */
+    /* Rotation matrix R(60° · k). */
+    double theta = (2.0 * 3.14159265358979323846 * (double)k) / 6.0;
+    double cs = cos(theta), sn = sin(theta);
+
+    for (int cx = 0; cx < L; cx++) {
+        for (int cy = 0; cy < L; cy++) {
+            for (int sub = 0; sub < 3; sub++) {
+                /* See nqs_kagome_p3_perm comment for the source-side
+                 * convention: π_g(i) is the index that g·s should pick
+                 * up, which is the inverse of the geometric transform. */
+                double px, py;
+                kagome_site_position(cx, cy, sub, &px, &py);
+                /* Inverse rotation R(−θ). */
+                double dx = px - hex_x, dy = py - hex_y;
+                double sx =  cs * dx + sn * dy + hex_x;
+                double sy = -sn * dx + cs * dy + hex_y;
+                /* Inverse translation. */
+                sx -= tx * 1.0   + ty * 0.5;
+                sy -= tx * 0.0   + ty * 0.86602540378443864676;
+                int src = kagome_position_to_site(sx, sy, L, 1e-6);
+                if (src < 0) return -1;
+                row[3 * (cx * L + cy) + sub] = src;
+            }
+        }
+    }
+    return 0;
+}
+
+int nqs_kagome_p6_perm(int L,
+                        int **out_perm,
+                        double **out_characters,
+                        int *out_num_elements) {
+    if (L <= 0 || !out_perm || !out_characters || !out_num_elements) return -1;
+    int N = 3 * L * L;
+    int G = 6 * L * L;
+
+    int *perm = (int *)malloc((size_t)G * (size_t)N * sizeof(int));
+    double *chars = (double *)malloc((size_t)G * sizeof(double));
+    if (!perm || !chars) { free(perm); free(chars); return -1; }
+
+    int g = 0;
+    for (int k = 0; k < 6; k++) {
+        for (int tx = 0; tx < L; tx++) {
+            for (int ty = 0; ty < L; ty++) {
+                int *row = &perm[(size_t)g * N];
+                if (build_p6_perm_row(L, k, tx, ty, row) != 0) {
+                    fprintf(stderr,
+                            "nqs_kagome_p6_perm: failed to build row "
+                            "g=%d (k=%d, tx=%d, ty=%d) on L=%d torus.\n",
+                            g, k, tx, ty, L);
+                    free(perm); free(chars);
+                    return -1;
+                }
+                chars[g] = 1.0;            /* A₁ trivial irrep */
+                g++;
+            }
+        }
+    }
+
+    *out_perm = perm;
+    *out_characters = chars;
+    *out_num_elements = G;
+    return 0;
+}
+
 #undef KG_SITE
 #undef KG_AX
 #undef KG_AY

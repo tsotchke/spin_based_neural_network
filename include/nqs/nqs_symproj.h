@@ -116,6 +116,33 @@ int nqs_kagome_p3_perm(int L,
                         double **out_characters,
                         int *out_num_elements);
 
+/*
+ * Build the |G| = 6·L²  p6 = (translations) ⋊ (C₆ around hexagon
+ * centroid) permutation table for kagome on an L × L torus with PBC.
+ *
+ * C₆ rotation: 60° around the hexagon centroid at (a₁ + a₂)/2 in
+ * Cartesian = (3/4, √3/4) in our (1, 0), (1/2, √3/2) basis.  This
+ * point is the unique 6-fold rotation centre per unit cell (Wyckoff
+ * 1a in the standard p6m setting, shifted by −(a₁ + a₂)/2 from our
+ * convention's unit-cell origin).  Verified by tools/find_kagome_p6_centre.
+ *
+ * Sublattices cycle in a non-trivial pattern under R(60°) — the cell
+ * shift depends on both the original cell and sublattice — so the
+ * permutation is built numerically (Cartesian rotate + lattice-basis
+ * inverse + PBC reduction) following the same approach as
+ * nqs_kagome_p3_perm.
+ *
+ * Requires Lx = Ly = L; rectangular tori cannot host C₆.  Returns -1
+ * with an explanatory stderr message on rectangular input.
+ *
+ * Allocates *out_perm of length 6·L²·N (N = 3·L²) and *out_characters
+ * of length 6·L² (all +1 for the A₁ trivial irrep).  Caller frees both.
+ */
+int nqs_kagome_p6_perm(int L,
+                        int **out_perm,
+                        double **out_characters,
+                        int *out_num_elements);
+
 #ifdef __cplusplus
 }
 #endif
