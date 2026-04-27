@@ -152,6 +152,70 @@ nqs_ansatz_t *nqs_ansatz_create(const nqs_config_t *cfg, int num_sites) {
         return a;
     }
 
+    if (cfg->ansatz == NQS_ANSATZ_FACTORED_VIT_COMPLEX) {
+        /* Complex-amplitude factored-attention ViT NQS.  Every embed /
+         * value / output weight has a real and imaginary part (the
+         * factored attention bias stays real — we only soft-max real
+         * scores).  Required for non-stoquastic ground states.
+         *
+         * Parameter layout, total 6·d + 2·d² + N + 2:
+         *   [0          , d           )  w_emb_R
+         *   [d          , 2d          )  w_emb_I
+         *   [2d         , 3d          )  b_emb_R
+         *   [3d         , 4d          )  b_emb_I
+         *   [4d         , 4d + d²     )  V_R   (row-major)
+         *   [4d + d²    , 4d + 2d²    )  V_I   (row-major)
+         *   [4d + 2d²   , 4d + 2d² + N)  attn bias (real)
+         *   [4d+2d²+N   , 4d+2d²+N+d  )  W_out_R
+         *   [4d+2d²+N+d , 4d+2d²+N+2d )  W_out_I
+         *   [4d+2d²+N+2d                ]  b_out_R
+         *   [4d+2d²+N+2d+1              ]  b_out_I
+         */
+        int d = cfg->width > 0 ? cfg->width : 4;
+        a->num_hidden = d;
+        long N = num_sites;
+        long P = 6L * d + 2L * d * d + N + 2L;
+        a->num_params = P;
+        a->params = calloc((size_t)P, sizeof(double));
+        if (!a->params) { free(a); return NULL; }
+        double scale = cfg->rbm_init_scale > 0.0 ? cfg->rbm_init_scale : 0.01;
+        double w_std = scale;
+        double v_std = scale / sqrt((double)d);
+        double im_scale = 0.1 * scale;          /* small imaginary init */
+        /* w_emb_R, w_emb_I */
+        for (int i = 0; i < d; i++)
+            a->params[i] = w_std * xorshift_gauss(&seed);
+        for (int i = 0; i < d; i++)
+            a->params[d + i] = im_scale * xorshift_gauss(&seed);
+        /* b_emb_R, b_emb_I */
+        for (int i = 0; i < d; i++)
+            a->params[2*d + i] = scale * (xorshift_uniform(&seed) - 0.5);
+        for (int i = 0; i < d; i++)
+            a->params[3*d + i] = im_scale * (xorshift_uniform(&seed) - 0.5);
+        /* V_R, V_I */
+        long VR_off = 4L * d;
+        long VI_off = VR_off + (long)d * d;
+        for (long k = 0; k < (long)d * d; k++)
+            a->params[VR_off + k] = v_std * xorshift_gauss(&seed);
+        for (long k = 0; k < (long)d * d; k++)
+            a->params[VI_off + k] = (0.1 * v_std) * xorshift_gauss(&seed);
+        /* attn (real) */
+        long attn_off = VI_off + (long)d * d;
+        for (long k = 0; k < N; k++)
+            a->params[attn_off + k] = scale * (xorshift_uniform(&seed) - 0.5);
+        /* W_out_R, W_out_I */
+        long WoutR_off = attn_off + N;
+        long WoutI_off = WoutR_off + d;
+        for (int i = 0; i < d; i++)
+            a->params[WoutR_off + i] = scale * (xorshift_uniform(&seed) - 0.5);
+        for (int i = 0; i < d; i++)
+            a->params[WoutI_off + i] = im_scale * (xorshift_uniform(&seed) - 0.5);
+        /* b_out_R, b_out_I */
+        a->params[WoutI_off + d]     = 0.0;
+        a->params[WoutI_off + d + 1] = 0.0;
+        return a;
+    }
+
     if (cfg->ansatz == NQS_ANSATZ_COMPLEX_RBM) {
         int M = cfg->rbm_hidden_units > 0 ? cfg->rbm_hidden_units
                                           : 2 * num_sites;
@@ -502,6 +566,281 @@ static int vit_gradient(const nqs_ansatz_t *a,
     return 0;
 }
 
+/* --------------------------------------------------------------------- */
+/*  Complex-amplitude factored-attention ViT NQS                          */
+/*                                                                        */
+/*  Same architecture as the real ViT but every embed / value / output    */
+/*  weight has a real and imaginary part; the attention bias is real      */
+/*  (so the softmax operates on real scores).  Forward returns a complex  */
+/*  log ψ; nqs_ansatz_log_amp returns (log|ψ| = Re(log ψ),                */
+/*  arg ψ = Im(log ψ)).                                                   */
+/* --------------------------------------------------------------------- */
+typedef struct {
+    int N, d;
+    long w_emb_R, w_emb_I, b_emb_R, b_emb_I;
+    long V_R, V_I, attn;
+    long W_out_R, W_out_I, b_out_R, b_out_I;
+} vit_c_offsets_t;
+
+static void vit_c_offsets(const nqs_ansatz_t *a, vit_c_offsets_t *o) {
+    int d = a->num_hidden;
+    long N = a->num_sites;
+    o->N = (int)N; o->d = d;
+    o->w_emb_R = 0;
+    o->w_emb_I = d;
+    o->b_emb_R = 2L * d;
+    o->b_emb_I = 3L * d;
+    o->V_R     = 4L * d;
+    o->V_I     = o->V_R + (long)d * d;
+    o->attn    = o->V_I + (long)d * d;
+    o->W_out_R = o->attn + N;
+    o->W_out_I = o->W_out_R + d;
+    o->b_out_R = o->W_out_I + d;
+    o->b_out_I = o->b_out_R + 1;
+}
+
+typedef struct {
+    int N, d;
+    /* Real and imag parts of intermediate quantities (Cartesian basis). */
+    double *eR, *eI;     /* [N · d] embeddings   */
+    double *vR, *vI;     /* [N · d] values       */
+    double *P;           /* [N · N] real softmax */
+    double *oR, *oI;     /* [N · d] outputs      */
+} vit_c_workspace_t;
+
+static int vit_c_workspace_init(vit_c_workspace_t *ws, int N, int d) {
+    ws->N = N; ws->d = d;
+    ws->eR = calloc((size_t)N * d, sizeof(double));
+    ws->eI = calloc((size_t)N * d, sizeof(double));
+    ws->vR = calloc((size_t)N * d, sizeof(double));
+    ws->vI = calloc((size_t)N * d, sizeof(double));
+    ws->P  = calloc((size_t)N * N, sizeof(double));
+    ws->oR = calloc((size_t)N * d, sizeof(double));
+    ws->oI = calloc((size_t)N * d, sizeof(double));
+    if (!ws->eR || !ws->eI || !ws->vR || !ws->vI ||
+        !ws->P  || !ws->oR || !ws->oI) {
+        free(ws->eR); free(ws->eI); free(ws->vR); free(ws->vI);
+        free(ws->P);  free(ws->oR); free(ws->oI);
+        return -1;
+    }
+    return 0;
+}
+static void vit_c_workspace_free(vit_c_workspace_t *ws) {
+    free(ws->eR); free(ws->eI); free(ws->vR); free(ws->vI);
+    free(ws->P);  free(ws->oR); free(ws->oI);
+}
+
+/* Forward: writes intermediates into `ws`, returns log ψ as
+ * (out_log_abs = Re(log ψ), out_arg = Im(log ψ)). */
+static void vit_c_forward(const nqs_ansatz_t *a, const int *spins,
+                          vit_c_workspace_t *ws,
+                          double *out_log_abs, double *out_arg) {
+    vit_c_offsets_t o; vit_c_offsets(a, &o);
+    int N = o.N, d = o.d;
+    const double *wR = &a->params[o.w_emb_R];
+    const double *wI = &a->params[o.w_emb_I];
+    const double *bR = &a->params[o.b_emb_R];
+    const double *bI = &a->params[o.b_emb_I];
+    const double *VR = &a->params[o.V_R];
+    const double *VI = &a->params[o.V_I];
+    const double *attn = &a->params[o.attn];
+    const double *WR = &a->params[o.W_out_R];
+    const double *WI = &a->params[o.W_out_I];
+    double  bout_R = a->params[o.b_out_R];
+    double  bout_I = a->params[o.b_out_I];
+
+    /* e_i = (w_R + i w_I) s_i + (b_R + i b_I) */
+    for (int i = 0; i < N; i++) {
+        double si = (double)spins[i];
+        for (int k = 0; k < d; k++) {
+            ws->eR[i*d + k] = wR[k] * si + bR[k];
+            ws->eI[i*d + k] = wI[k] * si + bI[k];
+        }
+    }
+    /* v_i = (V_R + i V_I) e_i */
+    for (int i = 0; i < N; i++) {
+        for (int k = 0; k < d; k++) {
+            double sR = 0.0, sI = 0.0;
+            for (int l = 0; l < d; l++) {
+                double vrr = VR[k*d + l], vii = VI[k*d + l];
+                double er  = ws->eR[i*d + l], ei = ws->eI[i*d + l];
+                sR += vrr * er - vii * ei;
+                sI += vrr * ei + vii * er;
+            }
+            ws->vR[i*d + k] = sR;
+            ws->vI[i*d + k] = sI;
+        }
+    }
+    /* Real softmax of attn on (i-j+N) % N */
+    for (int i = 0; i < N; i++) {
+        double max_S = -1e300;
+        for (int j = 0; j < N; j++) {
+            int rel = ((i - j) % N + N) % N;
+            double S = attn[rel];
+            if (S > max_S) max_S = S;
+        }
+        double Z = 0.0;
+        for (int j = 0; j < N; j++) {
+            int rel = ((i - j) % N + N) % N;
+            double e = exp(attn[rel] - max_S);
+            ws->P[i*N + j] = e;
+            Z += e;
+        }
+        double invZ = 1.0 / Z;
+        for (int j = 0; j < N; j++) ws->P[i*N + j] *= invZ;
+    }
+    /* o_i = sum_j P_ij v_j (complex) */
+    for (int i = 0; i < N; i++) {
+        for (int k = 0; k < d; k++) {
+            double sR = 0.0, sI = 0.0;
+            for (int j = 0; j < N; j++) {
+                sR += ws->P[i*N + j] * ws->vR[j*d + k];
+                sI += ws->P[i*N + j] * ws->vI[j*d + k];
+            }
+            ws->oR[i*d + k] = sR;
+            ws->oI[i*d + k] = sI;
+        }
+    }
+    /* log ψ = Σ_i (W_R + i W_I) · o_i + (b_R + i b_I) */
+    double logabs = bout_R, arg = bout_I;
+    for (int i = 0; i < N; i++) {
+        for (int k = 0; k < d; k++) {
+            double or_ = ws->oR[i*d + k], oi_ = ws->oI[i*d + k];
+            logabs += WR[k] * or_ - WI[k] * oi_;
+            arg    += WR[k] * oi_ + WI[k] * or_;
+        }
+    }
+    if (out_log_abs) *out_log_abs = logabs;
+    if (out_arg)     *out_arg     = arg;
+}
+
+static void vit_c_log_amp(const nqs_ansatz_t *a, const int *spins,
+                          double *out_log_abs, double *out_arg) {
+    vit_c_workspace_t ws;
+    if (vit_c_workspace_init(&ws, a->num_sites, a->num_hidden) != 0) {
+        if (out_log_abs) *out_log_abs = 0.0;
+        if (out_arg)     *out_arg     = 0.0;
+        return;
+    }
+    vit_c_forward(a, spins, &ws, out_log_abs, out_arg);
+    vit_c_workspace_free(&ws);
+}
+
+/* Real-projected gradient ∂ Re(log ψ) / ∂ θ for every parameter.
+ * Wires into nqs_sr_step (real-projected SR path). */
+static int vit_c_gradient(const nqs_ansatz_t *a,
+                          const int *spins, double *out) {
+    vit_c_offsets_t o; vit_c_offsets(a, &o);
+    int N = o.N, d = o.d;
+    const double *VR = &a->params[o.V_R];
+    const double *VI = &a->params[o.V_I];
+    const double *WR = &a->params[o.W_out_R];
+    const double *WI = &a->params[o.W_out_I];
+
+    vit_c_workspace_t ws;
+    if (vit_c_workspace_init(&ws, N, d) != 0) return -1;
+    double dummy_la, dummy_arg;
+    vit_c_forward(a, spins, &ws, &dummy_la, &dummy_arg);
+
+    memset(out, 0, (size_t)a->num_params * sizeof(double));
+    /* ∂ Re(L) / ∂ b_out_R = 1 ; ∂ Re(L) / ∂ b_out_I = 0 (already zeroed) */
+    out[o.b_out_R] = 1.0;
+    /* ∂ Re(L) / ∂ W_out_R[k] = Σ_i Re(o_i)[k]
+     * ∂ Re(L) / ∂ W_out_I[k] = - Σ_i Im(o_i)[k]            */
+    for (int i = 0; i < N; i++)
+        for (int k = 0; k < d; k++) {
+            out[o.W_out_R + k] += ws.oR[i*d + k];
+            out[o.W_out_I + k] -= ws.oI[i*d + k];
+        }
+
+    /* s_pred[j] = Σ_i P_ij  (column sum of attention) */
+    double *s_pred = calloc((size_t)N, sizeof(double));
+    /* Re(W_out · v_j) and Re(W_out · o_i) */
+    double *Wv_re = calloc((size_t)N, sizeof(double));
+    double *Wo_re = calloc((size_t)N, sizeof(double));
+    if (!s_pred || !Wv_re || !Wo_re) {
+        free(s_pred); free(Wv_re); free(Wo_re);
+        vit_c_workspace_free(&ws); return -1;
+    }
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++) s_pred[j] += ws.P[i*N + j];
+    for (int j = 0; j < N; j++) {
+        double s = 0.0;
+        for (int k = 0; k < d; k++) s += WR[k] * ws.vR[j*d + k] - WI[k] * ws.vI[j*d + k];
+        Wv_re[j] = s;
+    }
+    for (int i = 0; i < N; i++) {
+        double s = 0.0;
+        for (int k = 0; k < d; k++) s += WR[k] * ws.oR[i*d + k] - WI[k] * ws.oI[i*d + k];
+        Wo_re[i] = s;
+    }
+
+    /* ∂ Re(L) / ∂ S_{ij} = P_ij · (Wv_re[j] − Wo_re[i])   */
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            int rel = ((i - j) % N + N) % N;
+            out[o.attn + rel] += ws.P[i*N + j] * (Wv_re[j] - Wo_re[i]);
+        }
+    }
+
+    /* ev_R[l] = Σ_j s_pred[j] e_j_R[l],  ev_I[l] = Σ_j s_pred[j] e_j_I[l] */
+    double *ev_R = calloc((size_t)d, sizeof(double));
+    double *ev_I = calloc((size_t)d, sizeof(double));
+    if (!ev_R || !ev_I) {
+        free(s_pred); free(Wv_re); free(Wo_re); free(ev_R); free(ev_I);
+        vit_c_workspace_free(&ws); return -1;
+    }
+    for (int j = 0; j < N; j++)
+        for (int l = 0; l < d; l++) {
+            ev_R[l] += s_pred[j] * ws.eR[j*d + l];
+            ev_I[l] += s_pred[j] * ws.eI[j*d + l];
+        }
+    /* ∂ Re(L) / ∂ V_R[k][l] =  W_out_R[k] · ev_R[l] − W_out_I[k] · ev_I[l]
+     * ∂ Re(L) / ∂ V_I[k][l] = −W_out_R[k] · ev_I[l] − W_out_I[k] · ev_R[l] */
+    for (int k = 0; k < d; k++) {
+        for (int l = 0; l < d; l++) {
+            out[o.V_R + k*d + l] =  WR[k] * ev_R[l] - WI[k] * ev_I[l];
+            out[o.V_I + k*d + l] = -WR[k] * ev_I[l] - WI[k] * ev_R[l];
+        }
+    }
+
+    /* alpha[l] = (V_R^T W_out_R - V_I^T W_out_I)[l]
+     * beta[l]  = (V_I^T W_out_R + V_R^T W_out_I)[l]                       */
+    double *alpha = calloc((size_t)d, sizeof(double));
+    double *beta  = calloc((size_t)d, sizeof(double));
+    if (!alpha || !beta) {
+        free(s_pred); free(Wv_re); free(Wo_re); free(ev_R); free(ev_I);
+        free(alpha); free(beta);
+        vit_c_workspace_free(&ws); return -1;
+    }
+    for (int l = 0; l < d; l++) {
+        for (int k = 0; k < d; k++) {
+            alpha[l] += VR[k*d + l] * WR[k] - VI[k*d + l] * WI[k];
+            beta[l]  += VI[k*d + l] * WR[k] + VR[k*d + l] * WI[k];
+        }
+    }
+    /* ∂ Re(L) / ∂ w_emb_R[l] =  alpha[l] · Σ_j s_pred[j] · s_j
+     * ∂ Re(L) / ∂ w_emb_I[l] = −beta[l]  · Σ_j s_pred[j] · s_j
+     * ∂ Re(L) / ∂ b_emb_R[l] =  alpha[l] · Σ_j s_pred[j]
+     * ∂ Re(L) / ∂ b_emb_I[l] = −beta[l]  · Σ_j s_pred[j]                   */
+    double sum_sp_s = 0.0, sum_sp = 0.0;
+    for (int j = 0; j < N; j++) {
+        sum_sp_s += s_pred[j] * (double)spins[j];
+        sum_sp   += s_pred[j];
+    }
+    for (int l = 0; l < d; l++) {
+        out[o.w_emb_R + l] =  alpha[l] * sum_sp_s;
+        out[o.w_emb_I + l] = -beta[l]  * sum_sp_s;
+        out[o.b_emb_R + l] =  alpha[l] * sum_sp;
+        out[o.b_emb_I + l] = -beta[l]  * sum_sp;
+    }
+
+    free(s_pred); free(Wv_re); free(Wo_re); free(ev_R); free(ev_I);
+    free(alpha); free(beta);
+    vit_c_workspace_free(&ws);
+    return 0;
+}
+
 void nqs_ansatz_log_amp(const int *spins, int num_sites,
                         void *ansatz_user,
                         double *out_log_abs,
@@ -518,6 +857,9 @@ void nqs_ansatz_log_amp(const int *spins, int num_sites,
                 break;
             case NQS_ANSATZ_FACTORED_VIT:
                 acc = vit_log_amp(a, spins);
+                break;
+            case NQS_ANSATZ_FACTORED_VIT_COMPLEX:
+                vit_c_log_amp(a, spins, &acc, &arg);
                 break;
             default:
                 acc = mf_log_amp(a, spins);
@@ -658,12 +1000,15 @@ int nqs_ansatz_logpsi_gradient(nqs_ansatz_t *a,
         case NQS_ANSATZ_COMPLEX_RBM: return crbm_gradient(a, spins, out_grad);
         case NQS_ANSATZ_RBM:         return rbm_gradient(a, spins, out_grad);
         case NQS_ANSATZ_FACTORED_VIT: return vit_gradient(a, spins, out_grad);
+        case NQS_ANSATZ_FACTORED_VIT_COMPLEX: return vit_c_gradient(a, spins, out_grad);
         default:                     return mf_gradient(a, spins, out_grad);
     }
 }
 
 int nqs_ansatz_is_complex(const nqs_ansatz_t *a) {
-    return (a && a->kind == NQS_ANSATZ_COMPLEX_RBM) ? 1 : 0;
+    if (!a) return 0;
+    return (a->kind == NQS_ANSATZ_COMPLEX_RBM ||
+            a->kind == NQS_ANSATZ_FACTORED_VIT_COMPLEX) ? 1 : 0;
 }
 
 /* Holomorphic gradient for the complex RBM:

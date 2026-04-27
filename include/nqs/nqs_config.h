@@ -30,9 +30,18 @@ typedef enum {
     NQS_ANSATZ_KAN          = 4,  /* v0.6 target: Kolmogorov-Arnold.       */
     NQS_ANSATZ_RBM          = 5,  /* Real-valued Restricted Boltzmann
                                      wavefunction (Carleo & Troyer 2017). */
-    NQS_ANSATZ_COMPLEX_RBM  = 6   /* Complex-valued RBM: non-stoquastic
+    NQS_ANSATZ_COMPLEX_RBM  = 6,  /* Complex-valued RBM: non-stoquastic
                                      / frustrated systems; parameters
                                      are (real, imag) pairs. */
+    NQS_ANSATZ_FACTORED_VIT_COMPLEX = 7
+                                  /* Complex-amplitude factored-attention
+                                     ViT.  Same architecture as
+                                     NQS_ANSATZ_FACTORED_VIT but every
+                                     embed / value / output weight has
+                                     a real and imaginary part; the
+                                     factored attention bias (real)
+                                     stays the same.  Required for
+                                     non-stoquastic ground states. */
 } nqs_ansatz_kind_t;
 
 /* --- Symmetry groups applied to the wavefunction amplitude ------------- */

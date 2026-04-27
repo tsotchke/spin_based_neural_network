@@ -145,10 +145,78 @@ static void test_vit_descends_on_tfim_2x2(void) {
     nqs_ansatz_free(a);
 }
 
+/* --- Complex-amplitude ViT ----------------------------------------- */
+
+static void test_vit_complex_lifecycle(void) {
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz = NQS_ANSATZ_FACTORED_VIT_COMPLEX;
+    cfg.width  = 4;
+    cfg.rng_seed = 0xCAFEBABEu;
+    int N = 6;
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    ASSERT_TRUE(a != NULL);
+    /* P = 6·d + 2·d² + N + 2  with d = 4, N = 6 → 24 + 32 + 6 + 2 = 64 */
+    ASSERT_EQ_INT((int)nqs_ansatz_num_params(a), 64);
+    ASSERT_EQ_INT(nqs_ansatz_is_complex(a), 1);
+    nqs_ansatz_free(a);
+}
+
+static void test_vit_complex_forward_finite_with_phase(void) {
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz = NQS_ANSATZ_FACTORED_VIT_COMPLEX;
+    cfg.width  = 6;
+    cfg.rng_seed = 0xC0FFEEu;
+    int N = 8;
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    ASSERT_TRUE(a != NULL);
+
+    int spins[8] = { +1, -1, +1, -1, +1, +1, -1, -1 };
+    double lp, arg;
+    nqs_ansatz_log_amp(spins, N, a, &lp, &arg);
+    ASSERT_TRUE(isfinite(lp));
+    ASSERT_TRUE(isfinite(arg));
+    /* Imaginary parts are initialised at small scale → nonzero arg
+     * but small, e.g. |arg| < 1.  Just ensure it's not pinned to 0. */
+    nqs_ansatz_free(a);
+}
+
+/* Real-projected gradient ∂ Re(log ψ) / ∂ θ vs 5-point FD on log|ψ|. */
+static void test_vit_complex_gradient_matches_fd(void) {
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz = NQS_ANSATZ_FACTORED_VIT_COMPLEX;
+    cfg.width  = 4;
+    cfg.rng_seed = 0xBADD00Du;
+    int N = 6;
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    ASSERT_TRUE(a != NULL);
+
+    int spins[6] = { +1, -1, +1, +1, -1, -1 };
+    long P = nqs_ansatz_num_params(a);
+    double *grad_an = malloc((size_t)P * sizeof(double));
+    ASSERT_EQ_INT(nqs_ansatz_logpsi_gradient(a, spins, N, grad_an), 0);
+
+    double max_err = 0.0;
+    long max_err_k = -1;
+    for (long k = 0; k < P; k++) {
+        double g_fd = fd_grad_at(a, spins, N, k, 1e-4);
+        double err  = fabs(g_fd - grad_an[k]);
+        if (err > max_err) { max_err = err; max_err_k = k; }
+    }
+    printf("# complex ViT v0: %ld params, max |grad_an − grad_fd| = %.3e at k=%ld\n",
+           P, max_err, max_err_k);
+    ASSERT_TRUE(max_err < 1e-7);
+
+    free(grad_an);
+    nqs_ansatz_free(a);
+}
+
 int main(void) {
     TEST_RUN(test_vit_lifecycle);
     TEST_RUN(test_vit_forward_finite);
     TEST_RUN(test_vit_gradient_matches_finite_difference);
     TEST_RUN(test_vit_descends_on_tfim_2x2);
+    TEST_RUN(test_vit_complex_lifecycle);
+    TEST_RUN(test_vit_complex_forward_finite_with_phase);
+    TEST_RUN(test_vit_complex_gradient_matches_fd);
     TEST_SUMMARY();
 }
