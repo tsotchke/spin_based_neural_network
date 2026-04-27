@@ -110,6 +110,48 @@ nqs_ansatz_t *nqs_ansatz_create(const nqs_config_t *cfg, int num_sites) {
         return a;
     }
 
+    if (cfg->ansatz == NQS_ANSATZ_FACTORED_VIT) {
+        /* Factored-attention ViT NQS, v0 (Rende et al. 2024,
+         * arXiv:2310.05715, single-head + patch_size=1 + real-amplitude
+         * slice).  Parameter layout, total 3·d + d² + N + 1:
+         *
+         *   [0       , d         )  w_emb        (d)
+         *   [d       , 2d        )  b_emb        (d)
+         *   [2d      , 2d + d²   )  V (row-major) (d × d)
+         *   [2d + d² , 2d + d² + N)  attn bias a  (N relative-position slots)
+         *   [2d+d²+N , 2d+d²+N+d)   W_out         (d)
+         *   [2d+d²+N+d              ]  b_out      (1 scalar)
+         */
+        int d = cfg->width > 0 ? cfg->width : 4;
+        a->num_hidden = d;             /* repurpose: stash d in num_hidden */
+        long N = num_sites;
+        long P = 3L * d + (long)d * d + N + 1L;
+        a->num_params = P;
+        a->params = calloc((size_t)P, sizeof(double));
+        if (!a->params) { free(a); return NULL; }
+        double scale = cfg->rbm_init_scale > 0.0 ? cfg->rbm_init_scale : 0.01;
+
+        /* w_emb: small Gaussian.  V: Gaussian / √d (Glorot-ish).
+         * b_emb, attn bias, W_out: small uniform.  b_out: zero. */
+        double w_std = scale;
+        double v_std = scale / sqrt((double)d);
+        for (int i = 0; i < d; i++)
+            a->params[i] = w_std * xorshift_gauss(&seed);                 /* w_emb */
+        for (int i = 0; i < d; i++)
+            a->params[d + i] = scale * (xorshift_uniform(&seed) - 0.5);    /* b_emb */
+        long V_off = 2L * d;
+        for (long k = 0; k < (long)d * d; k++)
+            a->params[V_off + k] = v_std * xorshift_gauss(&seed);          /* V */
+        long a_off = V_off + (long)d * d;
+        for (long k = 0; k < N; k++)
+            a->params[a_off + k] = scale * (xorshift_uniform(&seed) - 0.5);/* attn */
+        long Wout_off = a_off + N;
+        for (int i = 0; i < d; i++)
+            a->params[Wout_off + i] = scale * (xorshift_uniform(&seed) - 0.5);
+        a->params[Wout_off + d] = 0.0;                                     /* b_out */
+        return a;
+    }
+
     if (cfg->ansatz == NQS_ANSATZ_COMPLEX_RBM) {
         int M = cfg->rbm_hidden_units > 0 ? cfg->rbm_hidden_units
                                           : 2 * num_sites;
@@ -248,6 +290,218 @@ static void crbm_log_amp(const nqs_ansatz_t *a, const int *spins,
     if (out_arg)     *out_arg     = arg;
 }
 
+/* --------------------------------------------------------------------- */
+/*  Factored-attention ViT NQS — v0                                      */
+/*                                                                        */
+/*  Single-head, patch_size=1, real-amplitude slice of Rende et al. 2024  */
+/*  (arXiv:2310.05715).  Forward:                                         */
+/*    e_i = w_emb · s_i + b_emb                       (d-vector / site)   */
+/*    v_i = V · e_i                                                       */
+/*    S_{ij} = a[(i − j + N) mod N]                   (factored bias)     */
+/*    P_{ij} = softmax_j(S_{ij})                                          */
+/*    o_i = Σ_j P_{ij} · v_j                                              */
+/*    log|ψ| = Σ_i (W_out · o_i) + b_out                                  */
+/* --------------------------------------------------------------------- */
+typedef struct {
+    int    N, d;
+    long   V_off, a_off, Wout_off, bout_off;
+    /* Per-evaluation scratch (caller-allocated, length-prefixed). */
+    double *e;        /* [N · d] embeddings                              */
+    double *v;        /* [N · d] values                                  */
+    double *P;        /* [N · N] softmax weights                         */
+    double *o;        /* [N · d] attention outputs                       */
+} vit_workspace_t;
+
+static void vit_offsets(const nqs_ansatz_t *a, int *out_d,
+                        long *out_V, long *out_a, long *out_W, long *out_b) {
+    int d = a->num_hidden;
+    long N = a->num_sites;
+    *out_d = d;
+    *out_V = 2L * d;
+    *out_a = *out_V + (long)d * d;
+    *out_W = *out_a + N;
+    *out_b = *out_W + d;
+    (void)N;
+}
+
+/* Allocate scratch buffers used by both forward and gradient. */
+static int vit_workspace_init(vit_workspace_t *ws, int N, int d) {
+    ws->N = N; ws->d = d;
+    ws->e = malloc((size_t)N * d * sizeof(double));
+    ws->v = malloc((size_t)N * d * sizeof(double));
+    ws->P = malloc((size_t)N * N * sizeof(double));
+    ws->o = malloc((size_t)N * d * sizeof(double));
+    if (!ws->e || !ws->v || !ws->P || !ws->o) {
+        free(ws->e); free(ws->v); free(ws->P); free(ws->o);
+        return -1;
+    }
+    return 0;
+}
+static void vit_workspace_free(vit_workspace_t *ws) {
+    free(ws->e); free(ws->v); free(ws->P); free(ws->o);
+}
+
+static double vit_forward(const nqs_ansatz_t *a, const int *spins,
+                          vit_workspace_t *ws) {
+    int d; long V_off, a_off, Wout_off, bout_off;
+    vit_offsets(a, &d, &V_off, &a_off, &Wout_off, &bout_off);
+    int N = a->num_sites;
+    const double *w_emb  = &a->params[0];
+    const double *b_emb  = &a->params[d];
+    const double *V      = &a->params[V_off];
+    const double *attn   = &a->params[a_off];
+    const double *W_out  = &a->params[Wout_off];
+    double        b_out  = a->params[bout_off];
+
+    /* e_i, v_i */
+    for (int i = 0; i < N; i++) {
+        double si = (double)spins[i];
+        for (int k = 0; k < d; k++) ws->e[i * d + k] = w_emb[k] * si + b_emb[k];
+    }
+    for (int i = 0; i < N; i++) {
+        for (int k = 0; k < d; k++) {
+            double s = 0.0;
+            for (int l = 0; l < d; l++) s += V[k * d + l] * ws->e[i * d + l];
+            ws->v[i * d + k] = s;
+        }
+    }
+    /* P_{ij} via log-sum-exp */
+    for (int i = 0; i < N; i++) {
+        double max_S = -1e300;
+        for (int j = 0; j < N; j++) {
+            int rel = ((i - j) % N + N) % N;
+            double S = attn[rel];
+            if (S > max_S) max_S = S;
+        }
+        double Z = 0.0;
+        for (int j = 0; j < N; j++) {
+            int rel = ((i - j) % N + N) % N;
+            double S = attn[rel];
+            double e = exp(S - max_S);
+            ws->P[i * N + j] = e;
+            Z += e;
+        }
+        double invZ = 1.0 / Z;
+        for (int j = 0; j < N; j++) ws->P[i * N + j] *= invZ;
+    }
+    /* o_i = Σ_j P_ij · v_j */
+    for (int i = 0; i < N; i++) {
+        for (int k = 0; k < d; k++) {
+            double s = 0.0;
+            for (int j = 0; j < N; j++) s += ws->P[i * N + j] * ws->v[j * d + k];
+            ws->o[i * d + k] = s;
+        }
+    }
+    /* log|ψ| = Σ_i W_out · o_i + b_out */
+    double acc = b_out;
+    for (int i = 0; i < N; i++) {
+        for (int k = 0; k < d; k++) acc += W_out[k] * ws->o[i * d + k];
+    }
+    return acc;
+}
+
+static double vit_log_amp(const nqs_ansatz_t *a, const int *spins) {
+    vit_workspace_t ws;
+    if (vit_workspace_init(&ws, a->num_sites, a->num_hidden) != 0) return 0.0;
+    double v = vit_forward(a, spins, &ws);
+    vit_workspace_free(&ws);
+    return v;
+}
+
+/* Analytic gradient via chain rule on the forward graph.  Layout matches
+ * the parameter offsets used by vit_offsets / vit_forward. */
+static int vit_gradient(const nqs_ansatz_t *a,
+                        const int *spins, double *out) {
+    int d; long V_off, a_off, Wout_off, bout_off;
+    vit_offsets(a, &d, &V_off, &a_off, &Wout_off, &bout_off);
+    int N = a->num_sites;
+    const double *V      = &a->params[V_off];
+    const double *W_out  = &a->params[Wout_off];
+
+    vit_workspace_t ws;
+    if (vit_workspace_init(&ws, N, d) != 0) return -1;
+    (void)vit_forward(a, spins, &ws);
+
+    memset(out, 0, (size_t)a->num_params * sizeof(double));
+
+    /* dL/db_out = 1 */
+    out[bout_off] = 1.0;
+    /* dL/dW_out[k] = Σ_i o_i[k] */
+    for (int i = 0; i < N; i++)
+        for (int k = 0; k < d; k++) out[Wout_off + k] += ws.o[i * d + k];
+
+    /* s_pred[i] = Σ_i' P_{i'i}  (column sum of attention) */
+    double *s_pred = calloc((size_t)N, sizeof(double));
+    /* W_out · v_j  (scalar per j; equals dL/dP_{ij} for any i) */
+    double *Wv = calloc((size_t)N, sizeof(double));
+    if (!s_pred || !Wv) {
+        free(s_pred); free(Wv); vit_workspace_free(&ws); return -1;
+    }
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++) s_pred[j] += ws.P[i * N + j];
+    for (int j = 0; j < N; j++) {
+        double s = 0.0;
+        for (int k = 0; k < d; k++) s += W_out[k] * ws.v[j * d + k];
+        Wv[j] = s;
+    }
+    /* W_out · o_i (scalar per i) */
+    double *Wo = calloc((size_t)N, sizeof(double));
+    if (!Wo) { free(s_pred); free(Wv); vit_workspace_free(&ws); return -1; }
+    for (int i = 0; i < N; i++) {
+        double s = 0.0;
+        for (int k = 0; k < d; k++) s += W_out[k] * ws.o[i * d + k];
+        Wo[i] = s;
+    }
+
+    /* dL/dS_{ij} = P_{ij} · (Wv[j] − Wo[i]).  Multiple (i, j) pairs hit
+     * the same a[(i-j+N)%N]; accumulate. */
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            double dS = ws.P[i * N + j] * (Wv[j] - Wo[i]);
+            int rel = ((i - j) % N + N) % N;
+            out[a_off + rel] += dS;
+        }
+    }
+
+    /* dL/dV[k][l] = W_out[k] · Σ_i s_pred[i] · e_i[l]
+     *             = W_out[k] · ev[l]
+     */
+    double *ev = calloc((size_t)d, sizeof(double));
+    if (!ev) { free(s_pred); free(Wv); free(Wo); vit_workspace_free(&ws); return -1; }
+    for (int i = 0; i < N; i++)
+        for (int l = 0; l < d; l++) ev[l] += s_pred[i] * ws.e[i * d + l];
+    for (int k = 0; k < d; k++)
+        for (int l = 0; l < d; l++) out[V_off + k * d + l] = W_out[k] * ev[l];
+
+    /* dL/de_i[l] = s_pred[i] · (V^T W_out)[l]
+     * dL/dw_emb[l] = Σ_i dL/de_i[l] · s_i
+     * dL/db_emb[l] = Σ_i dL/de_i[l] */
+    double *VtW = calloc((size_t)d, sizeof(double));
+    if (!VtW) {
+        free(s_pred); free(Wv); free(Wo); free(ev);
+        vit_workspace_free(&ws); return -1;
+    }
+    for (int l = 0; l < d; l++) {
+        double s = 0.0;
+        for (int k = 0; k < d; k++) s += V[k * d + l] * W_out[k];
+        VtW[l] = s;
+    }
+    for (int l = 0; l < d; l++) {
+        double dw = 0.0, db = 0.0;
+        for (int i = 0; i < N; i++) {
+            double dei = s_pred[i] * VtW[l];
+            dw += dei * (double)spins[i];
+            db += dei;
+        }
+        out[l]     = dw;          /* dL/dw_emb[l] */
+        out[d + l] = db;          /* dL/db_emb[l] */
+    }
+
+    free(s_pred); free(Wv); free(Wo); free(ev); free(VtW);
+    vit_workspace_free(&ws);
+    return 0;
+}
+
 void nqs_ansatz_log_amp(const int *spins, int num_sites,
                         void *ansatz_user,
                         double *out_log_abs,
@@ -261,6 +515,9 @@ void nqs_ansatz_log_amp(const int *spins, int num_sites,
                 break;
             case NQS_ANSATZ_RBM:
                 acc = rbm_log_amp(a, spins);
+                break;
+            case NQS_ANSATZ_FACTORED_VIT:
+                acc = vit_log_amp(a, spins);
                 break;
             default:
                 acc = mf_log_amp(a, spins);
@@ -400,6 +657,7 @@ int nqs_ansatz_logpsi_gradient(nqs_ansatz_t *a,
     switch (a->kind) {
         case NQS_ANSATZ_COMPLEX_RBM: return crbm_gradient(a, spins, out_grad);
         case NQS_ANSATZ_RBM:         return rbm_gradient(a, spins, out_grad);
+        case NQS_ANSATZ_FACTORED_VIT: return vit_gradient(a, spins, out_grad);
         default:                     return mf_gradient(a, spins, out_grad);
     }
 }
