@@ -12,6 +12,7 @@
 #ifdef SPIN_NN_HAS_IRREP
 #include <irrep/irrep.h>
 #include <irrep/rdm.h>
+#include <irrep/spin_project.h>
 /* nequip.h is only in libirrep >= 1.1 (shipped with pillar P1.2 work).
  * The umbrella irrep.h in 1.0 does not pull it in, so include it
  * explicitly when the caller opts into NequIP via SPIN_NN_HAS_IRREP_NEQUIP. */
@@ -284,4 +285,31 @@ int libirrep_bridge_entropy_renyi(const double _Complex *rho, int n,
     (void)rho; (void)n; (void)alpha; (void)out_S;
     return IRREP_BRIDGE_EDISABLED;
 #endif
+}
+
+int libirrep_bridge_spin_project_total_J(int two_J, int N,
+                                          int n_alpha, int n_beta, int n_gamma,
+                                          const double _Complex *psi_in,
+                                          double _Complex *psi_out) {
+    if (two_J < 0 || N <= 0 || !psi_in || !psi_out) return IRREP_BRIDGE_EARG;
+    if (n_alpha <= 0 || n_beta <= 0 || n_gamma <= 0) return IRREP_BRIDGE_EARG;
+#ifdef SPIN_NN_HAS_IRREP
+    irrep_status_t rc = irrep_spin_project_spin_half(two_J, N,
+                                                       n_alpha, n_beta, n_gamma,
+                                                       psi_in, psi_out);
+    return (rc == IRREP_OK) ? IRREP_BRIDGE_OK : IRREP_BRIDGE_ELIB;
+#else
+    (void)two_J; (void)N; (void)n_alpha; (void)n_beta; (void)n_gamma;
+    (void)psi_in; (void)psi_out;
+    return IRREP_BRIDGE_EDISABLED;
+#endif
+}
+
+int libirrep_bridge_spin_project_singlet(int N,
+                                          int n_alpha, int n_beta, int n_gamma,
+                                          const double _Complex *psi_in,
+                                          double _Complex *psi_out) {
+    return libirrep_bridge_spin_project_total_J(0, N,
+                                                  n_alpha, n_beta, n_gamma,
+                                                  psi_in, psi_out);
 }

@@ -146,6 +146,26 @@ int libirrep_bridge_entropy_vonneumann(const double _Complex *rho, int n,
 int libirrep_bridge_entropy_renyi(const double _Complex *rho, int n,
                                    double alpha, double *out_S);
 
+/* ---- Total-J projection on spin-½ wavefunctions ---------------------- */
+
+/* Project psi_in onto the total-J = two_J/2 subspace of N spin-½ sites.
+ * two_J = 0 → singlet (the kagome AFM target).
+ * Uses a tensor-product quadrature of size n_alpha × n_beta × n_gamma.
+ * Output is allocated by the caller (length 2^N); psi_in / psi_out may
+ * not overlap.  Returns 0 on success.
+ *
+ * Recommended grid: n_alpha = n_beta = n_gamma = ⌈N/2 + 1⌉ for exact
+ * integration up to J = N/2.  N ≤ 24 (cost: O(n_α n_β n_γ · N · 2^N)). */
+int libirrep_bridge_spin_project_singlet(int N,
+                                          int n_alpha, int n_beta, int n_gamma,
+                                          const double _Complex *psi_in,
+                                          double _Complex *psi_out);
+
+int libirrep_bridge_spin_project_total_J(int two_J, int N,
+                                          int n_alpha, int n_beta, int n_gamma,
+                                          const double _Complex *psi_in,
+                                          double _Complex *psi_out);
+
 #ifdef __cplusplus
 }
 #endif

@@ -72,10 +72,48 @@ static void test_product_state_partial_trace_is_pure(void) {
     ASSERT_TRUE(fabs(S) < 1e-10);
 }
 
+/* Singlet projection: |ψ⟩ = (|01⟩ − |10⟩)/√2 is already a J=0 state,
+ * so projection onto J=0 leaves it invariant (up to numerical noise).
+ * The projected norm² should be 1.  Triplet input (|00⟩) has zero
+ * J=0 component; projection should leave a vanishing-norm output. */
+static void test_singlet_input_survives_J_eq_0_projection(void) {
+    double inv_sqrt2 = 1.0 / sqrt(2.0);
+    double _Complex psi[4]     = { 0.0, -inv_sqrt2, +inv_sqrt2, 0.0 };
+    double _Complex psi_out[4] = { 0 };
+    int rc = libirrep_bridge_spin_project_singlet(/*N*/ 2,
+                                                    /*nα*/ 4,
+                                                    /*nβ*/ 4,
+                                                    /*nγ*/ 4,
+                                                    psi, psi_out);
+    ASSERT_EQ_INT(rc, 0);
+    /* Output should be the singlet state (up to overall complex factor)
+     * with norm² ≈ 1. */
+    double norm2 = 0.0;
+    for (int i = 0; i < 4; i++) norm2 += creal(psi_out[i]) * creal(psi_out[i])
+                                       + cimag(psi_out[i]) * cimag(psi_out[i]);
+    printf("# J=0 projection on singlet: ||P|ψ⟩||² = %.6f\n", norm2);
+    ASSERT_TRUE(norm2 > 0.999 && norm2 < 1.001);
+}
+
+static void test_triplet_input_vanishes_under_J_eq_0_projection(void) {
+    double _Complex psi[4]     = { 1.0, 0.0, 0.0, 0.0 };  /* |00⟩ — pure triplet */
+    double _Complex psi_out[4] = { 0 };
+    int rc = libirrep_bridge_spin_project_singlet(2, 6, 6, 6, psi, psi_out);
+    ASSERT_EQ_INT(rc, 0);
+    double norm2 = 0.0;
+    for (int i = 0; i < 4; i++) norm2 += creal(psi_out[i]) * creal(psi_out[i])
+                                       + cimag(psi_out[i]) * cimag(psi_out[i]);
+    printf("# J=0 projection on triplet |00⟩: ||P|ψ⟩||² = %.3e (expect 0)\n",
+           norm2);
+    ASSERT_TRUE(norm2 < 1e-10);
+}
+
 int main(void) {
     libirrep_bridge_init();
     TEST_RUN(test_singlet_partial_trace_is_maximally_mixed);
     TEST_RUN(test_product_state_partial_trace_is_pure);
+    TEST_RUN(test_singlet_input_survives_J_eq_0_projection);
+    TEST_RUN(test_triplet_input_vanishes_under_J_eq_0_projection);
     libirrep_bridge_shutdown();
     TEST_SUMMARY();
 }
