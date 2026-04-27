@@ -122,6 +122,30 @@ int libirrep_bridge_nequip_apply_backward(const libirrep_bridge_nequip_t *layer,
                                            double *grad_h_in,
                                            double *grad_tp_weights);
 
+/* ---- RDM / entropy on dense state vectors ----------------------------- */
+
+/* Partial trace ρ_A = Tr_B |ψ⟩⟨ψ|.  num_sites is the total site count;
+ * sites_A is a sorted-ascending list of length nA picking the kept
+ * subsystem.  rho_A is a (2^nA × 2^nA) row-major complex buffer the
+ * caller allocates.  Returns 0 on success, EARG on bad arguments,
+ * EDISABLED if libirrep was not compiled in. */
+int libirrep_bridge_partial_trace_spin_half(int num_sites,
+                                             const double _Complex *psi,
+                                             const int *sites_A, int nA,
+                                             double _Complex *rho_A);
+
+/* Von Neumann entropy S = -Tr(ρ log ρ) on a spin-1/2 reduced
+ * density matrix ρ_A of size 2^nA × 2^nA (row-major).  Writes into
+ * *out_S.  ρ_A is destroyed by the eigen-decomposition step inside
+ * libirrep — caller copies if it needs to retain ρ. */
+int libirrep_bridge_entropy_vonneumann(const double _Complex *rho, int n,
+                                        double *out_S);
+
+/* Renyi entropy S_α = (1/(1-α)) log Tr ρ^α, α > 0, α ≠ 1.
+ * α = 2 (purity-based) is the standard Monte-Carlo-friendly variant. */
+int libirrep_bridge_entropy_renyi(const double _Complex *rho, int n,
+                                   double alpha, double *out_S);
+
 #ifdef __cplusplus
 }
 #endif

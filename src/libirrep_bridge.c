@@ -11,6 +11,7 @@
 
 #ifdef SPIN_NN_HAS_IRREP
 #include <irrep/irrep.h>
+#include <irrep/rdm.h>
 /* nequip.h is only in libirrep >= 1.1 (shipped with pillar P1.2 work).
  * The umbrella irrep.h in 1.0 does not pull it in, so include it
  * explicitly when the caller opts into NequIP via SPIN_NN_HAS_IRREP_NEQUIP. */
@@ -237,6 +238,50 @@ int libirrep_bridge_nequip_apply_backward(const libirrep_bridge_nequip_t *layer,
     (void)layer; (void)tp_weights; (void)n_nodes; (void)n_edges;
     (void)edge_src; (void)edge_dst; (void)edge_vec; (void)h_in;
     (void)grad_h_out; (void)grad_h_in; (void)grad_tp_weights;
+    return IRREP_BRIDGE_EDISABLED;
+#endif
+}
+
+/* ---- RDM / entropy ---------------------------------------------------- */
+
+int libirrep_bridge_partial_trace_spin_half(int num_sites,
+                                             const double _Complex *psi,
+                                             const int *sites_A, int nA,
+                                             double _Complex *rho_A) {
+    if (!psi || !rho_A || num_sites <= 0 || nA < 0 || nA > num_sites)
+        return IRREP_BRIDGE_EARG;
+    if (nA > 0 && !sites_A) return IRREP_BRIDGE_EARG;
+#ifdef SPIN_NN_HAS_IRREP
+    irrep_status_t rc = irrep_partial_trace(num_sites, /*local_dim*/ 2,
+                                             psi, sites_A, nA, rho_A);
+    return (rc == IRREP_OK) ? IRREP_BRIDGE_OK : IRREP_BRIDGE_ELIB;
+#else
+    (void)num_sites; (void)psi; (void)sites_A; (void)nA; (void)rho_A;
+    return IRREP_BRIDGE_EDISABLED;
+#endif
+}
+
+int libirrep_bridge_entropy_vonneumann(const double _Complex *rho, int n,
+                                        double *out_S) {
+    if (!rho || !out_S || n <= 0) return IRREP_BRIDGE_EARG;
+#ifdef SPIN_NN_HAS_IRREP
+    *out_S = irrep_entropy_vonneumann(rho, n);
+    return IRREP_BRIDGE_OK;
+#else
+    (void)rho; (void)n; (void)out_S;
+    return IRREP_BRIDGE_EDISABLED;
+#endif
+}
+
+int libirrep_bridge_entropy_renyi(const double _Complex *rho, int n,
+                                   double alpha, double *out_S) {
+    if (!rho || !out_S || n <= 0 || alpha <= 0.0)
+        return IRREP_BRIDGE_EARG;
+#ifdef SPIN_NN_HAS_IRREP
+    *out_S = irrep_entropy_renyi(rho, n, alpha);
+    return IRREP_BRIDGE_OK;
+#else
+    (void)rho; (void)n; (void)alpha; (void)out_S;
     return IRREP_BRIDGE_EDISABLED;
 #endif
 }

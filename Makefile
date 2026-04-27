@@ -501,6 +501,11 @@ test_nqs_kspace_ed: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
 	    src/nqs/nqs_kspace_ed.c \
 	    $(LDFLAGS) $(IRREP_LDFLAGS)
 
+test_libirrep_rdm: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
+	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) -o $(BIN_DIR)/test_libirrep_rdm \
+	    tests/test_libirrep_rdm.c src/libirrep_bridge.c \
+	    $(LDFLAGS) $(IRREP_LDFLAGS)
+
 test_moonlab_bridge: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) $(MOONLAB_CFLAGS) -o $(BIN_DIR)/test_moonlab_bridge \
 	    tests/test_moonlab_bridge.c src/moonlab_bridge.c \
