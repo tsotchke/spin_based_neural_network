@@ -412,6 +412,15 @@ research_kagome_N12_diagnostics: $(BIN_DIR)
 	    scripts/research_kagome_N12_diagnostics.c \
 	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
 
+# Research artefact: scan the four 1D irreps of C_6v at Γ on kagome AFM
+# Heisenberg via libirrep's sector ED.  L = 2 in seconds, L = 3 in
+# minutes; identifies the GS irrep + spin gap.  IRREP_ENABLE=1 required.
+research_kagome_irrep_scan: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
+	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) -o $(BIN_DIR)/research_kagome_irrep_scan \
+	    scripts/research_kagome_irrep_scan.c \
+	    src/nqs/nqs_kspace_ed.c \
+	    $(LDFLAGS) $(IRREP_LDFLAGS)
+
 test_nqs_translation: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_translation \
 	    tests/test_nqs_translation.c $(NQS_SRCS) $(LDFLAGS)
