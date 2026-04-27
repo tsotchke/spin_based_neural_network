@@ -49,6 +49,35 @@ int nqs_kspace_ed_heisenberg(int num_sites, int num_bonds,
                               int k_wanted, int max_iters,
                               double *eigvals_out);
 
+/*
+ * (Γ, A₁) sector exact diagonalisation for the kagome Heisenberg
+ * antiferromagnet on an L × L torus with periodic BC.  Total sites
+ * N = 3 L²; sector dim is the count of orbit representatives at
+ * popcount = N/2 (Sz = 0) under the full p6mm wallpaper group with
+ * non-zero σ-norm at the trivial irrep.
+ *
+ * Sector dim is roughly  C(N, N/2) / |G|  with |G| = 12 · L² for
+ * p6mm.  This is the size that fits Lanczos through to N = 27
+ * (L = 3, sector ≲ 10⁵) and N = 48 (L = 4, sector ≲ 10⁷) — the
+ * regime where the kagome AFM ground-state physics actually emerges.
+ *
+ * On success, eigvals_out is filled with the k_wanted smallest
+ * eigenvalues of H = J Σ_<ij> S_i · S_j projected onto (Γ, A₁) ∩
+ * Sz = 0.  For bipartite-like AFMs the global ground state lives in
+ * (Γ, A₁), so this is the absolute E_0; for kagome AFM specifically
+ * (frustrated, gapped vs gapless still open), this is the Z₂-spin-
+ * liquid-candidate sector ground state.
+ *
+ * Returns 0 on success; non-zero codes:
+ *   -1 invalid argument (e.g. L ≤ 0)
+ *   -2 num_sites > 27 (memory cap; raise once you have the budget)
+ *   -3 libirrep build failure (likely OOM on rep_table or sector)
+ *   -4 Lanczos error
+ */
+int nqs_kspace_ed_kagome_at_gamma(int L, double J,
+                                   int k_wanted, int max_iters,
+                                   double *eigvals_out);
+
 #endif /* SPIN_NN_HAS_IRREP */
 
 #ifdef __cplusplus

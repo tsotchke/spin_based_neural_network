@@ -63,10 +63,40 @@ static void test_six_site_ring_matches_known_reference(void) {
     ASSERT_TRUE(evals[2] >= evals[1] - 1e-12);
 }
 
+/* Kagome 2×2 (Γ, A₁) sector ED.  Full Hilbert space at N = 12 is
+ * 2^12 = 4096; the (Γ, A₁) sector is sector_dim = 30 — a 137×
+ * reduction.  At N = 27 (L = 3) the analogous reduction is from
+ * 2^27 ≈ 1.3·10^8 to a sector dimension on the order of 10^5,
+ * which is the regime where the kagome AFM physics actually opens.
+ *
+ * On the homegrown full-Hilbert-space spectrum (per
+ * CHANGELOG.md §0.4.2), the lowest two eigenvalues on this cluster
+ * are E_0 = −5.44487522 (global GS) and E_1 = −5.32839240 (first
+ * excited).  The global GS lives in a DIFFERENT irrep (likely (Γ, A₂)
+ * or finite-momentum) — it is NOT in (Γ, A₁) for kagome 2×2 PBC —
+ * so the (Γ, A₁) sector ED's lowest is the second eigenvalue in the
+ * homegrown spectrum, E_1 = −5.32839240.  This is the right cross-
+ * validation: the sector-restricted lowest must equal the lowest
+ * (Γ, A₁) eigenvalue identified by the homegrown solver, not the
+ * global minimum.  Match to 1e-6 (Lanczos convergence floor). */
+static void test_kagome_2x2_gamma_a1_matches_homegrown_E1(void) {
+    double evals[2] = { 0.0, 0.0 };
+    int rc = nqs_kspace_ed_kagome_at_gamma(/*L*/ 2, /*J*/ 1.0,
+                                            /*k_wanted*/ 2,
+                                            /*max_iters*/ 80, evals);
+    ASSERT_EQ_INT(rc, 0);
+    printf("# kagome L=2 (Γ, A₁) lowest = %.10f "
+           "(homegrown spectrum: E_0 = −5.44487522 in another irrep, "
+           "E_1 = −5.32839240 in (Γ, A₁))\n", evals[0]);
+    ASSERT_NEAR(evals[0], -5.32839240, 1e-6);
+    ASSERT_TRUE(evals[1] >= evals[0] - 1e-12);
+}
+
 int main(void) {
     TEST_RUN(test_two_site_heisenberg_matches_analytic_singlet);
     TEST_RUN(test_four_site_ring_matches_bethe_ansatz);
     TEST_RUN(test_six_site_ring_matches_known_reference);
+    TEST_RUN(test_kagome_2x2_gamma_a1_matches_homegrown_E1);
     TEST_SUMMARY();
 }
 
