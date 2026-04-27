@@ -92,6 +92,44 @@ int torque_net_irrep_backward(const torque_net_irrep_t *net,
                                double *grad_h_in,
                                double *grad_weights);
 
+/*
+ * Multi-layer constructor.  Stacks `num_layers` NequIP layers in a
+ * chain.  hidden_specs[0..num_layers-2] are the intermediate
+ * multiset shapes; the input shape is `in_spec` and the final output
+ * is `out_spec`.  All layers share the same (l_sh_max, n_radial,
+ * r_cut, cutoff_poly_p) edge-side parameters.
+ *
+ * For num_layers == 1 this reduces to the single-layer constructor:
+ * pass `hidden_specs = NULL`, `in_spec → out_spec` directly.
+ *
+ * Stacking N NequIP layers without an explicit non-linearity is
+ * mathematically a (bilinear-in-features)^N polynomial in the input,
+ * so deeper towers capture multi-body interactions (each layer
+ * widens the receptive field by one bond hop).  Future v1 extension
+ * adds gated non-linearities between layers via libirrep's
+ * `irrep_gate_apply`.
+ *
+ * Total `num_weights` is the sum across all layers; the weight buffer
+ * passed to `_forward` / `_backward` is laid out
+ *   [layer0_weights, layer1_weights, ..., layerN-1_weights]
+ * in the order returned by `torque_net_irrep_layer_offset(net, k)`.
+ */
+torque_net_irrep_t *torque_net_irrep_create_multilayer(
+    const char *in_spec,
+    const char *const *hidden_specs,        /* length num_layers - 1 */
+    const char *out_spec,
+    int    num_layers,
+    int    l_sh_max,
+    int    n_radial,
+    double r_cut,
+    int    cutoff_poly_p);
+
+/* Number of stacked NequIP layers in this network. */
+int  torque_net_irrep_num_layers(const torque_net_irrep_t *net);
+
+/* Offset into the flat weight buffer where layer k's weights start. */
+int  torque_net_irrep_layer_offset(const torque_net_irrep_t *net, int k);
+
 #endif /* SPIN_NN_HAS_IRREP */
 
 #ifdef __cplusplus

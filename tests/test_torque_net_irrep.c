@@ -209,12 +209,94 @@ static void test_irrep_forward_so3_equivariance(void) {
     torque_net_irrep_free(net);
 }
 
+/* Multi-layer NequIP: stack two layers with a hidden multiset that has
+ * more multiplets than the 1x1o input, then read out back to 1x1o.
+ * Total weight count grows; equivariance must still be machine-precision. */
+static void test_irrep_two_layer_construction_and_equivariance(void) {
+    const char *hidden_specs[1] = { "4x0e + 2x1o + 1x2e" };
+    torque_net_irrep_t *net =
+        torque_net_irrep_create_multilayer("1x1o", hidden_specs, "1x1o",
+                                            /*num_layers*/ 2,
+                                            /*sh*/ 2, /*radial*/ 4,
+                                            /*r_cut*/ 1.5, /*p*/ 6);
+    ASSERT_TRUE(net != NULL);
+    ASSERT_EQ_INT(torque_net_irrep_num_layers(net), 2);
+    int nw = torque_net_irrep_num_weights(net);
+    int off0 = torque_net_irrep_layer_offset(net, 0);
+    int off1 = torque_net_irrep_layer_offset(net, 1);
+    int off2 = torque_net_irrep_layer_offset(net, 2);
+    printf("# 2-layer NequIP 1x1o → 4x0e+2x1o+1x2e → 1x1o: %d weights "
+           "(layer0 %d..%d, layer1 %d..%d)\n",
+           nw, off0, off1, off1, off2);
+    ASSERT_TRUE(nw > 2);             /* strictly more than the v0 single-layer */
+    ASSERT_EQ_INT(off2, nw);
+
+    /* Run the same SO(3) equivariance check as the single-layer case
+     * with a generic 30° rotation about (1,1,1)/√3. */
+    int Lx = 3, Ly = 3, N = Lx * Ly;
+    int *src, *dst; double *vec; int E;
+    torque_net_build_grid(Lx, Ly, /*periodic*/ 0, &src, &dst, &vec, &E);
+    torque_net_graph_t g = { .num_nodes = N, .num_edges = E,
+                             .edge_src = src, .edge_dst = dst,
+                             .edge_vec = vec };
+
+    double *w = (double *)malloc((size_t)nw * sizeof(double));
+    for (int i = 0; i < nw; i++) w[i] = 0.07 * sin(0.5 * i + 0.3);
+
+    double *m = (double *)malloc((size_t)3 * N * sizeof(double));
+    for (int i = 0; i < N; i++) {
+        double t = 2.0 * M_PI * i / (double)N;
+        double s = sin(0.7 * i + 0.1);
+        double c = sqrt(1.0 - s * s);
+        m[3*i + 0] = c * cos(t);
+        m[3*i + 1] = c * sin(t);
+        m[3*i + 2] = s;
+    }
+    double *out_unrot = (double *)calloc((size_t)3 * N, sizeof(double));
+    ASSERT_EQ_INT(torque_net_irrep_forward(net, w, &g, m, out_unrot), 0);
+
+    double th = M_PI / 6.0;
+    double cx = 1.0/sqrt(3.0), cy = 1.0/sqrt(3.0), cz = 1.0/sqrt(3.0);
+    double C = cos(th), S = sin(th), V = 1.0 - C;
+    double R[9] = {
+        cx*cx*V + C,    cx*cy*V - cz*S, cx*cz*V + cy*S,
+        cy*cx*V + cz*S, cy*cy*V + C,    cy*cz*V - cx*S,
+        cz*cx*V - cy*S, cz*cy*V + cx*S, cz*cz*V + C
+    };
+
+    double *m_R   = (double *)malloc((size_t)3 * N * sizeof(double));
+    double *vec_R = (double *)malloc((size_t)3 * E * sizeof(double));
+    for (int i = 0; i < N; i++) rot3_apply(R, &m[3*i],   &m_R[3*i]);
+    for (int e = 0; e < E; e++) rot3_apply(R, &vec[3*e], &vec_R[3*e]);
+    torque_net_graph_t g_rot = g; g_rot.edge_vec = vec_R;
+    double *out_rot = (double *)calloc((size_t)3 * N, sizeof(double));
+    ASSERT_EQ_INT(torque_net_irrep_forward(net, w, &g_rot, m_R, out_rot), 0);
+
+    double max_err = 0.0;
+    double *expected = (double *)malloc((size_t)3 * N * sizeof(double));
+    for (int i = 0; i < N; i++) {
+        rot3_apply(R, &out_unrot[3*i], &expected[3*i]);
+        for (int k = 0; k < 3; k++) {
+            double e = fabs(expected[3*i + k] - out_rot[3*i + k]);
+            if (e > max_err) max_err = e;
+        }
+    }
+    printf("# 2-layer NequIP equivariance residual: %.3e\n", max_err);
+    ASSERT_TRUE(max_err < 1e-10);
+
+    free(w); free(m); free(m_R); free(vec_R);
+    free(out_unrot); free(out_rot); free(expected);
+    free(src); free(dst); free(vec);
+    torque_net_irrep_free(net);
+}
+
 int main(void) {
     TEST_RUN(test_bridge_reports_available);
     TEST_RUN(test_sh_addition_theorem_l1_matches_cartesian_dot);
     TEST_RUN(test_pairwise_orthogonality_l1_l2);
     TEST_RUN(test_irrep_layer_constructs);
     TEST_RUN(test_irrep_forward_so3_equivariance);
+    TEST_RUN(test_irrep_two_layer_construction_and_equivariance);
     TEST_SUMMARY();
 }
 #else /* !SPIN_NN_HAS_IRREP */
