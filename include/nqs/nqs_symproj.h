@@ -165,6 +165,45 @@ int nqs_kagome_p6m_perm(int L,
                          double **out_characters,
                          int *out_num_elements);
 
+/* Named 1D irrep of C_6v at Γ for the kagome p6m wallpaper group.
+ * Mirrors `nqs_kspace_irrep_t` from nqs_kspace_ed.h but kept here for
+ * dependency hygiene (nqs_symproj must build with or without libirrep). */
+typedef enum {
+    NQS_SYMPROJ_KAGOME_GAMMA_A1 = 0, /* trivial — what _p6m_perm builds  */
+    NQS_SYMPROJ_KAGOME_GAMMA_A2 = 1, /* sign on all 6 mirrors            */
+    NQS_SYMPROJ_KAGOME_GAMMA_B1 = 2, /* sign on C_6, σ_d                 */
+    NQS_SYMPROJ_KAGOME_GAMMA_B2 = 3  /* sign on C_6, σ_v                 */
+} nqs_symproj_kagome_irrep_t;
+
+/* Same |G| = 12·L² p6m permutation as nqs_kagome_p6m_perm, but the
+ * out_characters vector is the C_6v character at Γ for the named
+ * 1D irrep, tiled across translations (which all carry +1 at k=0).
+ *
+ * Group-element ordering matches build_p6m_perm_row in
+ * src/nqs/nqs_symproj.c:
+ *   ops 0..5  = pure rotation R(60° · k)  for k = 0..5
+ *   ops 6..11 = mirror M ∘ R(60° · k)     for k = 0..5
+ *
+ * The mirror-after-rotation ordering above produces alternating
+ * σ_v / σ_d axes (σ_v through A-vertex bonds at op 6, then 30°-
+ * offset σ_d at op 7, etc.).
+ *
+ * Characters per element (tiled across L² translations):
+ *
+ *   irrep | E  C6  C3  C2  C3²  C6⁵  σ_v  σ_d  σ_v  σ_d  σ_v  σ_d
+ *   A_1   |  1   1   1   1   1    1    1    1    1    1    1    1
+ *   A_2   |  1   1   1   1   1    1   -1   -1   -1   -1   -1   -1
+ *   B_1   |  1  -1   1  -1   1   -1    1   -1    1   -1    1   -1
+ *   B_2   |  1  -1   1  -1   1   -1   -1    1   -1    1   -1    1
+ *
+ * For irrep_name = NQS_SYMPROJ_KAGOME_GAMMA_A1 this is identical to
+ * nqs_kagome_p6m_perm.  Caller frees both arrays. */
+int nqs_kagome_p6m_perm_irrep(int L,
+                               nqs_symproj_kagome_irrep_t irrep_name,
+                               int **out_perm,
+                               double **out_characters,
+                               int *out_num_elements);
+
 #ifdef __cplusplus
 }
 #endif

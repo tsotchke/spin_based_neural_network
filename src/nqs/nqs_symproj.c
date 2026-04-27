@@ -555,6 +555,56 @@ int nqs_kagome_p6m_perm(int L,
                          int **out_perm,
                          double **out_characters,
                          int *out_num_elements) {
+    return nqs_kagome_p6m_perm_irrep(L, NQS_SYMPROJ_KAGOME_GAMMA_A1,
+                                      out_perm, out_characters,
+                                      out_num_elements);
+}
+
+/* C_6v character per group-element index (12 ops in our build order).
+ *   ops 0..5  = pure rotation R(60° · k)
+ *   ops 6..11 = mirror M ∘ R(60° · k)
+ * ops 6, 8, 10 are σ_v through-vertex axes; ops 7, 9, 11 are σ_d
+ * between-vertex axes (alternating with each 60° rotation step). */
+static double cv6_character(int op, nqs_symproj_kagome_irrep_t name) {
+    /* Conjugacy-class assignment: */
+    /*   E   = op 0 */
+    /*   C_6 = ops 1, 5         (60° and 300°) */
+    /*   C_3 = ops 2, 4         (120° and 240°) */
+    /*   C_2 = op 3 */
+    /*   σ_v = ops 6, 8, 10 */
+    /*   σ_d = ops 7, 9, 11 */
+    int is_mirror = (op >= 6);
+    int rotk      = is_mirror ? (op - 6) : op;
+    int is_sigma_v = is_mirror && (rotk % 2 == 0);
+    int is_sigma_d = is_mirror && (rotk % 2 == 1);
+    int is_C6   = !is_mirror && (rotk == 1 || rotk == 5);
+    int is_C2   = !is_mirror && (rotk == 3);
+    /* (E, C_3 are the remaining "always +1" rotations.) */
+
+    switch (name) {
+    case NQS_SYMPROJ_KAGOME_GAMMA_A1:
+        return 1.0;
+    case NQS_SYMPROJ_KAGOME_GAMMA_A2:
+        return is_mirror ? -1.0 : 1.0;
+    case NQS_SYMPROJ_KAGOME_GAMMA_B1:
+        if (is_C6 || is_C2) return -1.0;
+        if (is_sigma_d)     return -1.0;
+        (void)is_sigma_v;
+        return 1.0;
+    case NQS_SYMPROJ_KAGOME_GAMMA_B2:
+        if (is_C6 || is_C2) return -1.0;
+        if (is_sigma_v)     return -1.0;
+        (void)is_sigma_d;
+        return 1.0;
+    }
+    return 1.0;
+}
+
+int nqs_kagome_p6m_perm_irrep(int L,
+                               nqs_symproj_kagome_irrep_t irrep_name,
+                               int **out_perm,
+                               double **out_characters,
+                               int *out_num_elements) {
     if (L <= 0 || !out_perm || !out_characters || !out_num_elements) return -1;
     int N = 3 * L * L;
     int G = 12 * L * L;
@@ -565,18 +615,19 @@ int nqs_kagome_p6m_perm(int L,
 
     int g = 0;
     for (int op = 0; op < 12; op++) {
+        double chi_op = cv6_character(op, irrep_name);
         for (int tx = 0; tx < L; tx++) {
             for (int ty = 0; ty < L; ty++) {
                 int *row = &perm[(size_t)g * N];
                 if (build_p6m_perm_row(L, op, tx, ty, row) != 0) {
                     fprintf(stderr,
-                            "nqs_kagome_p6m_perm: failed at row g=%d "
+                            "nqs_kagome_p6m_perm_irrep: failed at row g=%d "
                             "(op=%d, tx=%d, ty=%d) on L=%d torus.\n",
                             g, op, tx, ty, L);
                     free(perm); free(chars);
                     return -1;
                 }
-                chars[g] = 1.0;
+                chars[g] = chi_op;        /* k = 0 → no e^{i k·t} factor */
                 g++;
             }
         }

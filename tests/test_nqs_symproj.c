@@ -419,6 +419,68 @@ static void test_symproj_output_is_invariant_p6m(void) {
     nqs_ansatz_free(a);
 }
 
+/* For a non-trivial irrep μ of C_6v at Γ, the symmetry-projected
+ * wavefunction transforms as ψ_sym(g · s) = χ_μ(g) · ψ_sym(s).
+ * Verify on a real RBM ansatz for B_1, the kagome 2×2 GS irrep. */
+static void test_symproj_kagome_p6m_b1_irrep_transforms_correctly(void) {
+    int L = 3;
+    int N = 3 * L * L;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz = NQS_ANSATZ_RBM;
+    cfg.rbm_hidden_units = 6;
+    cfg.rng_seed = 0xB1B1u;
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    ASSERT_TRUE(a != NULL);
+
+    int *perm = NULL;
+    double *chars = NULL;
+    int G = 0;
+    ASSERT_EQ_INT(nqs_kagome_p6m_perm_irrep(L, NQS_SYMPROJ_KAGOME_GAMMA_B1,
+                                              &perm, &chars, &G), 0);
+    ASSERT_EQ_INT(G, 12 * L * L);
+
+    /* Non-trivial config that breaks all p6m symmetries. */
+    int *spins = (int *)malloc((size_t)N * sizeof(int));
+    for (int i = 0; i < N; i++) spins[i] = ((i * 13 + 7) % 5 < 2) ? +1 : -1;
+
+    nqs_symproj_wrapper_t w = {
+        .base_log_amp       = nqs_ansatz_log_amp,
+        .base_user          = a,
+        .num_sites          = N,
+        .num_group_elements = G,
+        .perm               = perm,
+        .characters         = chars,
+    };
+
+    double base_lp, base_arg;
+    nqs_symproj_log_amp(spins, N, &w, &base_lp, &base_arg);
+
+    int *transformed = (int *)malloc((size_t)N * sizeof(int));
+    /* For each group element g, ψ_sym(g · s) must equal χ_μ(g) · ψ_sym(s).
+     * Magnitudes are equal; sign flips on χ = -1 elements. */
+    int neg_count_observed = 0;
+    int neg_count_expected = 0;
+    for (int g = 0; g < G; g++) {
+        for (int i = 0; i < N; i++) transformed[i] = spins[perm[(size_t)g * N + i]];
+        double lp, arg;
+        nqs_symproj_log_amp(transformed, N, &w, &lp, &arg);
+        ASSERT_NEAR(lp, base_lp, 1e-9);
+        /* arg is 0 for χ = +1, π for χ = -1 (real-amplitude RBM). */
+        double cos_diff = cos(arg) - chars[g] * cos(base_arg);
+        ASSERT_NEAR(cos_diff, 0.0, 1e-9);
+        if (chars[g] < 0.0) neg_count_expected++;
+        if (cos(arg) * cos(base_arg) < 0.0) neg_count_observed++;
+    }
+    /* Sanity: B_1 has 6 elements with χ = -1 per "point op", times L²
+     * translations.  For L=3 that's 6 · 9 = 54 negatives across 108 ops. */
+    printf("# B_1 projection on L=3: %d/%d group elements have χ = -1\n",
+           neg_count_observed, G);
+    ASSERT_EQ_INT(neg_count_observed, neg_count_expected);
+
+    free(spins); free(transformed); free(perm); free(chars);
+    nqs_ansatz_free(a);
+}
+
 int main(void) {
     TEST_RUN(test_translation_perm_is_proper);
     TEST_RUN(test_p2_perm_doubles_translation);
@@ -430,5 +492,6 @@ int main(void) {
     TEST_RUN(test_symproj_output_is_invariant_p6);
     TEST_RUN(test_p6m_perm_is_proper);
     TEST_RUN(test_symproj_output_is_invariant_p6m);
+    TEST_RUN(test_symproj_kagome_p6m_b1_irrep_transforms_correctly);
     TEST_SUMMARY();
 }
