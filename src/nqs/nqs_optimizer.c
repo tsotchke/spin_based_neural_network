@@ -407,6 +407,20 @@ int nqs_sr_step_holomorphic(const nqs_config_t *cfg,
                              nqs_log_amp_fn_t log_amp_fn,
                              void *log_amp_user,
                              nqs_sr_step_info_t *out_info) {
+    return nqs_sr_step_holomorphic_full(cfg, size_x, size_y, ansatz, sampler,
+                                         log_amp_fn, log_amp_user,
+                                         NULL, NULL, out_info);
+}
+
+int nqs_sr_step_holomorphic_full(const nqs_config_t *cfg,
+                                  int size_x, int size_y,
+                                  nqs_ansatz_t *ansatz,
+                                  nqs_sampler_t *sampler,
+                                  nqs_log_amp_fn_t log_amp_fn,
+                                  void *log_amp_user,
+                                  nqs_holomorphic_gradient_fn_t grad_fn,
+                                  void *grad_user,
+                                  nqs_sr_step_info_t *out_info) {
     if (!cfg || !ansatz || !sampler) return -1;
     /* Use the sampler's configured site count. For single-site-per-cell
      * lattices this equals size_x*size_y; for kagome and any future
@@ -441,12 +455,17 @@ int nqs_sr_step_holomorphic(const nqs_config_t *cfg,
     nqs_local_energy_batch_complex(cfg, size_x, size_y, batch, batch_size,
                                     log_amp_fn, log_amp_user, E_re, E_im);
 
-    /* 3. Complex gradients per sample. */
+    /* 3. Complex gradients per sample.  Through the symproj wrapper if
+     * one was supplied; otherwise direct from the base ansatz. */
     for (int i = 0; i < batch_size; i++) {
-        nqs_ansatz_logpsi_gradient_complex(ansatz,
-                                            &batch[(size_t)i * (size_t)N], N,
-                                            &R[(size_t)i * (size_t)num_params],
-                                            &Im[(size_t)i * (size_t)num_params]);
+        int *sp = &batch[(size_t)i * (size_t)N];
+        double *gR = &R [(size_t)i * (size_t)num_params];
+        double *gI = &Im[(size_t)i * (size_t)num_params];
+        if (grad_fn) {
+            grad_fn(grad_user, ansatz, sp, N, gR, gI);
+        } else {
+            nqs_ansatz_logpsi_gradient_complex(ansatz, sp, N, gR, gI);
+        }
     }
 
     /* 4. Means + force. */
@@ -511,12 +530,27 @@ int nqs_sr_run_holomorphic(const nqs_config_t *cfg,
                             nqs_log_amp_fn_t log_amp_fn,
                             void *log_amp_user,
                             double *out_energy_trace) {
+    return nqs_sr_run_holomorphic_full(cfg, size_x, size_y, ansatz, sampler,
+                                        log_amp_fn, log_amp_user,
+                                        NULL, NULL, out_energy_trace);
+}
+
+int nqs_sr_run_holomorphic_full(const nqs_config_t *cfg,
+                                 int size_x, int size_y,
+                                 nqs_ansatz_t *ansatz,
+                                 nqs_sampler_t *sampler,
+                                 nqs_log_amp_fn_t log_amp_fn,
+                                 void *log_amp_user,
+                                 nqs_holomorphic_gradient_fn_t grad_fn,
+                                 void *grad_user,
+                                 double *out_energy_trace) {
     if (!cfg || !ansatz || !sampler) return -1;
     nqs_sampler_thermalize(sampler);
     for (int it = 0; it < cfg->num_iterations; it++) {
         nqs_sr_step_info_t info;
-        int rc = nqs_sr_step_holomorphic(cfg, size_x, size_y, ansatz, sampler,
-                                           log_amp_fn, log_amp_user, &info);
+        int rc = nqs_sr_step_holomorphic_full(cfg, size_x, size_y, ansatz, sampler,
+                                                log_amp_fn, log_amp_user,
+                                                grad_fn, grad_user, &info);
         if (rc != 0) return rc;
         if (out_energy_trace) out_energy_trace[it] = info.mean_energy;
     }

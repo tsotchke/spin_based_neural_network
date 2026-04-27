@@ -57,6 +57,21 @@ int nqs_symproj_gradient(void *grad_user,
                          const int *spins, int num_sites,
                          double *out_grad);
 
+/* Holomorphic gradient through the projection wrapper.  Returns
+ *   ∂ log ψ_sym / ∂ θ_k = Σ_g w_g · ∂ log ψ_base(g·s) / ∂ θ_k     (complex)
+ * with w_g = χ(g) · ψ_base(g·s) / Σ_g' χ(g') · ψ_base(g'·s)        (complex).
+ *
+ * For a real-valued character χ ∈ {-1, +1} (the kagome p6m 1D irreps)
+ * and a complex-amplitude base ansatz, both numerator and denominator
+ * carry phases and the weights are themselves complex.  This is the
+ * gradient required by `nqs_sr_step_holomorphic_full` to train a
+ * symmetry-projected complex ansatz against a non-stoquastic target. */
+int nqs_symproj_gradient_complex(void *grad_user,
+                                  nqs_ansatz_t *ansatz,
+                                  const int *spins, int num_sites,
+                                  double *out_grad_re,
+                                  double *out_grad_im);
+
 /* ------------------------------------------------------------------ */
 /* Permutation builders for standard kagome subgroups.                */
 /*                                                                    */

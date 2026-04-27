@@ -148,6 +148,43 @@ int nqs_sr_run_holomorphic(const nqs_config_t *cfg,
                             void *log_amp_user,
                             double *out_energy_trace);
 
+/* Holomorphic-gradient callback for symmetry-projected / wrapped
+ * complex ansätze.  Returns the complex per-parameter gradient as
+ * separate Re/Im buffers.  Same role as `nqs_gradient_fn_t` for the
+ * real-projected SR path. */
+typedef int (*nqs_holomorphic_gradient_fn_t)(void *grad_user,
+                                              nqs_ansatz_t *ansatz,
+                                              const int *spins, int num_sites,
+                                              double *out_re,
+                                              double *out_im);
+
+/* Same as `nqs_sr_step_holomorphic` but takes a holomorphic gradient
+ * callback so the symproj wrapper can feed back the projected
+ * gradient ∂ log ψ_sym / ∂ θ for non-stoquastic NQS targets.
+ *
+ * When `grad_fn == NULL` the function falls back to
+ * `nqs_ansatz_logpsi_gradient_complex` on the base ansatz, exactly
+ * matching the v1 holomorphic-SR behaviour. */
+int nqs_sr_step_holomorphic_full(const nqs_config_t *cfg,
+                                  int size_x, int size_y,
+                                  nqs_ansatz_t *ansatz,
+                                  nqs_sampler_t *sampler,
+                                  nqs_log_amp_fn_t log_amp_fn,
+                                  void *log_amp_user,
+                                  nqs_holomorphic_gradient_fn_t grad_fn,
+                                  void *grad_user,
+                                  nqs_sr_step_info_t *out_info);
+
+int nqs_sr_run_holomorphic_full(const nqs_config_t *cfg,
+                                 int size_x, int size_y,
+                                 nqs_ansatz_t *ansatz,
+                                 nqs_sampler_t *sampler,
+                                 nqs_log_amp_fn_t log_amp_fn,
+                                 void *log_amp_user,
+                                 nqs_holomorphic_gradient_fn_t grad_fn,
+                                 void *grad_user,
+                                 double *out_energy_trace);
+
 /* Real-time tVMC step (Schrödinger evolution in the variational manifold).
  *
  * For real parameters θ, the complex tVMC projection equation

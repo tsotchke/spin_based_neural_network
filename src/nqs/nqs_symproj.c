@@ -154,6 +154,112 @@ int nqs_symproj_gradient(void *grad_user,
     return 0;
 }
 
+int nqs_symproj_gradient_complex(void *grad_user,
+                                  nqs_ansatz_t *ansatz,
+                                  const int *spins, int num_sites,
+                                  double *out_grad_re,
+                                  double *out_grad_im) {
+    if (!grad_user || !ansatz || !spins || !out_grad_re || !out_grad_im)
+        return -1;
+    nqs_symproj_wrapper_t *w = (nqs_symproj_wrapper_t *)grad_user;
+    int N = w->num_sites;
+    int G = w->num_group_elements;
+    if (num_sites != N || N <= 0 || G <= 0) return -1;
+    long P = nqs_ansatz_num_params(ansatz);
+
+    /* Pre-evaluate ψ_base on every orbit member, capture (lp, arg). */
+    int **shifted_store = (int **)malloc((size_t)G * sizeof(int *));
+    double *lp_arr  = (double *)malloc((size_t)G * sizeof(double));
+    double *arg_arr = (double *)malloc((size_t)G * sizeof(double));
+    if (!shifted_store || !lp_arr || !arg_arr) {
+        free(shifted_store); free(lp_arr); free(arg_arr); return -1;
+    }
+    double max_lp = -1e300;
+    for (int g = 0; g < G; g++) {
+        shifted_store[g] = (int *)malloc((size_t)N * sizeof(int));
+        if (!shifted_store[g]) {
+            for (int gg = 0; gg < g; gg++) free(shifted_store[gg]);
+            free(shifted_store); free(lp_arr); free(arg_arr); return -1;
+        }
+        apply_perm(&w->perm[(size_t)g * N], N, spins, shifted_store[g]);
+        double lp, arg;
+        w->base_log_amp(shifted_store[g], N, w->base_user, &lp, &arg);
+        lp_arr[g]  = lp;
+        arg_arr[g] = arg;
+        if (lp > max_lp) max_lp = lp;
+    }
+
+    /* Complex-weighted denominator Z = Σ_g χ(g) · e^{lp_g - max_lp + i arg_g}.
+     * χ is real for the supported 1D kagome irreps; multiplied straight
+     * into the magnitude. */
+    double denom_re = 0.0, denom_im = 0.0;
+    double *contrib_re = (double *)malloc((size_t)G * sizeof(double));
+    double *contrib_im = (double *)malloc((size_t)G * sizeof(double));
+    if (!contrib_re || !contrib_im) {
+        for (int g = 0; g < G; g++) free(shifted_store[g]);
+        free(shifted_store); free(lp_arr); free(arg_arr);
+        free(contrib_re); free(contrib_im);
+        return -1;
+    }
+    for (int g = 0; g < G; g++) {
+        double mag = w->characters[g] * exp(lp_arr[g] - max_lp);
+        double cR  = mag * cos(arg_arr[g]);
+        double cI  = mag * sin(arg_arr[g]);
+        contrib_re[g] = cR;
+        contrib_im[g] = cI;
+        denom_re += cR;
+        denom_im += cI;
+    }
+    double denom_abs2 = denom_re * denom_re + denom_im * denom_im;
+    if (denom_abs2 == 0.0) {
+        memset(out_grad_re, 0, (size_t)P * sizeof(double));
+        memset(out_grad_im, 0, (size_t)P * sizeof(double));
+        for (int g = 0; g < G; g++) free(shifted_store[g]);
+        free(shifted_store); free(lp_arr); free(arg_arr);
+        free(contrib_re); free(contrib_im);
+        return 0;
+    }
+
+    /* Per-orbit complex weight w_g = contrib_g / denom (complex divide). */
+    /* Sum of  w_g · ∂ log ψ_base(g·s) / ∂ θ.  Holomorphic base gradient
+     * itself returns (Re, Im) per parameter; the complex multiply
+     * w_g · grad_base_g lifts straight through. */
+    double *tmp_re = (double *)malloc((size_t)P * sizeof(double));
+    double *tmp_im = (double *)malloc((size_t)P * sizeof(double));
+    if (!tmp_re || !tmp_im) {
+        for (int g = 0; g < G; g++) free(shifted_store[g]);
+        free(shifted_store); free(lp_arr); free(arg_arr);
+        free(contrib_re); free(contrib_im); free(tmp_re); free(tmp_im);
+        return -1;
+    }
+    memset(out_grad_re, 0, (size_t)P * sizeof(double));
+    memset(out_grad_im, 0, (size_t)P * sizeof(double));
+
+    for (int g = 0; g < G; g++) {
+        /* w_g = contrib_g / denom (complex divide). */
+        double wgR = (contrib_re[g] * denom_re + contrib_im[g] * denom_im) / denom_abs2;
+        double wgI = (contrib_im[g] * denom_re - contrib_re[g] * denom_im) / denom_abs2;
+        if (wgR == 0.0 && wgI == 0.0) continue;
+        if (nqs_ansatz_logpsi_gradient_complex(ansatz, shifted_store[g], N,
+                                                 tmp_re, tmp_im) != 0) {
+            for (int gg = 0; gg < G; gg++) free(shifted_store[gg]);
+            free(shifted_store); free(lp_arr); free(arg_arr);
+            free(contrib_re); free(contrib_im); free(tmp_re); free(tmp_im);
+            return -1;
+        }
+        /* (wR + i wI)·(grR + i grI) = (wR·grR - wI·grI) + i (wR·grI + wI·grR) */
+        for (long k = 0; k < P; k++) {
+            double grR = tmp_re[k], grI = tmp_im[k];
+            out_grad_re[k] += wgR * grR - wgI * grI;
+            out_grad_im[k] += wgR * grI + wgI * grR;
+        }
+    }
+    for (int g = 0; g < G; g++) free(shifted_store[g]);
+    free(shifted_store); free(lp_arr); free(arg_arr);
+    free(contrib_re); free(contrib_im); free(tmp_re); free(tmp_im);
+    return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* Permutation builders for kagome.                                   */
 /* ------------------------------------------------------------------ */
