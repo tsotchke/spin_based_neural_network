@@ -1088,6 +1088,171 @@ static int crbm_gradient_complex(const nqs_ansatz_t *a,
     return 0;
 }
 
+/* Holomorphic gradient ∂ log ψ / ∂ θ for the complex ViT.  Each
+ * parameter θ is real, but log ψ is complex, so we return separate
+ * Re and Im components per parameter.
+ *
+ * Because log ψ is holomorphic in each complex weight z = θ_R + i θ_I:
+ *   ∂ log ψ / ∂ θ_R = ∂ log ψ / ∂ z         (complex)
+ *   ∂ log ψ / ∂ θ_I = i · ∂ log ψ / ∂ z
+ * so we compute the complex derivative once per (θ_R, θ_I) pair and
+ * materialise both halves.  The factored attention bias is real-only
+ * and contributes a complex chain-rule term to itself.
+ */
+static int vit_c_gradient_complex(const nqs_ansatz_t *a,
+                                   const int *spins,
+                                   double *out_re, double *out_im) {
+    vit_c_offsets_t o; vit_c_offsets(a, &o);
+    int N = o.N, d = o.d;
+    const double *VR = &a->params[o.V_R];
+    const double *VI = &a->params[o.V_I];
+    const double *WR = &a->params[o.W_out_R];
+    const double *WI = &a->params[o.W_out_I];
+
+    vit_c_workspace_t ws;
+    if (vit_c_workspace_init(&ws, N, d) != 0) return -1;
+    double dummy_la, dummy_arg;
+    vit_c_forward(a, spins, &ws, &dummy_la, &dummy_arg);
+
+    long P = a->num_params;
+    memset(out_re, 0, (size_t)P * sizeof(double));
+    memset(out_im, 0, (size_t)P * sizeof(double));
+
+    /* b_out: ∂ log ψ / ∂ b_out_R = 1 ;  ∂ log ψ / ∂ b_out_I = i */
+    out_re[o.b_out_R] = 1.0;
+    out_im[o.b_out_R] = 0.0;
+    out_re[o.b_out_I] = 0.0;
+    out_im[o.b_out_I] = 1.0;
+
+    /* W_out: ∂ log ψ / ∂ W_R[k] = Σ_i o_i[k]   (complex)
+     *        ∂ log ψ / ∂ W_I[k] = i · Σ_i o_i[k] */
+    for (int k = 0; k < d; k++) {
+        double sR = 0.0, sI = 0.0;
+        for (int i = 0; i < N; i++) {
+            sR += ws.oR[i*d + k];
+            sI += ws.oI[i*d + k];
+        }
+        out_re[o.W_out_R + k] =  sR;
+        out_im[o.W_out_R + k] =  sI;
+        out_re[o.W_out_I + k] = -sI;   /* Re(i · z) = −Im(z) */
+        out_im[o.W_out_I + k] =  sR;   /* Im(i · z) =  Re(z) */
+    }
+
+    /* s_pred[j] = Σ_i P_ij  (real scalar) */
+    double *s_pred = calloc((size_t)N, sizeof(double));
+    /* Wv_complex[j] = (W_R + i W_I) · v_j  (complex)
+     * Wo_complex[i] = (W_R + i W_I) · o_i  (complex)         */
+    double *WvR = calloc((size_t)N, sizeof(double));
+    double *WvI = calloc((size_t)N, sizeof(double));
+    double *WoR = calloc((size_t)N, sizeof(double));
+    double *WoI = calloc((size_t)N, sizeof(double));
+    if (!s_pred || !WvR || !WvI || !WoR || !WoI) {
+        free(s_pred); free(WvR); free(WvI); free(WoR); free(WoI);
+        vit_c_workspace_free(&ws); return -1;
+    }
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++) s_pred[j] += ws.P[i*N + j];
+    for (int j = 0; j < N; j++) {
+        double rR = 0.0, rI = 0.0;
+        for (int k = 0; k < d; k++) {
+            double vr = ws.vR[j*d + k], vi = ws.vI[j*d + k];
+            rR += WR[k] * vr - WI[k] * vi;
+            rI += WR[k] * vi + WI[k] * vr;
+        }
+        WvR[j] = rR; WvI[j] = rI;
+    }
+    for (int i = 0; i < N; i++) {
+        double rR = 0.0, rI = 0.0;
+        for (int k = 0; k < d; k++) {
+            double or_ = ws.oR[i*d + k], oi_ = ws.oI[i*d + k];
+            rR += WR[k] * or_ - WI[k] * oi_;
+            rI += WR[k] * oi_ + WI[k] * or_;
+        }
+        WoR[i] = rR; WoI[i] = rI;
+    }
+
+    /* attention bias: ∂ log ψ / ∂ a[rel] = Σ_{(i,j): rel} P_ij · (Wv − Wo) */
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            int rel = ((i - j) % N + N) % N;
+            double dR = ws.P[i*N + j] * (WvR[j] - WoR[i]);
+            double dI = ws.P[i*N + j] * (WvI[j] - WoI[i]);
+            out_re[o.attn + rel] += dR;
+            out_im[o.attn + rel] += dI;
+        }
+    }
+
+    /* ev_complex[l] = Σ_j s_pred[j] · e_j_complex[l] */
+    double *evR = calloc((size_t)d, sizeof(double));
+    double *evI = calloc((size_t)d, sizeof(double));
+    if (!evR || !evI) {
+        free(s_pred); free(WvR); free(WvI); free(WoR); free(WoI);
+        free(evR); free(evI);
+        vit_c_workspace_free(&ws); return -1;
+    }
+    for (int j = 0; j < N; j++)
+        for (int l = 0; l < d; l++) {
+            evR[l] += s_pred[j] * ws.eR[j*d + l];
+            evI[l] += s_pred[j] * ws.eI[j*d + l];
+        }
+
+    /* ∂ log ψ / ∂ V_complex[k][l] = W_c[k] · ev_c[l]
+     * Real / imag of that complex product: */
+    for (int k = 0; k < d; k++) {
+        for (int l = 0; l < d; l++) {
+            double zR = WR[k] * evR[l] - WI[k] * evI[l];
+            double zI = WR[k] * evI[l] + WI[k] * evR[l];
+            out_re[o.V_R + k*d + l] =  zR;
+            out_im[o.V_R + k*d + l] =  zI;
+            out_re[o.V_I + k*d + l] = -zI;
+            out_im[o.V_I + k*d + l] =  zR;
+        }
+    }
+
+    /* alpha_complex[l] = (V_c^T · W_c)[l] */
+    double *alphaR = calloc((size_t)d, sizeof(double));
+    double *alphaI = calloc((size_t)d, sizeof(double));
+    if (!alphaR || !alphaI) {
+        free(s_pred); free(WvR); free(WvI); free(WoR); free(WoI);
+        free(evR); free(evI); free(alphaR); free(alphaI);
+        vit_c_workspace_free(&ws); return -1;
+    }
+    for (int l = 0; l < d; l++) {
+        for (int k = 0; k < d; k++) {
+            alphaR[l] += VR[k*d + l] * WR[k] - VI[k*d + l] * WI[k];
+            alphaI[l] += VR[k*d + l] * WI[k] + VI[k*d + l] * WR[k];
+        }
+    }
+
+    double sum_sp_s = 0.0, sum_sp = 0.0;
+    for (int j = 0; j < N; j++) {
+        sum_sp_s += s_pred[j] * (double)spins[j];
+        sum_sp   += s_pred[j];
+    }
+
+    /* w_emb_complex[l]: ∂ log ψ / ∂ z_l = sum_sp_s · alpha_c[l]   */
+    /* b_emb_complex[l]: ∂ log ψ / ∂ z_l = sum_sp · alpha_c[l]     */
+    for (int l = 0; l < d; l++) {
+        double zR_w = sum_sp_s * alphaR[l];
+        double zI_w = sum_sp_s * alphaI[l];
+        double zR_b = sum_sp   * alphaR[l];
+        double zI_b = sum_sp   * alphaI[l];
+        out_re[o.w_emb_R + l] =  zR_w;
+        out_im[o.w_emb_R + l] =  zI_w;
+        out_re[o.w_emb_I + l] = -zI_w;
+        out_im[o.w_emb_I + l] =  zR_w;
+        out_re[o.b_emb_R + l] =  zR_b;
+        out_im[o.b_emb_R + l] =  zI_b;
+        out_re[o.b_emb_I + l] = -zI_b;
+        out_im[o.b_emb_I + l] =  zR_b;
+    }
+
+    free(s_pred); free(WvR); free(WvI); free(WoR); free(WoI);
+    free(evR); free(evI); free(alphaR); free(alphaI);
+    vit_c_workspace_free(&ws);
+    return 0;
+}
+
 int nqs_ansatz_logpsi_gradient_complex(nqs_ansatz_t *a,
                                         const int *spins, int num_sites,
                                         double *out_re, double *out_im) {
@@ -1095,6 +1260,9 @@ int nqs_ansatz_logpsi_gradient_complex(nqs_ansatz_t *a,
     long P = a->num_params;
     if (a->kind == NQS_ANSATZ_COMPLEX_RBM) {
         return crbm_gradient_complex(a, spins, out_re, out_im);
+    }
+    if (a->kind == NQS_ANSATZ_FACTORED_VIT_COMPLEX) {
+        return vit_c_gradient_complex(a, spins, out_re, out_im);
     }
     /* Real ansätze: imaginary part is zero; real part = ∂ log|ψ|/∂θ. */
     int rc = nqs_ansatz_logpsi_gradient(a, spins, num_sites, out_re);

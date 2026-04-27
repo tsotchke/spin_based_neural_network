@@ -210,6 +210,61 @@ static void test_vit_complex_gradient_matches_fd(void) {
     nqs_ansatz_free(a);
 }
 
+/* Finite-difference of log ψ as a complex value (separately Re and Im). */
+static void fd_grad_complex_at(nqs_ansatz_t *a, const int *spins, int num_sites,
+                               long k, double h,
+                               double *out_re, double *out_im) {
+    double *p = nqs_ansatz_params_raw(a);
+    double saved = p[k];
+    double fr[4], fi[4];
+    double offsets[4] = { +2*h, +h, -h, -2*h };
+    for (int s = 0; s < 4; s++) {
+        p[k] = saved + offsets[s];
+        double lp, arg;
+        nqs_ansatz_log_amp(spins, num_sites, a, &lp, &arg);
+        fr[s] = lp; fi[s] = arg;
+    }
+    p[k] = saved;
+    *out_re = (-fr[0] + 8.0*fr[1] - 8.0*fr[2] + fr[3]) / (12.0 * h);
+    *out_im = (-fi[0] + 8.0*fi[1] - 8.0*fi[2] + fi[3]) / (12.0 * h);
+}
+
+static void test_vit_complex_holomorphic_gradient_matches_fd(void) {
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz = NQS_ANSATZ_FACTORED_VIT_COMPLEX;
+    cfg.width  = 4;
+    cfg.rng_seed = 0xFEED5EEDu;
+    int N = 6;
+    nqs_ansatz_t *a = nqs_ansatz_create(&cfg, N);
+    ASSERT_TRUE(a != NULL);
+    ASSERT_EQ_INT(nqs_ansatz_is_complex(a), 1);
+
+    int spins[6] = { +1, -1, +1, -1, +1, -1 };
+    long P = nqs_ansatz_num_params(a);
+    double *gR = malloc((size_t)P * sizeof(double));
+    double *gI = malloc((size_t)P * sizeof(double));
+    ASSERT_EQ_INT(nqs_ansatz_logpsi_gradient_complex(a, spins, N, gR, gI), 0);
+
+    double max_err = 0.0;
+    long max_err_k = -1;
+    int max_err_part = 0;     /* 0 = Re, 1 = Im */
+    for (long k = 0; k < P; k++) {
+        double fdR, fdI;
+        fd_grad_complex_at(a, spins, N, k, 1e-4, &fdR, &fdI);
+        double eR = fabs(fdR - gR[k]);
+        double eI = fabs(fdI - gI[k]);
+        if (eR > max_err) { max_err = eR; max_err_k = k; max_err_part = 0; }
+        if (eI > max_err) { max_err = eI; max_err_k = k; max_err_part = 1; }
+    }
+    printf("# complex ViT holomorphic ∇: %ld params, max err %.3e at "
+           "k=%ld (%s part)\n",
+           P, max_err, max_err_k, max_err_part ? "Im" : "Re");
+    ASSERT_TRUE(max_err < 1e-7);
+
+    free(gR); free(gI);
+    nqs_ansatz_free(a);
+}
+
 int main(void) {
     TEST_RUN(test_vit_lifecycle);
     TEST_RUN(test_vit_forward_finite);
@@ -218,5 +273,6 @@ int main(void) {
     TEST_RUN(test_vit_complex_lifecycle);
     TEST_RUN(test_vit_complex_forward_finite_with_phase);
     TEST_RUN(test_vit_complex_gradient_matches_fd);
+    TEST_RUN(test_vit_complex_holomorphic_gradient_matches_fd);
     TEST_SUMMARY();
 }
