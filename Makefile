@@ -486,6 +486,12 @@ test_torque_net_irrep: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
 	    src/equivariant_gnn/torque_net_irrep.c \
 	    $(LDFLAGS) $(IRREP_LDFLAGS)
 
+test_nqs_kspace_ed: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
+	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) -o $(BIN_DIR)/test_nqs_kspace_ed \
+	    tests/test_nqs_kspace_ed.c \
+	    src/nqs/nqs_kspace_ed.c \
+	    $(LDFLAGS) $(IRREP_LDFLAGS)
+
 test_moonlab_bridge: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) $(MOONLAB_CFLAGS) -o $(BIN_DIR)/test_moonlab_bridge \
 	    tests/test_moonlab_bridge.c src/moonlab_bridge.c \
