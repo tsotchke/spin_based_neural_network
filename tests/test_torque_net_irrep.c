@@ -105,10 +105,116 @@ static void test_pairwise_orthogonality_l1_l2(void) {
     double expected = 0.5 * sqrt(5.0 / (16.0 * M_PI));
     ASSERT_NEAR(y20, expected, 1e-8);
 }
+/* ---------------------------------------------------------------- *
+ *  NequIP-backed torque_net (libirrep-driven E(3) tower)            *
+ * ---------------------------------------------------------------- */
+#include "equivariant_gnn/torque_net_irrep.h"
+
+static void rot3_apply(const double R[9], const double v[3], double out[3]) {
+    out[0] = R[0]*v[0] + R[1]*v[1] + R[2]*v[2];
+    out[1] = R[3]*v[0] + R[4]*v[1] + R[5]*v[2];
+    out[2] = R[6]*v[0] + R[7]*v[1] + R[8]*v[2];
+}
+
+static void test_irrep_layer_constructs(void) {
+    torque_net_irrep_t *net =
+        torque_net_irrep_create("1x1o", "1x1o", /*sh*/ 2, /*radial*/ 4,
+                                 /*r_cut*/ 1.5, /*poly p*/ 6);
+    ASSERT_TRUE(net != NULL);
+    ASSERT_EQ_INT(torque_net_irrep_in_dim(net),  3);
+    ASSERT_EQ_INT(torque_net_irrep_out_dim(net), 3);
+    int nw = torque_net_irrep_num_weights(net);
+    ASSERT_TRUE(nw > 0);
+    printf("# NequIP 1x1o -> 1x1o, sh=2, radial=4, r_cut=1.5, p=6: "
+           "%d learnable TP weights\n", nw);
+    torque_net_irrep_free(net);
+}
+
+/* Helper: run NequIP forward + collect outputs.  Caller owns buffers. */
+static int run_irrep_forward(torque_net_irrep_t *net, const double *w,
+                             const torque_net_graph_t *g,
+                             const double *m, double *out) {
+    return torque_net_irrep_forward(net, w, g, m, out);
+}
+
+static void test_irrep_forward_so3_equivariance(void) {
+    /* Open-BC 3x3 grid → graph has no torus-tiling constraint, so any
+     * SO(3) rotation R is a clean equivariance test.  Periodic graphs
+     * impose `R must preserve the torus`, which constrains the test
+     * but doesn't change the underlying claim. */
+    int Lx = 3, Ly = 3, N = Lx * Ly;
+    int *src, *dst; double *vec; int E;
+    torque_net_build_grid(Lx, Ly, /*periodic*/ 0, &src, &dst, &vec, &E);
+    torque_net_graph_t g = { .num_nodes = N, .num_edges = E,
+                             .edge_src  = src, .edge_dst  = dst,
+                             .edge_vec  = vec };
+
+    torque_net_irrep_t *net =
+        torque_net_irrep_create("1x1o", "1x1o", 2, 4, 1.5, 6);
+    ASSERT_TRUE(net != NULL);
+    int nw = torque_net_irrep_num_weights(net);
+    double *w = (double *)malloc((size_t)nw * sizeof(double));
+    for (int i = 0; i < nw; i++) w[i] = 0.1 * sin(0.7 * i + 1.3);
+
+    double *m = (double *)malloc((size_t)3 * N * sizeof(double));
+    for (int i = 0; i < N; i++) {
+        double t = 2.0 * M_PI * i / (double)N;
+        double s = sin(0.5 * i + 0.2);
+        double c = sqrt(1.0 - s * s);
+        m[3*i + 0] = c * cos(t);
+        m[3*i + 1] = c * sin(t);
+        m[3*i + 2] = s;
+    }
+
+    double *out_unrot = (double *)calloc((size_t)3 * N, sizeof(double));
+    ASSERT_EQ_INT(run_irrep_forward(net, w, &g, m, out_unrot), 0);
+
+    /* 30-degree rotation about (1, 1, 1)/√3 — non-symmetric, generic. */
+    double th = M_PI / 6.0;
+    double cx = 1.0/sqrt(3.0), cy = 1.0/sqrt(3.0), cz = 1.0/sqrt(3.0);
+    double C = cos(th), S = sin(th), V = 1.0 - C;
+    double R[9] = {
+        cx*cx*V + C,    cx*cy*V - cz*S, cx*cz*V + cy*S,
+        cy*cx*V + cz*S, cy*cy*V + C,    cy*cz*V - cx*S,
+        cz*cx*V - cy*S, cz*cy*V + cx*S, cz*cz*V + C
+    };
+
+    double *m_R   = (double *)malloc((size_t)3 * N * sizeof(double));
+    double *vec_R = (double *)malloc((size_t)3 * E * sizeof(double));
+    for (int i = 0; i < N; i++) rot3_apply(R, &m[3*i],   &m_R[3*i]);
+    for (int e = 0; e < E; e++) rot3_apply(R, &vec[3*e], &vec_R[3*e]);
+    torque_net_graph_t g_rot = g;
+    g_rot.edge_vec = vec_R;
+
+    double *out_rot = (double *)calloc((size_t)3 * N, sizeof(double));
+    ASSERT_EQ_INT(run_irrep_forward(net, w, &g_rot, m_R, out_rot), 0);
+
+    double max_err = 0.0;
+    double *expected = (double *)malloc((size_t)3 * N * sizeof(double));
+    for (int i = 0; i < N; i++) {
+        rot3_apply(R, &out_unrot[3*i], &expected[3*i]);
+        for (int k = 0; k < 3; k++) {
+            double e = fabs(expected[3*i + k] - out_rot[3*i + k]);
+            if (e > max_err) max_err = e;
+        }
+    }
+    printf("# NequIP-backed torque equivariance residual: %.3e\n", max_err);
+    /* libirrep's SH / UVW TP machinery preserves equivariance to ~ 1e-12
+     * on any rotation. */
+    ASSERT_TRUE(max_err < 1e-10);
+
+    free(w); free(m); free(m_R); free(vec_R);
+    free(out_unrot); free(out_rot); free(expected);
+    free(src); free(dst); free(vec);
+    torque_net_irrep_free(net);
+}
+
 int main(void) {
     TEST_RUN(test_bridge_reports_available);
     TEST_RUN(test_sh_addition_theorem_l1_matches_cartesian_dot);
     TEST_RUN(test_pairwise_orthogonality_l1_l2);
+    TEST_RUN(test_irrep_layer_constructs);
+    TEST_RUN(test_irrep_forward_so3_equivariance);
     TEST_SUMMARY();
 }
 #else /* !SPIN_NN_HAS_IRREP */

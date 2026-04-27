@@ -65,7 +65,7 @@ ifeq ($(IRREP_ENABLE),1)
     IRREP_LIBDIR ?= $(IRREP_ROOT)/lib
   endif
   IRREP_LIB     ?= libirrep
-  IRREP_CFLAGS  := -I$(IRREP_INCLUDE) -DSPIN_NN_HAS_IRREP=1
+  IRREP_CFLAGS  := -I$(IRREP_INCLUDE) -DSPIN_NN_HAS_IRREP=1 -DSPIN_NN_HAS_IRREP_NEQUIP=1
   IRREP_LDFLAGS := -L$(IRREP_LIBDIR) -l$(IRREP_LIB) -Wl,-rpath,$(IRREP_LIBDIR)
 endif
 
@@ -480,7 +480,10 @@ test_libirrep_bridge: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
 
 test_torque_net_irrep: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
 	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) -o $(BIN_DIR)/test_torque_net_irrep \
-	    tests/test_torque_net_irrep.c src/libirrep_bridge.c \
+	    tests/test_torque_net_irrep.c \
+	    src/libirrep_bridge.c \
+	    src/equivariant_gnn/torque_net.c \
+	    src/equivariant_gnn/torque_net_irrep.c \
 	    $(LDFLAGS) $(IRREP_LDFLAGS)
 
 test_moonlab_bridge: $(BIN_DIR)
