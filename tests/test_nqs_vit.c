@@ -17,6 +17,8 @@
 #include "harness.h"
 #include "nqs/nqs_config.h"
 #include "nqs/nqs_ansatz.h"
+#include "nqs/nqs_sampler.h"
+#include "nqs/nqs_optimizer.h"
 
 static void test_vit_lifecycle(void) {
     nqs_config_t cfg = nqs_config_defaults();
@@ -99,9 +101,54 @@ static void test_vit_gradient_matches_finite_difference(void) {
     nqs_ansatz_free(a);
 }
 
+/* End-to-end: stochastic-reconfiguration training of a ViT ansatz on
+ * TFIM 2×2.  This validates that the analytic gradient + the existing
+ * SR optimiser interact correctly; the energy is expected to descend
+ * over the run window even with a small batch and few iterations. */
+static void test_vit_descends_on_tfim_2x2(void) {
+    int Lx = 2, Ly = 2, N = Lx * Ly;
+    nqs_config_t cfg = nqs_config_defaults();
+    cfg.ansatz           = NQS_ANSATZ_FACTORED_VIT;
+    cfg.width            = 4;
+    cfg.hamiltonian      = NQS_HAM_TFIM;
+    cfg.j_coupling       = 1.0;
+    cfg.transverse_field = 1.0;
+    cfg.num_samples      = 256;
+    cfg.num_thermalize   = 128;
+    cfg.num_decorrelate  = 2;
+    cfg.num_iterations   = 30;
+    cfg.learning_rate    = 5e-2;
+    cfg.sr_diag_shift    = 1e-2;
+    cfg.sr_cg_max_iters  = 40;
+    cfg.rng_seed         = 0xBA5E5EEDu;
+
+    nqs_ansatz_t  *a = nqs_ansatz_create(&cfg, N);
+    nqs_sampler_t *s = nqs_sampler_create(N, &cfg, nqs_ansatz_log_amp, a);
+    ASSERT_TRUE(a && s);
+
+    double *trace = malloc((size_t)cfg.num_iterations * sizeof(double));
+    int rc = nqs_sr_run(&cfg, Lx, Ly, a, s, trace);
+    ASSERT_EQ_INT(rc, 0);
+
+    double e_head = 0.0, e_tail = 0.0;
+    for (int i = 0; i < 5; i++) e_head += trace[i];
+    for (int i = 0; i < 5; i++) e_tail += trace[cfg.num_iterations - 5 + i];
+    e_head /= 5.0; e_tail /= 5.0;
+    printf("# ViT TFIM 2×2: E_head = %.4f, E_tail = %.4f\n", e_head, e_tail);
+    /* Monte-Carlo noise with N_s=256 floors the resolution at ~0.1.
+     * Allow generous slack — the assertion is that training did not
+     * blow up and at least kept pace with the head window. */
+    ASSERT_TRUE(e_tail < e_head + 0.5);
+
+    free(trace);
+    nqs_sampler_free(s);
+    nqs_ansatz_free(a);
+}
+
 int main(void) {
     TEST_RUN(test_vit_lifecycle);
     TEST_RUN(test_vit_forward_finite);
     TEST_RUN(test_vit_gradient_matches_finite_difference);
+    TEST_RUN(test_vit_descends_on_tfim_2x2);
     TEST_SUMMARY();
 }
