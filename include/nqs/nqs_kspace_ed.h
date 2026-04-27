@@ -78,6 +78,46 @@ int nqs_kspace_ed_kagome_at_gamma(int L, double J,
                                    int k_wanted, int max_iters,
                                    double *eigvals_out);
 
+/* Named irrep selector for the C_6v little group at Γ on kagome p6mm.
+ * Mirrors libirrep's irrep_lg_named_irrep_t but stays C-ABI-clean. */
+typedef enum {
+    NQS_KSPACE_IRREP_A1 = 0,
+    NQS_KSPACE_IRREP_A2 = 1,
+    NQS_KSPACE_IRREP_B1 = 2,
+    NQS_KSPACE_IRREP_B2 = 3
+    /* E1, E2 are 2D — handled by a different sector builder, not yet
+     * wired here.  Most kagome AFM ground states are in a 1D irrep
+     * for cluster sizes the 2D-irrep code path doesn't yet cover. */
+} nqs_kspace_irrep_t;
+
+/* Same as nqs_kspace_ed_kagome_at_gamma but with explicit irrep
+ * selection.  irrep_name picks one of the four 1D irreps of C_6v;
+ * the function projects the Heisenberg Hamiltonian onto (Γ, irrep_name)
+ * and runs reorthogonalised Lanczos.  Returns the same status codes
+ * as nqs_kspace_ed_kagome_at_gamma. */
+int nqs_kspace_ed_kagome_irrep(int L, double J,
+                                nqs_kspace_irrep_t irrep_name,
+                                int k_wanted, int max_iters,
+                                double *eigvals_out);
+
+/* Scan all four 1D irreps at Γ and return:
+ *   global_e0  — the lowest eigenvalue across all (Γ, irrep) sectors
+ *   global_e1  — the second-lowest, across the SAME or DIFFERENT sector
+ *   gs_irrep   — irrep containing global_e0 (output: see enum)
+ *   per_irrep_e0[4] — lowest in each of {A1, A2, B1, B2} (caller buffer)
+ *
+ * This is the spin-gap protocol for kagome AFM at Γ: the gap is
+ * Δ = global_e1 − global_e0, and gs_irrep carries the symmetry of the
+ * ground state.  Z₂ spin liquid → finite Δ; Dirac spin liquid → Δ → 0
+ * with system size.  Returns 0 on success.
+ */
+int nqs_kspace_ed_kagome_scan_gamma_1d_irreps(int L, double J,
+                                                int max_iters,
+                                                double *global_e0,
+                                                double *global_e1,
+                                                nqs_kspace_irrep_t *gs_irrep,
+                                                double per_irrep_e0[4]);
+
 #endif /* SPIN_NN_HAS_IRREP */
 
 #ifdef __cplusplus

@@ -92,11 +92,38 @@ static void test_kagome_2x2_gamma_a1_matches_homegrown_E1(void) {
     ASSERT_TRUE(evals[1] >= evals[0] - 1e-12);
 }
 
+/* Scan all 1D irreps at Γ on kagome 2×2 PBC.  The global ground state
+ * E_0 = -5.44487522 from the homegrown full-Hilbert-space spectrum
+ * must surface as the minimum across {A_1, A_2, B_1, B_2}.  The irrep
+ * containing it is the symmetry of the kagome AFM ground state on
+ * this cluster — physically informative for the spin-liquid
+ * classification protocol. */
+static void test_kagome_2x2_gs_lives_in_some_1d_irrep_at_gamma(void) {
+    double global_e0 = +1e300, global_e1 = +1e300;
+    nqs_kspace_irrep_t gs_irrep = NQS_KSPACE_IRREP_A1;
+    double per_irrep[4] = { +1e300, +1e300, +1e300, +1e300 };
+    int rc = nqs_kspace_ed_kagome_scan_gamma_1d_irreps(/*L*/ 2, /*J*/ 1.0,
+                                                       /*max_iters*/ 80,
+                                                       &global_e0, &global_e1,
+                                                       &gs_irrep, per_irrep);
+    ASSERT_EQ_INT(rc, 0);
+    static const char *names[4] = { "A_1", "A_2", "B_1", "B_2" };
+    printf("# kagome 2×2 scan at Γ:  A_1=%.6f  A_2=%.6f  B_1=%.6f  B_2=%.6f\n",
+           per_irrep[0], per_irrep[1], per_irrep[2], per_irrep[3]);
+    printf("# global E_0 = %.10f  (homegrown −5.44487522)  in %s\n"
+           "# global E_1 = %.10f  gap Δ = %.6f\n",
+           global_e0, names[(int)gs_irrep],
+           global_e1, global_e1 - global_e0);
+    ASSERT_NEAR(global_e0, -5.44487522, 1e-6);
+    ASSERT_TRUE(global_e1 >= global_e0 - 1e-12);
+}
+
 int main(void) {
     TEST_RUN(test_two_site_heisenberg_matches_analytic_singlet);
     TEST_RUN(test_four_site_ring_matches_bethe_ansatz);
     TEST_RUN(test_six_site_ring_matches_known_reference);
     TEST_RUN(test_kagome_2x2_gamma_a1_matches_homegrown_E1);
+    TEST_RUN(test_kagome_2x2_gs_lives_in_some_1d_irrep_at_gamma);
     TEST_SUMMARY();
 }
 

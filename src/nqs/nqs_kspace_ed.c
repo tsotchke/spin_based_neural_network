@@ -52,9 +52,29 @@ int nqs_kspace_ed_heisenberg(int num_sites, int num_bonds,
     return (rc == IRREP_OK) ? 0 : -4;
 }
 
+/* Map our C-ABI enum to libirrep's named-irrep enum.  A_1, A_2, B_1, B_2
+ * are 1D irreps of C_6v at Γ on kagome p6mm. */
+static irrep_lg_named_irrep_t irrep_name_to_libirrep(nqs_kspace_irrep_t name) {
+    switch (name) {
+    case NQS_KSPACE_IRREP_A1: return IRREP_LG_IRREP_A1;
+    case NQS_KSPACE_IRREP_A2: return IRREP_LG_IRREP_A2;
+    case NQS_KSPACE_IRREP_B1: return IRREP_LG_IRREP_B1;
+    case NQS_KSPACE_IRREP_B2: return IRREP_LG_IRREP_B2;
+    default:                  return IRREP_LG_IRREP_A1;
+    }
+}
+
 int nqs_kspace_ed_kagome_at_gamma(int L, double J,
                                    int k_wanted, int max_iters,
                                    double *eigvals_out) {
+    return nqs_kspace_ed_kagome_irrep(L, J, NQS_KSPACE_IRREP_A1,
+                                       k_wanted, max_iters, eigvals_out);
+}
+
+int nqs_kspace_ed_kagome_irrep(int L, double J,
+                                nqs_kspace_irrep_t irrep_name,
+                                int k_wanted, int max_iters,
+                                double *eigvals_out) {
     if (L <= 0 || k_wanted <= 0 || max_iters <= 0 || !eigvals_out) return -1;
     int N = 3 * L * L;
     if (N > 27) {
@@ -86,7 +106,7 @@ int nqs_kspace_ed_kagome_at_gamma(int L, double J,
         irrep_space_group_free(G); irrep_lattice_free(lat); return -3;
     }
     irrep_sg_little_group_irrep_t *mu_k =
-        irrep_sg_little_group_irrep_named(lg, IRREP_LG_IRREP_A1);
+        irrep_sg_little_group_irrep_named(lg, irrep_name_to_libirrep(irrep_name));
     if (!mu_k) {
         irrep_sg_little_group_free(lg);
         irrep_sg_rep_table_free(T);
@@ -145,6 +165,62 @@ int nqs_kspace_ed_kagome_at_gamma(int L, double J,
     irrep_space_group_free(G);
     irrep_lattice_free(lat);
     return (rc == IRREP_OK) ? 0 : -4;
+}
+
+int nqs_kspace_ed_kagome_scan_gamma_1d_irreps(int L, double J,
+                                                int max_iters,
+                                                double *global_e0,
+                                                double *global_e1,
+                                                nqs_kspace_irrep_t *gs_irrep,
+                                                double per_irrep_e0[4]) {
+    if (L <= 0 || max_iters <= 0 || !global_e0 || !global_e1
+        || !gs_irrep || !per_irrep_e0) return -1;
+
+    nqs_kspace_irrep_t irreps[4] = {
+        NQS_KSPACE_IRREP_A1, NQS_KSPACE_IRREP_A2,
+        NQS_KSPACE_IRREP_B1, NQS_KSPACE_IRREP_B2
+    };
+    /* Run sector ED in each 1D irrep, asking for the 2 lowest eigenvalues. */
+    double sector_evs[4][2];
+    int present[4] = { 0, 0, 0, 0 };
+    for (int i = 0; i < 4; i++) {
+        sector_evs[i][0] = sector_evs[i][1] = +1e300;
+        int rc = nqs_kspace_ed_kagome_irrep(L, J, irreps[i],
+                                              /*k_wanted*/ 2,
+                                              max_iters, sector_evs[i]);
+        if (rc == 0) {
+            present[i] = 1;
+            per_irrep_e0[i] = sector_evs[i][0];
+        } else {
+            /* Sector empty / projector annihilates; report sentinel. */
+            per_irrep_e0[i] = +1e300;
+        }
+    }
+
+    /* Collate the 8 candidate eigenvalues (2 per irrep × 4 irreps),
+     * tagging each with its source irrep. */
+    double pool_e[8];
+    int    pool_irrep[8];
+    int    pool_n = 0;
+    for (int i = 0; i < 4; i++) {
+        if (!present[i]) continue;
+        pool_e[pool_n] = sector_evs[i][0]; pool_irrep[pool_n++] = i;
+        pool_e[pool_n] = sector_evs[i][1]; pool_irrep[pool_n++] = i;
+    }
+    if (pool_n < 2) return -3;
+
+    /* Find the two lowest. */
+    int idx0 = 0;
+    for (int i = 1; i < pool_n; i++) if (pool_e[i] < pool_e[idx0]) idx0 = i;
+    int idx1 = (idx0 == 0) ? 1 : 0;
+    for (int i = 0; i < pool_n; i++) {
+        if (i == idx0) continue;
+        if (pool_e[i] < pool_e[idx1]) idx1 = i;
+    }
+    *global_e0 = pool_e[idx0];
+    *global_e1 = pool_e[idx1];
+    *gs_irrep  = (nqs_kspace_irrep_t)pool_irrep[idx0];
+    return 0;
 }
 
 #endif /* SPIN_NN_HAS_IRREP */
