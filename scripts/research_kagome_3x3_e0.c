@@ -77,8 +77,11 @@ int main(int argc, char **argv) {
            max_iters);
     printf("\n");
 
-    /* Run all 4 1D irreps.  At L=2 the GS is in B_1 at -5.4448752170;
-     * at L=3 the libirrep ED scan reports B_1 too with Δ ≈ 0.05 J. */
+    /* Run all 4 1D irreps.  Empirical from this script + libirrep ED:
+     *   L = 2 (N = 12):  GS in (Γ, B_1) at -5.4448752170, Δ = 0.116 J
+     *   L = 3 (N = 27):  GS in (Γ, A_1) at -11.6098548095, Δ = 0.052 J
+     * (the GS irrep CHANGES with cluster size — it is not a robust
+     * topological label of the bulk system at small N). */
     double e0[4];
     int    iters[4];
     int    converged[4];
@@ -145,7 +148,11 @@ int main(int argc, char **argv) {
         printf("#   B_2: -3.6760938476\n");
     } else if (L == 3) {
         printf("\n# Reference (libirrep ED at L=3, from research_kagome_irrep_scan):\n");
-        printf("#   B_1 reported as global GS with Δ ≈ 0.052 J\n");
+        printf("#   A_1: -11.6098548095 (global GS)\n");
+        printf("#   A_2: -11.5575586915\n");
+        printf("#   B_1: -11.5575586915 (= A_2 to ~1e-15 — degenerate multiplet)\n");
+        printf("#   B_2: -11.4338926663\n");
+        printf("#   gap A_1 → A_2 = 0.0523 J\n");
     }
 
     return 0;

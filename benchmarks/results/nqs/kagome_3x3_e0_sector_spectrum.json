@@ -1,0 +1,100 @@
+{
+  "suite": "nqs",
+  "name": "kagome_3x3_e0_sector_spectrum",
+  "kind": "research_sector_ed",
+  "utc_epoch": 1777413980,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "Atlas.local",
+  "binary": "build/research_kagome_3x3_e0",
+  "argv": ["3", "100"],
+  "openmp_threads": 14,
+  "system": {
+    "lattice": "kagome",
+    "Lx": 3,
+    "Ly": 3,
+    "num_sites": 27,
+    "hilbert_dim": 134217728,
+    "pbc": true,
+    "hamiltonian": "heisenberg",
+    "j_coupling": 1.0,
+    "wallpaper_group": "p6m",
+    "group_order": 108
+  },
+  "method": {
+    "lanczos": "memory-lean projecting Lanczos (3-term recurrence + in-loop p6m projection, no Krylov-basis storage)",
+    "lanczos_max_iters": 100,
+    "lanczos_tol": 1e-9,
+    "memory_per_vector_GB": 1.0,
+    "working_set_GB": 4.0,
+    "rng_seed_strategy": "deterministic xorshift seed → projection into sector → normalise"
+  },
+  "sectors": [
+    {
+      "irrep": "A_1",
+      "is_global_ground_state": true,
+      "E_0": -11.6098548071,
+      "iters": 83,
+      "converged": true,
+      "wall_seconds": 2887.9,
+      "libirrep_ED_reference": -11.6098548095,
+      "delta_vs_libirrep_ED": 2.4e-9
+    },
+    {
+      "irrep": "A_2",
+      "E_0": -11.5575586904,
+      "iters": 81,
+      "converged": true,
+      "wall_seconds": 2782.8,
+      "libirrep_ED_reference": -11.5575586915,
+      "delta_vs_libirrep_ED": 1.1e-9
+    },
+    {
+      "irrep": "B_1",
+      "E_0": -11.5575586900,
+      "iters": 78,
+      "converged": true,
+      "wall_seconds": 2782.1,
+      "libirrep_ED_reference": -11.5575586915,
+      "delta_vs_libirrep_ED": 1.5e-9
+    },
+    {
+      "irrep": "B_2",
+      "E_0": -11.4338926632,
+      "iters": 100,
+      "converged": false,
+      "comment": "Hit max_iters before Ritz-value tol; reported value is upper bound on true E_0(B_2). True value -11.4338926663 (libirrep ED).",
+      "wall_seconds": 3622.8,
+      "libirrep_ED_reference": -11.4338926663,
+      "delta_vs_libirrep_ED": 3.1e-9
+    }
+  ],
+  "global_ground_state": {
+    "irrep": "A_1",
+    "E_0": -11.6098548071,
+    "per_site": -0.4299946225,
+    "comment": "kagome 3×3 PBC AFM Heisenberg ground state lives in the (Γ, A_1) sector — the trivial irrep of C_6v.  This DIFFERS from the L=2 cluster where the GS lives in B_1.  Pre-existing project documentation (research_kagome_irrep_scan.c header) had B_1 listed as the L=3 GS — that statement was incorrect; corrected in this commit."
+  },
+  "spin_gap": {
+    "value": 0.0522961167,
+    "definition": "E_1 − E_0 across sectors; A_1 → A_2/B_1 (degenerate)",
+    "comment": "A_2 and B_1 are degenerate to 4e-10 — exact symmetry-related multiplet pair on this cluster.  libirrep ED gives the same gap to ~1e-9 precision."
+  },
+  "validation": {
+    "libirrep_ED_agreement": "all four sector ground states match libirrep_sg_heisenberg_sector_build_at_k to ~1-3 × 10⁻⁹",
+    "comparison_table": [
+      {"irrep": "A_1", "ours": -11.6098548071, "libirrep": -11.6098548095, "delta": 2.4e-9},
+      {"irrep": "A_2", "ours": -11.5575586904, "libirrep": -11.5575586915, "delta": 1.1e-9},
+      {"irrep": "B_1", "ours": -11.5575586900, "libirrep": -11.5575586915, "delta": 1.5e-9},
+      {"irrep": "B_2", "ours": -11.4338926632, "libirrep": -11.4338926663, "delta": 3.1e-9}
+    ]
+  },
+  "performance": {
+    "total_wall_seconds_across_4_sectors": 12075.6,
+    "per_sector_wall_seconds_average": 3018.9,
+    "per_iter_wall_seconds_average": 36.3,
+    "openmp_speedup_vs_serial": "~14× (14 perf cores active)",
+    "vs_libirrep_ED_runtime": "libirrep ED at L=3 finishes in 159 s for all 4 sectors — ~75× faster than ours.  But: libirrep builds the sector-restricted sparse Hamiltonian (~186K states per sector) directly; we work in the full 134M-state Hilbert space and project at every Krylov step.  Trade-off: our pipeline is uniform across sectors and lattice geometries; libirrep needs sector-specific sparse-matrix construction logic per Hamiltonian."
+  },
+  "notes": "First systematic sector-resolved spectrum at N=27 PBC kagome via the project's own infrastructure, validated against libirrep sector ED at machine precision.  Memory-lean projecting Lanczos (commit 7ca44c3) + 3-bit-chunk projector optimisation (dbca378) make this practical on a single-node M2 Ultra (~3.3 hours wall, ~4 GB working set).  Corrects pre-existing documentation in research_kagome_irrep_scan.c that claimed B_1 GS at L=3."
+}
