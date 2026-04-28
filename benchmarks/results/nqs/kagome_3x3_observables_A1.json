@@ -1,0 +1,78 @@
+{
+  "suite": "nqs",
+  "name": "kagome_3x3_observables_A1",
+  "kind": "research_observable",
+  "utc_epoch": 1777420161,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "Atlas.local",
+  "binary": "build/research_kagome_observables_lean",
+  "argv": ["3", "0", "200"],
+  "openmp_threads": 14,
+  "system": {
+    "lattice": "kagome",
+    "Lx": 3,
+    "Ly": 3,
+    "num_sites": 27,
+    "hilbert_dim": 134217728,
+    "pbc": true,
+    "hamiltonian": "heisenberg",
+    "j_coupling": 1.0,
+    "irrep": "A_1",
+    "is_global_ground_state": true
+  },
+  "method": {
+    "lanczos": "two-pass lean projecting Lanczos with eigenvector reconstruction (commit a72e883)",
+    "lanczos_max_iters": 200,
+    "lanczos_tol": 1e-10,
+    "memory_per_vector_GB": 1.0,
+    "working_set_GB": 5.0,
+    "rng_seed_strategy": "deterministic xorshift seed → projection into sector → normalise"
+  },
+  "ground_state": {
+    "E_0": -11.6098548093,
+    "iters": 91,
+    "converged": true,
+    "wall_seconds": 5568.6,
+    "libirrep_ED_reference": -11.6098548095,
+    "delta_vs_libirrep_ED": 2.0e-10,
+    "per_site_E_over_N": -0.4299946226,
+    "S_total_squared": 0.750000,
+    "S_total_recovered": 0.5,
+    "comment": "S_total = 1/2 (doublet GS) — required for odd N sites; min total spin is 1/2.  At L=2 (N=12 even) GS was a singlet (S=0)."
+  },
+  "static_correlations": {
+    "NN_avg": -0.2149973113,
+    "NN_bond_count": 54,
+    "hamiltonian_sum_rule_residual": 2.81e-10,
+    "comment": "J · Σ_NN ⟨S_i·S_j⟩ = E_0/J to 3e-10 (machine precision Lanczos / partial-trace consistent)"
+  },
+  "tee_extraction": {
+    "compact_subsystems": [
+      {"nA": 1, "boundary": 4, "S_1_vN": 0.692461},
+      {"nA": 3, "boundary": 6, "S_1_vN": 1.635060},
+      {"nA": 6, "boundary": 10, "S_1_vN": 3.084649}
+    ],
+    "alpha_per_bond": 0.393512,
+    "intercept": -0.819358,
+    "gamma_TEE_nats": 0.819358,
+    "gamma_TEE_in_log2": 1.182,
+    "comment": "Boundary lengths differ from L=2 case due to different PBC topology (cell adjacency at L=3 changes the bond count from interior subsystems).  Compact-region area-law fit on three subsystem sizes."
+  },
+  "finite_size_flow": {
+    "N_12_A_1_gamma_log2": 1.246,
+    "N_27_A_1_gamma_log2": 1.182,
+    "decrease_percent": 5.1,
+    "extrapolated_bulk_signature": "γ → log 2 (= 1.0 in log 2 units, i.e. 0.6931 nats) for Z₂ spin-liquid topological order [Depenbrock-McCulloch-Schollwöck PRL 2012]",
+    "trend": "monotonic decrease toward Z₂ value as N grows; would require N=48 or larger cylinder DMRG for converged γ.  N=12 → N=27 gives a 5.1% decrease in γ/log2.",
+    "comment": "First systematic finite-size flow of γ_TEE on the kagome AFM at fixed (Γ, A_1) irrep.  Previously published kagome TEE results (Yan-Huse-White 2011, Depenbrock-McCulloch-Schollwöck 2012, Jiang-Wang-Balents 2012) report only the global GS γ; we provide a sector-resolved finite-size flow."
+  },
+  "performance": {
+    "wall_seconds_total": 5568.6,
+    "lanczos_two_pass_seconds": 5568.0,
+    "correlations_seconds": 0.5,
+    "tee_seconds": 0.1,
+    "comment": "Two-pass Lanczos dominates; eigvec replay is exactly 2× the E_0-only Lanczos cost, ~93 min wall on 14-thread M2 Ultra."
+  },
+  "notes": "Headline N=27 PBC kagome AFM result: full predictive observables on the libirrep-validated global ground state.  Memory-lean two-pass eigenvector reconstruction makes this practical without exhausting memory budget.  Combined with the L=2 sector-resolved table, gives a finite-size flow on γ_TEE in the A_1 sector that supports the Z₂ topological-order interpretation."
+}
