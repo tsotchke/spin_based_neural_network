@@ -92,7 +92,43 @@ static void test_kagome_2x2_sector_lanczos_matches_libirrep_ed_impl(void) {
     nqs_ansatz_free(a);
 }
 
+/* Companion test for the memory-lean projecting Lanczos path
+ * (lanczos_smallest_projected_lean wired through
+ * nqs_lanczos_e0_kagome_heisenberg_projected_lean).  At L=2 (N=12)
+ * both paths should give the same E_0 per sector to ≤ 1e-7. */
+static void test_kagome_2x2_sector_lanczos_lean_matches_libirrep_ed_impl(void) {
+    int L = 2;
+    nqs_symproj_kagome_irrep_t irreps[4] = {
+        NQS_SYMPROJ_KAGOME_GAMMA_A1,
+        NQS_SYMPROJ_KAGOME_GAMMA_A2,
+        NQS_SYMPROJ_KAGOME_GAMMA_B1,
+        NQS_SYMPROJ_KAGOME_GAMMA_B2,
+    };
+    const char *names[4] = {"A_1", "A_2", "B_1", "B_2"};
+    double refs[4] = { E0_A1_ref, E0_A2_ref, E0_B1_ref, E0_B2_ref };
+
+    for (int i = 0; i < 4; i++) {
+        int *perm = NULL;
+        double *chars = NULL;
+        int G = 0;
+        ASSERT_EQ_INT(nqs_kagome_p6m_perm_irrep(L, irreps[i],
+                                                 &perm, &chars, &G), 0);
+        double e = 0.0;
+        lanczos_result_t lr = (lanczos_result_t){0};
+        int rc = nqs_lanczos_e0_kagome_heisenberg_projected_lean(
+            L, L, /*J*/ 1.0, /*pbc*/ 1,
+            perm, chars, G, /*max_iters*/ 200, /*tol*/ 1e-9,
+            &e, &lr);
+        ASSERT_EQ_INT(rc, 0);
+        printf("# lean %s: E_0 = %.10f  (libirrep ED %.10f)  Δ = %.2e\n",
+               names[i], e, refs[i], fabs(e - refs[i]));
+        ASSERT_TRUE(fabs(e - refs[i]) < 1e-7);
+        free(perm); free(chars);
+    }
+}
+
 int main(void) {
     TEST_RUN(test_kagome_2x2_sector_lanczos_matches_libirrep_ed_impl);
+    TEST_RUN(test_kagome_2x2_sector_lanczos_lean_matches_libirrep_ed_impl);
     TEST_SUMMARY();
 }
