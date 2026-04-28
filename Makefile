@@ -434,6 +434,13 @@ research_kagome_b1_train: $(BIN_DIR)
 	    scripts/research_kagome_b1_train.c \
 	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
 
+# Sector-resolved low-energy spectrum scan via Lanczos seeded from
+# random ψ_sym in each of A_1 / A_2 / B_1 / B_2 irreps.  No training.
+research_kagome_sector_spectrum: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/research_kagome_sector_spectrum \
+	    scripts/research_kagome_sector_spectrum.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
+
 test_nqs_translation: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_translation \
 	    tests/test_nqs_translation.c $(NQS_SRCS) $(LDFLAGS)

@@ -94,6 +94,37 @@ int lanczos_k_smallest_with_init(lanczos_matvec_fn_t matvec, void *user_data,
                                   double *out_eigenvalues,
                                   lanczos_result_t *out);
 
+/* Optional projection callback applied to each Krylov vector after the
+ * matvec + reorthogonalisation step.  Used to enforce sector restriction
+ * when H is sector-preserving but numerical leakage at machine precision
+ * gets amplified by the power-method-like Lanczos dynamics into the
+ * dominant eigenvector outside the sector.  In particular, for symmetry-
+ * projected ED on small clusters, without this projection step the Krylov
+ * basis drifts into the global ground state regardless of seed sector. */
+typedef void (*lanczos_project_fn_t)(double *vec, long dim, void *user);
+
+/* Sector-projected k-smallest Lanczos: same as
+ * lanczos_k_smallest_with_init but applies `project(w, dim, project_user)`
+ * to the Krylov vector after each step.  Pass `project = NULL` to recover
+ * the un-projected behaviour exactly. */
+int lanczos_k_smallest_projected(lanczos_matvec_fn_t matvec, void *user_data,
+                                  long dim,
+                                  int max_iters,
+                                  const double *initial_vector,
+                                  int k,
+                                  lanczos_project_fn_t project, void *project_user,
+                                  double *out_eigenvalues,
+                                  lanczos_result_t *out);
+
+/* Sector-projected single-eigenvalue Lanczos. */
+int lanczos_smallest_projected(lanczos_matvec_fn_t matvec, void *user_data,
+                                long dim,
+                                int max_iters, double tol,
+                                const double *initial_vector,
+                                lanczos_project_fn_t project, void *project_user,
+                                double *out_eigenvector,
+                                lanczos_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

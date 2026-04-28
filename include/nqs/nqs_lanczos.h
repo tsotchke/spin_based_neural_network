@@ -135,13 +135,10 @@ int nqs_lanczos_k_lowest_kagome_heisenberg(nqs_ansatz_t *a,
                                             double *out_eigenvalues,
                                             lanczos_result_t *out_result);
 
-/* Callback variant of k-lowest.  Lanczos's Krylov subspace
- * commutes with H, so when seeded from a sector-projected ψ_sym (e.g.
- * via nqs_symproj_log_amp on a trained ansatz) the returned k-lowest
- * eigenvalues are the lowest k of H restricted to that sector.  This
- * is the natural way to extract the low-energy spectrum within a
- * named irrep sector without needing a sector-resolved sparse
- * Hamiltonian. */
+/* Callback variant of k-lowest.  Seeded from ψ_sym; without active
+ * sector projection inside Lanczos this leaks to the global ground
+ * state via power-method amplification of machine-precision noise.
+ * Use the `_projected` variant below for sector-restricted runs. */
 int nqs_lanczos_k_lowest_kagome_heisenberg_with_cb(nqs_log_amp_fn_t log_amp,
                                                     void *user,
                                                     int Lx_cells, int Ly_cells,
@@ -149,6 +146,39 @@ int nqs_lanczos_k_lowest_kagome_heisenberg_with_cb(nqs_log_amp_fn_t log_amp,
                                                     int max_iters, int k,
                                                     double *out_eigenvalues,
                                                     lanczos_result_t *out_result);
+
+/* Sector-projected k-lowest Lanczos for kagome Heisenberg.  Same as
+ * the above except an inline sector-projection step is applied to
+ * each Krylov vector after the matvec, using the same (perm,
+ * characters) pair that defines the sector projector itself.  This
+ * keeps the Krylov subspace inside the irrep sector for the entire
+ * Lanczos run, so the returned k smallest Ritz values are the lowest
+ * k of H restricted to that sector.
+ *
+ * Required for accurate sector spectra at small dim where the gap
+ * between the in-sector and out-of-sector lowest eigenvalues is
+ * smaller than the leak-amplification factor.  At the kagome 2×2
+ * PBC cluster (dim = 4096), without projection Lanczos always
+ * returns the global B_1 ground state regardless of seed sector;
+ * with projection it returns the libirrep-confirmed per-sector
+ * lowest eigenvalues. */
+int nqs_lanczos_k_lowest_kagome_heisenberg_projected(
+    nqs_log_amp_fn_t log_amp, void *user,
+    int Lx_cells, int Ly_cells, double J, int pbc,
+    const int *perm, const double *characters, int G,
+    int max_iters, int k,
+    double *out_eigenvalues,
+    lanczos_result_t *out_result);
+
+/* Sector-projected single-eigenvalue refine for kagome Heisenberg. */
+int nqs_lanczos_refine_kagome_heisenberg_projected(
+    nqs_log_amp_fn_t log_amp, void *user,
+    int Lx_cells, int Ly_cells, double J, int pbc,
+    const int *perm, const double *characters, int G,
+    int max_iters, double tol,
+    double *out_eigenvalue,
+    double *out_eigenvector,
+    lanczos_result_t *out_result);
 
 /* Variant of nqs_materialise_state that takes an explicit log_amp
  * callback (so Marshall / translation wrappers feed in). */

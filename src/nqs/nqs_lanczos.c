@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "nqs/nqs_lanczos.h"
+#include "nqs/nqs_symproj.h"
 
 /* Map a bit state (0..2^N-1) to an int spin vector of ±1.
  *   bit 0 in state → site index 0; bit = 1 → spin = -1. */
@@ -567,5 +568,81 @@ int nqs_lanczos_k_lowest_kagome_heisenberg(nqs_ansatz_t *a,
                                             max_iters, seed, k,
                                             out_eigenvalues, out_result);
     free(psi_seed);
+    return rc;
+}
+
+/* Sector-projected projector callback for the projecting Lanczos.  The
+ * projector is closed over a context holding (perm, characters, N, G). */
+typedef struct {
+    int N, G;
+    const int *perm;
+    const double *characters;
+} kagome_p6m_proj_ctx_t;
+
+static void kagome_p6m_project_step(double *vec, long dim, void *user) {
+    kagome_p6m_proj_ctx_t *pc = (kagome_p6m_proj_ctx_t *)user;
+    if (!pc) return;
+    long expected_dim = 1L << pc->N;
+    if (dim != expected_dim) return;
+    nqs_kagome_p6m_project_inplace(vec, pc->N, pc->G, pc->perm, pc->characters);
+}
+
+int nqs_lanczos_k_lowest_kagome_heisenberg_projected(
+    nqs_log_amp_fn_t log_amp, void *user,
+    int Lx_cells, int Ly_cells, double J, int pbc,
+    const int *perm, const double *characters, int G,
+    int max_iters, int k,
+    double *out_eigenvalues,
+    lanczos_result_t *out_result) {
+    if (!log_amp || !out_eigenvalues || !perm || !characters || k <= 0)
+        return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    kagome_p6m_proj_ctx_t pc = { .N = N, .G = G,
+                                  .perm = perm, .characters = characters };
+    long dim = 1L << N;
+    double *psi_seed = NULL; long pdim = 0;
+    int rc_seed = nqs_materialise_state_with_cb_N(log_amp, user, N,
+                                                    &psi_seed, &pdim);
+    const double *seed = (rc_seed == 0 && pdim == dim) ? psi_seed : NULL;
+    int rc = lanczos_k_smallest_projected(kagome_heis_matvec, &ctx, dim,
+                                           max_iters, seed, k,
+                                           kagome_p6m_project_step, &pc,
+                                           out_eigenvalues, out_result);
+    free(psi_seed);
+    return rc;
+}
+
+int nqs_lanczos_refine_kagome_heisenberg_projected(
+    nqs_log_amp_fn_t log_amp, void *user,
+    int Lx_cells, int Ly_cells, double J, int pbc,
+    const int *perm, const double *characters, int G,
+    int max_iters, double tol,
+    double *out_eigenvalue,
+    double *out_eigenvector,
+    lanczos_result_t *out_result) {
+    if (!log_amp || !out_eigenvalue || !perm || !characters) return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    kagome_p6m_proj_ctx_t pc = { .N = N, .G = G,
+                                  .perm = perm, .characters = characters };
+    long dim = 1L << N;
+    double *psi_seed = NULL; long pdim = 0;
+    int rc_seed = nqs_materialise_state_with_cb_N(log_amp, user, N,
+                                                    &psi_seed, &pdim);
+    int rc = (rc_seed == 0 && pdim == dim)
+        ? lanczos_smallest_projected(kagome_heis_matvec, &ctx, dim,
+                                       max_iters, tol,
+                                       psi_seed,
+                                       kagome_p6m_project_step, &pc,
+                                       out_eigenvector, out_result)
+        : lanczos_smallest_projected(kagome_heis_matvec, &ctx, dim,
+                                       max_iters, tol, NULL,
+                                       kagome_p6m_project_step, &pc,
+                                       out_eigenvector, out_result);
+    free(psi_seed);
+    if (rc == 0 && out_result) *out_eigenvalue = out_result->eigenvalue;
     return rc;
 }

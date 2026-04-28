@@ -219,6 +219,26 @@ int nqs_kagome_p6m_perm_irrep(int L,
                                double **out_characters,
                                int *out_num_elements);
 
+/* Apply the (Γ, irrep) projector to a real-valued state vector `psi`
+ * of length 2^N (basis-state-indexed), IN PLACE, using a pre-built
+ * (perm, characters) pair.  Output: psi ← (1/G) Σ_g χ(g) T(g) psi.
+ *
+ * Use case: inside the Lanczos Krylov loop, applied to each new
+ * basis vector after the matvec + reorthogonalisation step.  Without
+ * this, machine-precision sector leakage (~10⁻¹⁴) gets amplified by
+ * the power-method dynamics over O(log dim · log eigen-ratio) steps
+ * to the global ground state, swamping the in-sector signal.  With
+ * it, the Krylov subspace stays inside the sector for the whole run.
+ *
+ * Performance: O(G · 2^N) per call; for L=2 (N=12, G=48) ≈ 200 K
+ * spin-permutations + adds, ~1 ms per Lanczos step.  The 2^N memory
+ * is already paid for by the materialised wavefunction.
+ *
+ * Caller responsibility: |psi| = 2^N, perm has shape G × N. */
+void nqs_kagome_p6m_project_inplace(double *psi, int N, int G,
+                                     const int *perm,
+                                     const double *characters);
+
 #ifdef __cplusplus
 }
 #endif

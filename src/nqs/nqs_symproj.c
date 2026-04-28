@@ -744,6 +744,44 @@ int nqs_kagome_p6m_perm_irrep(int L,
     return 0;
 }
 
+/* Vector-space sector projector applied in place.  See header for
+ * docstring.  Implements:
+ *      psi ← (1/G) Σ_g χ(g) T(g) psi
+ * where T(g) acts on basis states s by the permutation perm[g][:],
+ * sending site i to site perm[g][i].  Equivalently: T(g) maps the
+ * basis-state index s to the index s' obtained by permuting the bit
+ * positions of s.  Implemented as: for each output state s, look up
+ * the source state under each g and accumulate. */
+void nqs_kagome_p6m_project_inplace(double *psi, int N, int G,
+                                     const int *perm,
+                                     const double *characters) {
+    if (!psi || !perm || !characters || N <= 0 || G <= 0) return;
+    long dim = 1L << N;
+    double *out = (double *)calloc((size_t)dim, sizeof(double));
+    if (!out) return;
+
+    for (long s = 0; s < dim; s++) {
+        for (int g = 0; g < G; g++) {
+            /* T(g) sends basis state |perm_image⟩ ← |s⟩, i.e. for each
+             * output state s_out, we want sum over g of chi(g) * psi(s')
+             * where s' is the preimage of s under the permutation T(g).
+             * In the "look up source" convention: pre-image of s under
+             * T(g) is the state whose i-th bit equals s's perm[g][i]-th
+             * bit.  Build that state index. */
+            const int *pg = &perm[(size_t)g * (size_t)N];
+            long s_pre = 0;
+            for (int i = 0; i < N; i++) {
+                long b = (s >> pg[i]) & 1L;
+                s_pre |= b << i;
+            }
+            out[s] += characters[g] * psi[s_pre];
+        }
+        out[s] /= (double)G;
+    }
+    memcpy(psi, out, (size_t)dim * sizeof(double));
+    free(out);
+}
+
 #undef KG_SITE
 #undef KG_AX
 #undef KG_AY
