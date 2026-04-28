@@ -1,0 +1,64 @@
+{
+  "suite": "nqs",
+  "name": "kagome_b1_lanczos_refined",
+  "kind": "research_postprocess",
+  "utc_epoch": 1777351864,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "Atlas.local",
+  "binary": "build/research_kagome_b1_train",
+  "argv": ["50", "256", "16"],
+  "system": {
+    "lattice": "kagome",
+    "Lx": 2,
+    "Ly": 2,
+    "num_sites": 12,
+    "pbc": true,
+    "hamiltonian": "heisenberg",
+    "j_coupling": 1.0
+  },
+  "ansatz": {
+    "type": "complex_rbm",
+    "hidden_units": 16,
+    "real_params": 220,
+    "total_params": 440,
+    "init_scale": 0.05,
+    "training_iterations": 50,
+    "training_batch": 256,
+    "comment": "deliberately under-trained — Lanczos does the heavy lifting"
+  },
+  "projection": {
+    "wallpaper_group": "p6m",
+    "k_point": "Gamma",
+    "irrep": "B_1",
+    "group_size": 12
+  },
+  "optimizer": {
+    "method": "holomorphic_sr",
+    "learning_rate": 0.005,
+    "diag_shift": 0.05,
+    "cg_max_iters": 200,
+    "cg_tol": 1e-08
+  },
+  "post_process": {
+    "method": "lanczos_seeded_from_proj_psi",
+    "max_iters": 200,
+    "tol": 1e-12,
+    "seed": "psi_sym = P_{B_1} psi_base"
+  },
+  "rng_seed": "0xB1B1B1B1",
+  "metrics": {
+    "E_var_tail_mean": 0.96410006,
+    "E_det_proj_psi": 0.96724693,
+    "E_lanczos_refined": -5.44487522,
+    "E_ED_reference": -5.4448752170,
+    "lanczos_iterations_used": 33,
+    "lanczos_absolute_gap": 2.813483e-11,
+    "lanczos_relative_error": 5.167e-12,
+    "training_seconds": 7.3,
+    "det_energy_seconds": 0.11,
+    "lanczos_seconds": 0.12,
+    "total_seconds": 7.5
+  },
+  "notes": "Lanczos post-processing on the sector-projected wavefunction reaches ED ground state to 11 digits in 33 Krylov iterations and 0.12 s, even from a deliberately under-trained ansatz with E_var ~ +1.0 (∼6.4 J above E_0). The B_1 projector guarantees nonzero overlap of psi_sym with the (Γ, B_1) ground state on the 4096-dim Hilbert space, and Lanczos converges to the lowest eigenvalue of any seed with nonzero overlap on it. P2.6 leverage move from architecture_v0.4.md realized end-to-end."
+}
