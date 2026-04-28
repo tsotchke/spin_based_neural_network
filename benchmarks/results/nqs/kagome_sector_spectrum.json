@@ -1,0 +1,79 @@
+{
+  "suite": "nqs",
+  "name": "kagome_sector_spectrum",
+  "kind": "research_sector_ed",
+  "utc_epoch": 1777352800,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "Atlas.local",
+  "binary": "build/research_kagome_sector_spectrum",
+  "argv": ["4", "16", "0"],
+  "system": {
+    "lattice": "kagome",
+    "Lx": 2,
+    "Ly": 2,
+    "num_sites": 12,
+    "pbc": true,
+    "hamiltonian": "heisenberg",
+    "j_coupling": 1.0
+  },
+  "method": {
+    "ansatz": "complex_rbm hidden=16 (untrained, random init)",
+    "projector": "p6m wallpaper-group, Γ point, 1D irreps {A_1, A_2, B_1, B_2}",
+    "lanczos": "sector-projected (mps lanczos_k_smallest_projected)",
+    "lanczos_max_iters": 300,
+    "k_per_sector": 4,
+    "rng_seed": "0xB1B1B1B1"
+  },
+  "sectors": {
+    "A_1": {
+      "E_0": -5.32839240,
+      "E_1": -4.96915866,
+      "E_2": -4.96915866,
+      "E_3": -4.96915866,
+      "lanczos_seconds": 0.30,
+      "libirrep_E_0_reference": -5.3283924045
+    },
+    "A_2": {
+      "E_0": -4.96243485,
+      "E_1": -4.83624866,
+      "E_2": -4.83624866,
+      "E_3": -4.83624866,
+      "lanczos_seconds": 0.20,
+      "libirrep_E_0_reference": -4.9624348504
+    },
+    "B_1": {
+      "E_0": -5.44487522,
+      "E_1": -3.91430434,
+      "E_2": -3.91430434,
+      "E_3": -3.91430434,
+      "lanczos_seconds": 0.21,
+      "libirrep_E_0_reference": -5.4448752170,
+      "is_global_ground_state": true
+    },
+    "B_2": {
+      "E_0": -3.67609385,
+      "E_1": -2.64012418,
+      "E_2": -2.64012418,
+      "E_3": -2.64012418,
+      "lanczos_seconds": 0.21,
+      "libirrep_E_0_reference": -3.6760938476
+    }
+  },
+  "combined_low_energy_window": [
+    {"i": 0, "E": -5.44487522, "sector": "B_1"},
+    {"i": 1, "E": -5.32839240, "sector": "A_1"},
+    {"i": 2, "E": -4.96915866, "sector": "A_1"},
+    {"i": 3, "E": -4.96915866, "sector": "A_1"},
+    {"i": 4, "E": -4.96915866, "sector": "A_1"},
+    {"i": 5, "E": -4.96243485, "sector": "A_2"},
+    {"i": 6, "E": -4.83624866, "sector": "A_2"},
+    {"i": 7, "E": -4.83624866, "sector": "A_2"},
+    {"i": 8, "E": -4.83624866, "sector": "A_2"},
+    {"i": 9, "E": -3.91430434, "sector": "B_1"},
+    {"i": 10, "E": -3.91430434, "sector": "B_1"},
+    {"i": 11, "E": -3.91430434, "sector": "B_1"}
+  ],
+  "agreement_with_libirrep_ed": "All four sector ground states match libirrep_sg_heisenberg_sector_build_at_k to 8+ digits. The sector-projecting Lanczos defeats the machine-precision leak amplification that previously caused un-projected Lanczos to return the global B_1 ground state from any sector seed.",
+  "notes": "First demonstration that sector-resolved low-energy spectra can be obtained from random NQS-seeded Lanczos via in-loop projection. The seed quality (training) doesn't matter for this small cluster — the projection step does. At larger N where full Lanczos is no longer free, the same projector applied during a sparse-matvec Lanczos becomes the load-bearing infrastructure for sector-restricted variational ED."
+}
