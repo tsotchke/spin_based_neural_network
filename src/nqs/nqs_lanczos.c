@@ -383,6 +383,9 @@ static void kagome_heis_matvec(const double *in, double *out,
     int Lx = ctx->Lx_cells, Ly = ctx->Ly_cells;
     double J = ctx->J;
     int pbc = ctx->pbc;
+    #ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+    #endif
     for (long s = 0; s < dim; s++) {
         double y = kagome_heis_diag_energy(s, ctx) * in[s];
         for (int cx = 0; cx < Lx; cx++) {
@@ -612,6 +615,35 @@ int nqs_lanczos_k_lowest_kagome_heisenberg_projected(
                                            out_eigenvalues, out_result);
     free(psi_seed);
     return rc;
+}
+
+/* Memory-lean projecting Lanczos for E_0 only.  Bypasses the materialise
+ * step entirely — starts from a deterministic random vector, projects
+ * it once into the sector, then runs 3-term-recurrence Lanczos with
+ * in-loop sector projection.  Works at large N where full reorth would
+ * blow memory.
+ *
+ * No NQS callback is used — the seed is just a pseudo-random vector,
+ * sufficient to span the projected sector.  Returns the (k=Γ, irrep
+ * α)-sector ground-state energy. */
+int nqs_lanczos_e0_kagome_heisenberg_projected_lean(
+    int Lx_cells, int Ly_cells, double J, int pbc,
+    const int *perm, const double *characters, int G,
+    int max_iters, double tol,
+    double *out_eigenvalue,
+    lanczos_result_t *out_result) {
+    if (!out_eigenvalue || !perm || !characters || G <= 0) return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    if (N <= 0 || N > 30) return -1;
+    long dim = 1L << N;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    kagome_p6m_proj_ctx_t pc = { .N = N, .G = G,
+                                  .perm = perm, .characters = characters };
+    return lanczos_smallest_projected_lean(kagome_heis_matvec, &ctx, dim,
+                                            max_iters, tol, NULL,
+                                            kagome_p6m_project_step, &pc,
+                                            out_eigenvalue, out_result);
 }
 
 int nqs_lanczos_refine_kagome_heisenberg_projected(

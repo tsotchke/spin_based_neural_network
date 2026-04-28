@@ -125,6 +125,29 @@ int lanczos_smallest_projected(lanczos_matvec_fn_t matvec, void *user_data,
                                 double *out_eigenvector,
                                 lanczos_result_t *out);
 
+/* Memory-lean variant: 3-term recurrence with NO Krylov-basis storage —
+ * only three vectors live at a time (current, previous, work).  In-loop
+ * sector projection at every step kills machine-precision leakage.
+ *
+ * Trade-offs vs lanczos_smallest_projected:
+ *   - O(3·dim) memory instead of O(max_iters·dim).  Required at large
+ *     dim where full reorth would need TB-scale RAM.
+ *   - No eigenvector reconstruction.  Returns lowest Ritz value only.
+ *   - 3-term recurrence loses orthogonality at machine precision over
+ *     long Krylov runs; "ghost" copies of converged eigenvalues
+ *     appear in the spectrum.  E_0 is robust; sub-extremal Ritz values
+ *     are not.
+ *
+ * Convergence: Ritz-value stability over consecutive iterations
+ * (|λ_k − λ_{k-1}| < tol after k > 5 warm-up iters). */
+int lanczos_smallest_projected_lean(lanczos_matvec_fn_t matvec, void *user_data,
+                                     long dim,
+                                     int max_iters, double tol,
+                                     const double *initial_vector,
+                                     lanczos_project_fn_t project, void *project_user,
+                                     double *out_eigenvalue,
+                                     lanczos_result_t *out);
+
 /* Run Lanczos starting from `seed` and return the tridiagonal
  * coefficients α[k], β[k] for k = 0..K-1 plus the seed norm.  Does
  * not extract eigenvalues — caller uses the (α, β) pair directly to

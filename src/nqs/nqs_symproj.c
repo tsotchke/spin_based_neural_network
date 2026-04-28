@@ -760,6 +760,9 @@ void nqs_kagome_p6m_project_inplace(double *psi, int N, int G,
     double *out = (double *)calloc((size_t)dim, sizeof(double));
     if (!out) return;
 
+    #ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+    #endif
     for (long s = 0; s < dim; s++) {
         for (int g = 0; g < G; g++) {
             /* T(g) sends basis state |perm_image⟩ ← |s⟩, i.e. for each

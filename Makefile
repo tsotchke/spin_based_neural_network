@@ -453,6 +453,32 @@ research_kagome_sqw: $(BIN_DIR)
 	    scripts/research_kagome_sqw.c \
 	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
 
+# Kagome 3×3 PBC (N=27) sector ground states via memory-lean projecting
+# Lanczos.  3-term recurrence + in-loop p6m projection, no Krylov-basis
+# storage.  Add OPENMP=1 to enable -fopenmp parallelisation of the
+# matvec and projector loops over basis states.
+# OpenMP: prefer Apple Clang + Homebrew libomp (works with our default
+# Apple SDK and arm64).  Detect libomp at the Homebrew path; if missing
+# fall back to gcc -fopenmp.  Activated by `make OPENMP=1 ...`.
+ifeq ($(OPENMP),1)
+  LIBOMP_PREFIX := $(shell brew --prefix libomp 2>/dev/null)
+  ifneq ($(LIBOMP_PREFIX),)
+    OMP_FLAGS := -Xpreprocessor -fopenmp -I$(LIBOMP_PREFIX)/include
+    OMP_LDFLAGS := -L$(LIBOMP_PREFIX)/lib -lomp
+  else
+    OMP_FLAGS := -fopenmp
+    OMP_LDFLAGS :=
+  endif
+else
+  OMP_FLAGS :=
+  OMP_LDFLAGS :=
+endif
+research_kagome_3x3_e0: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) $(OMP_FLAGS) -o $(BIN_DIR)/research_kagome_3x3_e0 \
+	    scripts/research_kagome_3x3_e0.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
+	    $(LDFLAGS) $(OMP_LDFLAGS)
+
 # Topological entanglement entropy of the kagome AFM 2×2 PBC ground
 # state via Lanczos-refined ψ_0 + libirrep_bridge partial trace +
 # Renyi entropy.  Linear fit S = α·|∂A| − γ extracts γ_TEE.  IRREP

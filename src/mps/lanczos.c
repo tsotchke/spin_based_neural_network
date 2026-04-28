@@ -802,3 +802,132 @@ void lanczos_cf_evaluate(int K, const double *alpha, const double *beta,
     *out_re =  seed_norm * seed_norm * dr / mag2;
     *out_im = -seed_norm * seed_norm * di / mag2;
 }
+
+/* ===========================================================================
+ *  Memory-lean projecting Lanczos for large-dim sector ED.
+ *
+ *  Three-term recurrence with NO Krylov-basis storage — only three
+ *  vectors live at a time (v_curr, v_prev, w).  In-loop sector
+ *  projection at every step kills machine-precision sector leakage
+ *  (the same fix as lanczos_smallest_projected, but without the
+ *  O(max_iters · dim) memory cost of full reorthogonalisation).
+ *
+ *  Trade-off: no eigenvector reconstruction (would need V[]); does
+ *  not produce sub-extremal Ritz values reliably (3-term recurrence
+ *  loses orthogonality and develops "ghost" copies).  Just E_0.
+ *
+ *  Use case: kagome 3×3 PBC (N=27, dim=2^27, 1 GB / vector).  Full-
+ *  reorth Lanczos at 300 iters needs 300 GB; this needs ~3 GB.
+ * =========================================================================*/
+
+int lanczos_smallest_projected_lean(lanczos_matvec_fn_t matvec, void *user_data,
+                                     long dim,
+                                     int max_iters, double tol,
+                                     const double *initial_vector,
+                                     lanczos_project_fn_t project, void *project_user,
+                                     double *out_eigenvalue,
+                                     lanczos_result_t *out) {
+    if (!matvec || dim <= 0 || max_iters <= 0) return -1;
+    if (out) {
+        out->eigenvalue = 0.0;
+        out->iterations = 0;
+        out->converged = 0;
+        out->residual_norm = 0.0;
+    }
+    if (max_iters > dim) max_iters = (int)dim;
+
+    double *v_curr = calloc((size_t)dim, sizeof(double));
+    double *v_prev = calloc((size_t)dim, sizeof(double));
+    double *w      = calloc((size_t)dim, sizeof(double));
+    double *alpha  = calloc((size_t)max_iters, sizeof(double));
+    double *beta   = calloc((size_t)(max_iters + 1), sizeof(double));
+    double *d      = malloc((size_t)max_iters * sizeof(double));
+    double *e      = malloc((size_t)max_iters * sizeof(double));
+    if (!v_curr || !v_prev || !w || !alpha || !beta || !d || !e) {
+        free(v_curr); free(v_prev); free(w);
+        free(alpha); free(beta); free(d); free(e);
+        return -1;
+    }
+
+    /* Initial vector: caller-supplied or deterministic random. */
+    if (initial_vector) {
+        memcpy(v_curr, initial_vector, (size_t)dim * sizeof(double));
+    } else {
+        unsigned long long rng = 0xA5A5A5A5A5A5A5A5ULL ^ (unsigned long long)dim;
+        for (long i = 0; i < dim; i++) {
+            rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+            double u = (double)(rng >> 11) / 9007199254740992.0;
+            v_curr[i] = u - 0.5;
+        }
+    }
+    if (project) project(v_curr, dim, project_user);
+    double n = vec_norm(v_curr, dim);
+    if (n < 1e-14) {
+        /* Project killed everything — try a different deterministic seed. */
+        unsigned long long rng = 0xBEEFBABEULL ^ (unsigned long long)dim;
+        for (long i = 0; i < dim; i++) {
+            rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+            double u = (double)(rng >> 11) / 9007199254740992.0;
+            v_curr[i] = u - 0.5;
+        }
+        if (project) project(v_curr, dim, project_user);
+        n = vec_norm(v_curr, dim);
+    }
+    if (n > 0) for (long i = 0; i < dim; i++) v_curr[i] /= n;
+
+    double lambda = 0.0;
+    double prev_lambda = 0.0;
+    int k;
+    int converged = 0;
+
+    for (k = 0; k < max_iters; k++) {
+        /* w = H v_curr */
+        matvec(v_curr, w, dim, user_data);
+
+        alpha[k] = vec_dot(v_curr, w, dim);
+
+        /* w ← w − α_k v_curr − β_k v_prev */
+        vec_axpy(w, -alpha[k], v_curr, dim);
+        if (k > 0) vec_axpy(w, -beta[k], v_prev, dim);
+
+        /* In-loop sector projection — kills the leak. */
+        if (project) project(w, dim, project_user);
+
+        beta[k + 1] = vec_norm(w, dim);
+        if (beta[k + 1] < 1e-14) { k++; break; }
+
+        /* Diagonalise the current tridiagonal to extract Ritz value. */
+        int K = k + 1;
+        for (int i = 0; i < K; i++) d[i] = alpha[i];
+        for (int i = 0; i < K - 1; i++) e[i] = beta[i + 1];
+        e[K - 1] = 0.0;
+        tridiag_ql(d, e, K, NULL);
+        int idx = 0;
+        for (int i = 1; i < K; i++) if (d[i] < d[idx]) idx = i;
+        prev_lambda = lambda;
+        lambda = d[idx];
+
+        /* Convergence based on Ritz-value stability (no eigenvector
+         * residual since we don't have it). */
+        if (k > 5 && fabs(lambda - prev_lambda) < tol) {
+            converged = 1;
+            k++;
+            break;
+        }
+
+        /* Slide vectors:  v_prev ← v_curr;  v_curr ← w / β; */
+        memcpy(v_prev, v_curr, (size_t)dim * sizeof(double));
+        double inv_b = 1.0 / beta[k + 1];
+        for (long i = 0; i < dim; i++) v_curr[i] = w[i] * inv_b;
+    }
+
+    if (out_eigenvalue) *out_eigenvalue = lambda;
+    if (out) {
+        out->eigenvalue    = lambda;
+        out->iterations    = k;
+        out->converged     = converged;
+        out->residual_norm = (k > 0) ? fabs(lambda - prev_lambda) : 0.0;
+    }
+    free(v_curr); free(v_prev); free(w); free(alpha); free(beta); free(d); free(e);
+    return 0;
+}

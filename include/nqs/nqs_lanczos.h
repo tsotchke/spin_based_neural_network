@@ -180,6 +180,22 @@ int nqs_lanczos_refine_kagome_heisenberg_projected(
     double *out_eigenvector,
     lanczos_result_t *out_result);
 
+/* Memory-lean E_0 extractor for the (k=Γ, irrep α) sector of the
+ * kagome Heisenberg model.  Bypasses materialisation — starts Lanczos
+ * from a deterministic random vector projected once into the sector,
+ * then runs 3-term-recurrence Lanczos with in-loop projection.  No
+ * eigenvector is returned (would need the full Krylov basis).
+ *
+ * Required for large N (≥ 24) where the full-reorth `_projected`
+ * variant blows memory.  For N=27 PBC kagome (dim=2^27, 1 GB/vector)
+ * this fits in ~3 GB working set vs. 300+ GB for full reorth. */
+int nqs_lanczos_e0_kagome_heisenberg_projected_lean(
+    int Lx_cells, int Ly_cells, double J, int pbc,
+    const int *perm, const double *characters, int G,
+    int max_iters, double tol,
+    double *out_eigenvalue,
+    lanczos_result_t *out_result);
+
 /* Variant of nqs_materialise_state that takes an explicit log_amp
  * callback (so Marshall / translation wrappers feed in). */
 int nqs_materialise_state_with_cb(nqs_log_amp_fn_t log_amp, void *user,
