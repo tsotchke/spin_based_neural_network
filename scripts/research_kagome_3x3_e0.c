@@ -32,10 +32,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef __APPLE__
+#include <sys/time.h>
+#endif
 
 #include "nqs/nqs_symproj.h"
 #include "nqs/nqs_lanczos.h"
 #include "mps/lanczos.h"
+
+/* Wall-clock seconds since epoch.  clock() returns CPU time which
+ * scales with thread count under OpenMP — misleading in summaries. */
+static double wall_seconds(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (double)tv.tv_sec + 1e-6 * (double)tv.tv_usec;
+}
 
 static const char *irrep_names[4] = { "A_1", "A_2", "B_1", "B_2" };
 static const nqs_symproj_kagome_irrep_t irrep_codes[4] = {
@@ -83,7 +94,7 @@ int main(int argc, char **argv) {
             return 1;
         }
 
-        clock_t t0 = clock();
+        double t0 = wall_seconds();
         lanczos_result_t lr = (lanczos_result_t){0};
         double e = 0.0;
         int rc = nqs_lanczos_e0_kagome_heisenberg_projected_lean(
@@ -91,7 +102,7 @@ int main(int argc, char **argv) {
             perm, chars, G,
             max_iters, /*tol*/ 1e-9,
             &e, &lr);
-        seconds[i] = (double)(clock() - t0) / CLOCKS_PER_SEC;
+        seconds[i] = wall_seconds() - t0;
         if (rc != 0) {
             fprintf(stderr, "Lanczos failed for %s (rc=%d)\n", irrep_names[i], rc);
             free(perm); free(chars);
