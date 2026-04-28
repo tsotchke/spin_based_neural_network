@@ -1,0 +1,58 @@
+{
+  "suite": "nqs",
+  "name": "kagome_sqw_2x2",
+  "kind": "research_dynamic_observable",
+  "utc_epoch": 1777394200,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "Atlas.local",
+  "binary": "build/research_kagome_sqw",
+  "system": {
+    "lattice": "kagome",
+    "Lx": 2,
+    "Ly": 2,
+    "num_sites": 12,
+    "pbc": true,
+    "hamiltonian": "heisenberg",
+    "j_coupling": 1.0
+  },
+  "method": {
+    "ground_state": "Lanczos refined seeded by p6m (Γ, B_1) projection of random complex RBM",
+    "ground_state_precision": "Δ = 2.81e-11 vs libirrep ED",
+    "spectral_function": "S(q, ω) = -(1/π) Im ⟨ψ_0 | S^z_{-q} (ω−H+iη)^{-1} S^z_q | ψ_0⟩",
+    "implementation": "two real-Lanczos continued fractions seeded from Re|φ_q⟩ and Im|φ_q⟩ separately; full reorth, 200 Krylov iterations each",
+    "broadening_eta": 0.05,
+    "rng_seed": "0xB1B1B1B1"
+  },
+  "ground_state": {
+    "E_0": -5.4448752170,
+    "delta_vs_ED": 2.81e-11,
+    "lanczos_iters": 18
+  },
+  "sum_rule_check": {
+    "comment": "∫ dω S(q, ω) = ⟨S^z_{-q} S^z_q⟩ = (1/3) S_static(q) for SU(2)-singlet GS",
+    "S_static_K_eq": 0.395013,
+    "expected_integral": 0.131671,
+    "measured_integral_via_norms": 0.131671,
+    "status": "PASS at machine precision"
+  },
+  "momentum_grid": [
+    {"q_label": "Γ",     "qx": 0.0000, "qy":  0.0000, "norm_re_sq": 0.000000, "norm_im_sq": 0.000000, "K_re": 200, "K_im": 0,   "comment": "trivially zero (S^z_total annihilates singlet)"},
+    {"q_label": "M_a",   "qx": 3.1416, "qy": -1.8138, "norm_re_sq": 0.053835, "norm_im_sq": 0.077837, "K_re": 200, "K_im": 200},
+    {"q_label": "M_b",   "qx": 0.0000, "qy":  3.6276, "norm_re_sq": 0.053835, "norm_im_sq": 0.077837, "K_re": 200, "K_im": 200},
+    {"q_label": "K-eq",  "qx": 3.1416, "qy":  1.8138, "norm_re_sq": 0.077837, "norm_im_sq": 0.053835, "K_re": 200, "K_im": 200}
+  ],
+  "spectral_peaks_at_M_K_eq": [
+    {"omega": 0.60, "S_peak": 0.288320, "comment": "lowest one-magnon excitation; this is the spin-gap-related peak"},
+    {"omega": 1.40, "S_peak": 0.145342, "comment": "second magnon peak"},
+    {"omega": 2.20, "S_peak": 0.077698, "comment": "third"},
+    {"omega": 2.70, "S_peak": 0.061072, "comment": "fourth"}
+  ],
+  "interpretation": {
+    "S_q0_omega": "exactly zero (S^z_total commutes with H, |ψ_0⟩ is a singlet)",
+    "M_K_degeneracy": "S(M_a, ω) = S(M_b, ω) = S(K-eq, ω) — finite-size artifact: the 2×2 PBC supercell has only 4 inequivalent momenta and the 3 non-Γ ones are related by symmetries that don't distinguish them on this small lattice. K vs M distinction requires N=27 PBC.",
+    "lowest_peak_meaning": "The ω=0.60 J peak at non-Γ q reveals the lowest Sz-changing excitation accessible from |ψ_0⟩.  This is approximately the magnetic excitation gap — directly comparable to the lowest peak in inelastic neutron scattering on kagome materials such as herbertsmithite.",
+    "comparison_to_experiment": "ZnCu₃(OH)₆Cl₂ inelastic neutron scattering shows broad continuum centered around 1-3 meV (≈0.1-0.3 J for J ≈ 17 meV).  Our N=12 calculation gives discrete peaks (Lorentzians at finite η); the continuum emerges in the thermodynamic limit through dense state spacing."
+  },
+  "notes": "Third predictive observable on the project's ED-quality kagome AFM ground state.  The continued-fraction Lanczos infrastructure (lanczos_continued_fraction + lanczos_cf_evaluate, added in this commit) is the mathematical heart of this calculation: builds Krylov tridiagonal coefficients from the seed, evaluates the resolvent matrix element ⟨φ|(ω−H+iη)^{-1}|φ⟩ as a Stieltjes continued fraction.  Full sum rule passes at machine precision.  Total wall time: ~5 seconds for all 4 momenta.  Limitation: 2×2 cluster gives only 4 inequivalent q points with K=M degeneracy; converged S(q,ω) over the BZ requires N=27 PBC."
+}

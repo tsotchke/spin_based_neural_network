@@ -446,6 +446,13 @@ research_kagome_correlations: $(BIN_DIR)
 	    scripts/research_kagome_correlations.c \
 	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
 
+# Dynamic structure factor S(q, ω) via Lanczos continued fraction.
+# Predicts inelastic-neutron-scattering line shapes for kagome materials.
+research_kagome_sqw: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/research_kagome_sqw \
+	    scripts/research_kagome_sqw.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
+
 # Topological entanglement entropy of the kagome AFM 2×2 PBC ground
 # state via Lanczos-refined ψ_0 + libirrep_bridge partial trace +
 # Renyi entropy.  Linear fit S = α·|∂A| − γ extracts γ_TEE.  IRREP

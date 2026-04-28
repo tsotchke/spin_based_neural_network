@@ -125,6 +125,42 @@ int lanczos_smallest_projected(lanczos_matvec_fn_t matvec, void *user_data,
                                 double *out_eigenvector,
                                 lanczos_result_t *out);
 
+/* Run Lanczos starting from `seed` and return the tridiagonal
+ * coefficients α[k], β[k] for k = 0..K-1 plus the seed norm.  Does
+ * not extract eigenvalues — caller uses the (α, β) pair directly to
+ * evaluate the spectral function via continued fraction:
+ *
+ *     ⟨φ | (ω − H + iη)^{−1} | φ⟩ = ‖φ‖²
+ *         / (ω + iη − α₀ − β₁² / (ω + iη − α₁ − β₂² / …))
+ *
+ * Used by dynamic-correlator computations (S(q, ω), spectral
+ * functions, Green's functions).  Full reorthogonalisation against
+ * the entire Krylov basis is enabled, which doubles memory but
+ * keeps the (α, β) pairs accurate against numerical drift over
+ * hundreds of iterations.
+ *
+ * On entry: alpha and beta are caller-allocated, length ≥ max_iters.
+ * On return: out_K = number of Krylov steps actually run (≤ max_iters);
+ *            out_seed_norm = ‖seed‖ for the b₀ in the continued
+ *            fraction.  May be zero if seed is null. */
+int lanczos_continued_fraction(lanczos_matvec_fn_t matvec, void *user_data,
+                                long dim,
+                                int max_iters,
+                                const double *seed,
+                                double *alpha, double *beta,
+                                int *out_K,
+                                double *out_seed_norm);
+
+/* Evaluate the continued fraction
+ *     ‖φ‖² / (z − α₀ − β₁² / (z − α₁ − β₂² / …))
+ * at z = ω + iη.  K is the number of (α, β) pairs from the Lanczos
+ * run; seed_norm = ‖φ‖.  Returns the complex value via real/imag
+ * outputs.  Standard Stieltjes-fraction recursion from inside-out. */
+void lanczos_cf_evaluate(int K, const double *alpha, const double *beta,
+                          double seed_norm,
+                          double omega, double eta,
+                          double *out_re, double *out_im);
+
 #ifdef __cplusplus
 }
 #endif

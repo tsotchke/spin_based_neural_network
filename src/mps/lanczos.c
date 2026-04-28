@@ -706,3 +706,99 @@ int lanczos_smallest_projected(lanczos_matvec_fn_t matvec, void *user_data,
     free(d); free(e); free(Z);
     return 0;
 }
+
+/* ===========================================================================
+ *  Continued-fraction Lanczos for spectral functions / dynamic correlators
+ * =========================================================================*/
+
+int lanczos_continued_fraction(lanczos_matvec_fn_t matvec, void *user_data,
+                                long dim,
+                                int max_iters,
+                                const double *seed,
+                                double *alpha, double *beta,
+                                int *out_K,
+                                double *out_seed_norm) {
+    if (!matvec || dim <= 0 || max_iters <= 0 || !seed ||
+        !alpha || !beta || !out_K)
+        return -1;
+    if (max_iters > dim) max_iters = (int)dim;
+
+    double seed_norm = vec_norm(seed, dim);
+    if (out_seed_norm) *out_seed_norm = seed_norm;
+    if (seed_norm < 1e-300) {
+        *out_K = 0;
+        return 0;
+    }
+
+    /* Full reorthogonalisation: keep all Krylov vectors. */
+    double *V = calloc((size_t)max_iters * (size_t)dim, sizeof(double));
+    double *w = calloc((size_t)dim, sizeof(double));
+    if (!V || !w) { free(V); free(w); return -1; }
+
+    /* v_0 = seed / ||seed|| */
+    double inv = 1.0 / seed_norm;
+    for (long i = 0; i < dim; i++) V[i] = seed[i] * inv;
+    beta[0] = 0.0;          /* β_0 unused in continued fraction */
+
+    int k;
+    for (k = 0; k < max_iters; k++) {
+        double *v_k = &V[(size_t)k * (size_t)dim];
+        matvec(v_k, w, dim, user_data);
+        alpha[k] = vec_dot(v_k, w, dim);
+        vec_axpy(w, -alpha[k], v_k, dim);
+        if (k > 0) {
+            double *v_prev = &V[(size_t)(k - 1) * (size_t)dim];
+            vec_axpy(w, -beta[k], v_prev, dim);
+        }
+        /* Full reorth */
+        for (int j = 0; j <= k; j++) {
+            double *v_j = &V[(size_t)j * (size_t)dim];
+            double p = vec_dot(v_j, w, dim);
+            vec_axpy(w, -p, v_j, dim);
+        }
+        double bn = vec_norm(w, dim);
+        if (k + 1 < max_iters) beta[k + 1] = bn;
+        if (bn < 1e-14) { k++; break; }
+        if (k + 1 < max_iters) {
+            double *v_next = &V[(size_t)(k + 1) * (size_t)dim];
+            for (long i = 0; i < dim; i++) v_next[i] = w[i] / bn;
+        }
+    }
+    *out_K = k;
+
+    free(V); free(w);
+    return 0;
+}
+
+void lanczos_cf_evaluate(int K, const double *alpha, const double *beta,
+                          double seed_norm,
+                          double omega, double eta,
+                          double *out_re, double *out_im) {
+    if (K <= 0 || !alpha || !beta || !out_re || !out_im) {
+        if (out_re) *out_re = 0.0;
+        if (out_im) *out_im = 0.0;
+        return;
+    }
+    /* Build the continued fraction inside-out.
+     *   d_K = z − α_{K-1}                                (innermost)
+     *   d_k = z − α_{k-1} − β_k² / d_{k+1}                for k = K-1..1
+     *   result = ‖φ‖² / d_1                              (outermost)
+     * with z = ω + iη (complex). */
+    double zr = omega, zi = eta;
+    double dr = zr - alpha[K - 1];
+    double di = zi;
+    for (int k = K - 1; k >= 1; k--) {
+        /* term = β_k² / d  where d = (dr, di) is the previously-built
+         * fraction tail. */
+        double bk2 = beta[k] * beta[k];
+        double mag2 = dr * dr + di * di;
+        double tr = bk2 * dr / mag2;
+        double ti = -bk2 * di / mag2;     /* β_k²/d, complex inverse */
+        dr = (zr - alpha[k - 1]) - tr;
+        di = zi - ti;
+    }
+    /* result = seed_norm² / (dr + i di) */
+    double mag2 = dr * dr + di * di;
+    *out_re =  seed_norm * seed_norm * dr / mag2;
+    *out_im = -seed_norm * seed_norm * di / mag2;
+}
