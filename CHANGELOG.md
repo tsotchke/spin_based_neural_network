@@ -5,6 +5,95 @@ All notable changes to the Spin-Based Neural Computation Framework will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — sector-projected NQS predictive observables on kagome AFM
+
+End-to-end pipeline from random NQS seed through projecting Lanczos
+to predictive observables on the kagome 2×2 PBC ground state, plus
+infrastructure to extend to N=27 PBC.
+
+### Added — variational stack
+- **Sector-projecting Lanczos** (`mps/lanczos.h`):
+  `lanczos_smallest_projected`, `lanczos_k_smallest_projected` —
+  in-loop sector projection inside the Krylov build kills the
+  power-method amplification of machine-precision sector leakage.
+  Required for accurate sector spectra at small dim where the gap
+  between in-sector and out-of-sector lowest eigenvalues is smaller
+  than the leak-amplification factor.
+- **Memory-lean projecting Lanczos** (`mps/lanczos.h`):
+  `lanczos_smallest_projected_lean` — 3-term recurrence with no
+  Krylov-basis storage; O(few · dim) memory.  Required to push to
+  N≥24 where full reorthogonalisation is infeasible (300 GB at N=27).
+- **Two-pass lean projecting Lanczos with eigenvector reconstruction**
+  (`mps/lanczos.h`): `lanczos_smallest_projected_lean_eigvec`.  Pass 1
+  saves α/β; pass 2 diagonalises tridiagonal; pass 3 replays Lanczos
+  to accumulate Ritz vector.  Wall 2× lean, memory unchanged.
+  Unblocks all post-processing (TEE, S(q,ω), partial trace) at large N.
+- **Continued-fraction Lanczos** (`mps/lanczos.h`):
+  `lanczos_continued_fraction` + `lanczos_cf_evaluate`.  Evaluates
+  ⟨φ|(z−H)⁻¹|φ⟩ via Stieltjes continued fraction for spectral
+  functions (S(q,ω), Green's functions).
+- **Kagome p6m projector as vector op** (`nqs/nqs_symproj.h`):
+  `nqs_kagome_p6m_project_inplace`.  Applies P_α = (1/G) Σ_g χ(g) T(g)
+  in place to a length-2^N state vector.  3-bit-chunk lookup table
+  optimisation: 62 KB cache footprint, ~5× faster than the
+  per-bit-shift loop.
+- **OpenMP parallelisation** of the kagome H matvec and the projector
+  via `make OPENMP=1` (Apple Clang + Homebrew libomp by default;
+  fallback to gcc -fopenmp).  M2 Ultra: ~14× speedup on 14 perf
+  cores.
+- **Sector-projected Heisenberg ED via libirrep**: callback variants
+  of nqs_lanczos refine + k-lowest paths
+  (`nqs_lanczos_{refine,k_lowest}_kagome_heisenberg_with_cb` /
+  `_projected`).  Sector spectrum extraction without sector-built
+  sparse Hamiltonian.
+
+### Added — research drivers (predictive observables on N=12 kagome AFM)
+- `scripts/research_kagome_b1_train.c` — sector-projected NQS training
+  in (Γ, B_1) + Lanczos refinement.  hidden=64/1500-iter run reaches
+  E_var = -5.358 (1.6% rel err); Lanczos refinement on the projected
+  ψ_sym hits E_0 = -5.4448752170 to 1e-10 % precision in 33 iters.
+- `scripts/research_kagome_sector_spectrum.c` — sector-resolved
+  low-energy spectrum scan via projecting k-lowest Lanczos.  All four
+  1D-irrep ground states match libirrep ED to 8+ digits.
+- `scripts/research_kagome_tee.c` — γ_TEE area-law fit on the
+  projected (Γ, B_1) ground state.  γ ≈ 1.06 · log 2 (Z₂ spin-liquid
+  signature).
+- `scripts/research_kagome_correlations.c` — static spin correlations
+  ⟨S_i·S_j⟩ + structure factor S(q).  S(q=Γ)=0 (no FM order),
+  S(q=K-eq)/N = 0.033 (no Bragg peak → spin liquid).
+- `scripts/research_kagome_sqw.c` — dynamic structure factor S(q,ω)
+  via continued-fraction Lanczos.  Predicts inelastic-neutron line
+  shapes; lowest peak ω = 0.60 J at non-Γ momenta.
+- `scripts/research_kagome_3x3_e0.c` — N=27 PBC sector ground states
+  via lean projecting Lanczos.  Memory ~6 GB working set.
+- `scripts/research_kagome_observables_lean.c` — combined predictive-
+  observables driver (E_0 + ψ_0 + correlations + γ_TEE) for any
+  (L, irrep) pair.  Supports L=1..3.
+
+### Added — tests + manifests
+- `test_nqs_sector_lanczos` (3 cases): regression tests locking in
+  the libirrep ED agreement for the projected, lean, and
+  eigenvector-reconstruction Lanczos paths.
+- Six archived JSON result manifests under `benchmarks/results/nqs/`:
+  `kagome_b1_h64_convergence`, `kagome_b1_lanczos_refined`,
+  `kagome_sector_spectrum`, `kagome_tee_2x2`,
+  `kagome_correlations_2x2`, `kagome_sqw_2x2`,
+  `kagome_sector_observables_2x2`.
+
+### Discovered + fixed
+- **Sector-leakage power-method amplification in projecting Lanczos**:
+  without in-loop projection, machine-precision (~1e-14) numerical
+  sector leakage gets amplified by Lanczos dynamics over O(log dim ·
+  log eigen-ratio) iterations and converges to the global ground state
+  regardless of seed sector.  Discovered via diagnostics on the
+  kagome 2×2 PBC cluster (ψ_sym sector-pure to 1e-15, but Lanczos
+  returned global B_1 GS from any sector seed).  Fixed by inserting
+  P_α projection after every Krylov step.  Likely a silent bug in
+  many literature codes that don't explicitly handle this.
+- **libirrep_bridge_entropy doc bug**: `n` parameter is the matrix
+  *dimension* (= 2^nA for spin-1/2 RDM), not site count.  Header
+  docstrings updated to clarify.
+
 ## [0.4.3] — 2026-04-26 — MinSR + kagome p6m + audit corrections
 
 A correctness-and-capability release: a top-to-bottom audit replaced
