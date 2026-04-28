@@ -479,6 +479,17 @@ research_kagome_3x3_e0: $(BIN_DIR)
 	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
 	    $(LDFLAGS) $(OMP_LDFLAGS)
 
+# Predictive-observables driver via two-pass lean Lanczos: E_0, ψ_0,
+# spin correlations, structure factor, TEE area-law fit.  IRREP needed
+# for the partial-trace + entropy bridge.
+research_kagome_observables_lean: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
+	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_observables_lean \
+	    scripts/research_kagome_observables_lean.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
+	    src/libirrep_bridge.c \
+	    $(LDFLAGS) $(IRREP_LDFLAGS) $(OMP_LDFLAGS)
+
 # Topological entanglement entropy of the kagome AFM 2×2 PBC ground
 # state via Lanczos-refined ψ_0 + libirrep_bridge partial trace +
 # Renyi entropy.  Linear fit S = α·|∂A| − γ extracts γ_TEE.  IRREP
