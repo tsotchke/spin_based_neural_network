@@ -439,6 +439,17 @@ research_kagome_b1_train: $(BIN_DIR)
 	    scripts/research_kagome_b1_train.c \
 	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
 
+# Topological entanglement entropy of the kagome AFM 2×2 PBC ground
+# state via Lanczos-refined ψ_0 + libirrep_bridge partial trace +
+# Renyi entropy.  Linear fit S = α·|∂A| − γ extracts γ_TEE.  IRREP
+# required for the libirrep_bridge entropy wrappers.
+research_kagome_tee: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
+	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) -o $(BIN_DIR)/research_kagome_tee \
+	    scripts/research_kagome_tee.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
+	    src/libirrep_bridge.c \
+	    $(LDFLAGS) $(IRREP_LDFLAGS)
+
 # Sector-resolved low-energy spectrum scan via Lanczos seeded from
 # random ψ_sym in each of A_1 / A_2 / B_1 / B_2 irreps.  No training.
 research_kagome_sector_spectrum: $(BIN_DIR)

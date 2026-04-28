@@ -134,15 +134,18 @@ int libirrep_bridge_partial_trace_spin_half(int num_sites,
                                              const int *sites_A, int nA,
                                              double _Complex *rho_A);
 
-/* Von Neumann entropy S = -Tr(ρ log ρ) on a spin-1/2 reduced
- * density matrix ρ_A of size 2^nA × 2^nA (row-major).  Writes into
- * *out_S.  ρ_A is destroyed by the eigen-decomposition step inside
+/* Von Neumann entropy S = -Tr(ρ log ρ) on a Hermitian density matrix ρ
+ * of MATRIX DIMENSION n (i.e. ρ is n×n, row-major).  For a spin-1/2
+ * reduced density matrix on nA sites, pass n = 2^nA.  Writes into
+ * *out_S.  ρ is destroyed by the eigen-decomposition step inside
  * libirrep — caller copies if it needs to retain ρ. */
 int libirrep_bridge_entropy_vonneumann(const double _Complex *rho, int n,
                                         double *out_S);
 
-/* Renyi entropy S_α = (1/(1-α)) log Tr ρ^α, α > 0, α ≠ 1.
- * α = 2 (purity-based) is the standard Monte-Carlo-friendly variant. */
+/* Renyi entropy S_α = (1/(1-α)) log Tr ρ^α, α > 0, α ≠ 1, on an n×n
+ * Hermitian density matrix ρ (n is matrix dimension, NOT number of
+ * sites — pass 2^nA for an nA-site spin-1/2 RDM).  α = 2 (purity-
+ * based) is the standard Monte-Carlo-friendly variant. */
 int libirrep_bridge_entropy_renyi(const double _Complex *rho, int n,
                                    double alpha, double *out_S);
 
