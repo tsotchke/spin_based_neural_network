@@ -1,0 +1,62 @@
+{
+  "suite": "nqs",
+  "name": "kagome_correlations_2x2",
+  "kind": "research_observable",
+  "utc_epoch": 1777360500,
+  "os": "Darwin",
+  "arch": "arm64",
+  "hostname": "Atlas.local",
+  "binary": "build/research_kagome_correlations",
+  "system": {
+    "lattice": "kagome",
+    "Lx": 2,
+    "Ly": 2,
+    "num_sites": 12,
+    "pbc": true,
+    "hamiltonian": "heisenberg",
+    "j_coupling": 1.0
+  },
+  "method": {
+    "ground_state": "Lanczos refined seeded by p6m (Γ, B_1) projection of random complex RBM",
+    "ground_state_precision": "Δ = 2.81e-11 vs libirrep ED",
+    "correlation_estimator": "direct Σ_s ψ²(s)·s_i·s_j (diag) + Σ_pairs ψ(s)ψ(s⊕{i,j}) (off-diag)",
+    "rng_seed": "0xB1B1B1B1"
+  },
+  "ground_state": {
+    "E_0": -5.4448752170,
+    "delta_vs_ED": 2.81e-11,
+    "lanczos_iters": 18,
+    "S_total_squared": 0.000000,
+    "S_total_recovered": 0.0,
+    "comment": "S_total = 0 confirms singlet ground state (sum rule Σ_{ij}⟨S_i·S_j⟩ = S(S+1))"
+  },
+  "shells_by_distance": [
+    {"d": 0.500, "n_pairs": 24, "S_dot_S_avg": -0.2268698007, "comment": "NN bonds, all H-bonds; 24·(-0.22687)=-5.4449=E_0/J"},
+    {"d": 0.866, "n_pairs": 16, "S_dot_S_avg":  0.0887401923, "comment": "next-NN (across triangles)"},
+    {"d": 1.000, "n_pairs": 13, "S_dot_S_avg": -0.0636099530, "comment": "across-cell (a1 or a2)"},
+    {"d": 1.323, "n_pairs":  8, "S_dot_S_avg":  0.0887401923, "comment": "diagonal-cell (image distance equal to next-NN)"},
+    {"d": 1.732, "n_pairs":  5, "S_dot_S_avg": -0.0715920019, "comment": "longest distance on PBC supercell"}
+  ],
+  "static_structure_factor": [
+    {"q_label": "Gamma (0,0)",    "q_a": 0, "q_b": 0, "Re_Sq": 0.00000000, "Im_Sq": 0.0},
+    {"q_label": "M_a (b1/2)",     "q_a": 1, "q_b": 0, "Re_Sq": 0.39501386, "Im_Sq": 0.0},
+    {"q_label": "M_b (b2/2)",     "q_a": 0, "q_b": 1, "Re_Sq": 0.39501386, "Im_Sq": 0.0},
+    {"q_label": "K-equiv (b1+b2)/2", "q_a": 1, "q_b": 1, "Re_Sq": 0.39501386, "Im_Sq": 0.0}
+  ],
+  "interpretation": {
+    "sum_rule_check": "PASS — Σ_{ij}⟨S_i·S_j⟩ = 0 confirms singlet GS",
+    "energy_consistency": "PASS — 24·(NN avg) = -5.4449 = E_0/J at machine precision",
+    "ferromagnetic_order": "ABSENT — S(q=Γ) = 0 (sum-rule trivially)",
+    "120_AFM_Bragg_peak": "ABSENT — S(K-equiv)/N = 0.395/12 = 0.033 finite, not extensive.  No long-range AFM order on this cluster.",
+    "120_AFM_signature_strength": "S(K)/S(M) = 1.00 (degenerate at all 3 non-Γ points): the 2×2 cluster has insufficient k-resolution to distinguish K from M.  Diagnostic for ordering vs liquid requires N=27+ where K and M are inequivalent.",
+    "spin_liquid_interpretation": "Consistent with quantum-disordered ground state.  S(K) finite (not divergent with N) at this cluster size — but finite-size scaling needed."
+  },
+  "correlations_by_pair": {
+    "comment": "Full 12×12 lower-triangle ⟨S_i·S_j⟩ matrix in script stdout. Site indexing: i = 3·(cx·Ly+cy)+sub.",
+    "diagonal": "All 0.7500 = S(S+1) for spin-1/2",
+    "NN_value": -0.22687,
+    "next_NN_value":  0.08874,
+    "longest_distance_value": -0.07159
+  },
+  "notes": "First static spin-correlation measurement on the project's ED-quality kagome AFM ground state. Total wall time: <1 second. Direct cross-check against Lanczos E_0 to 5 digits via the Heisenberg sum-rule E_0 = J·Σ_{NN bonds}⟨S_i·S_j⟩.  Static structure factor S(q) is bounded (no Bragg divergence) at all four momentum points of the 2×2 PBC supercell, ruling out classical 120° order on this cluster.  Distinguishing ordered vs liquid requires the larger N=27+ cluster where K and M are momentum-inequivalent."
+}
