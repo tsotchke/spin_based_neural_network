@@ -646,6 +646,31 @@ int nqs_lanczos_e0_kagome_heisenberg_projected_lean(
                                             out_eigenvalue, out_result);
 }
 
+/* Two-pass version: returns eigenvector (length 2^N) in addition to E_0.
+ * Wall time ~2× the E_0-only variant.  Memory still 4-5 vectors at dim. */
+int nqs_lanczos_e0_kagome_heisenberg_projected_lean_eigvec(
+    int Lx_cells, int Ly_cells, double J, int pbc,
+    const int *perm, const double *characters, int G,
+    int max_iters, double tol,
+    double *out_eigenvalue,
+    double *out_eigenvector,
+    lanczos_result_t *out_result) {
+    if (!out_eigenvalue || !out_eigenvector || !perm || !characters || G <= 0)
+        return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    if (N <= 0 || N > 30) return -1;
+    long dim = 1L << N;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    kagome_p6m_proj_ctx_t pc = { .N = N, .G = G,
+                                  .perm = perm, .characters = characters };
+    return lanczos_smallest_projected_lean_eigvec(
+        kagome_heis_matvec, &ctx, dim,
+        max_iters, tol, NULL,
+        kagome_p6m_project_step, &pc,
+        out_eigenvalue, out_eigenvector, out_result);
+}
+
 int nqs_lanczos_refine_kagome_heisenberg_projected(
     nqs_log_amp_fn_t log_amp, void *user,
     int Lx_cells, int Ly_cells, double J, int pbc,

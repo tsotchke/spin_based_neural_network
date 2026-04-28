@@ -931,3 +931,171 @@ int lanczos_smallest_projected_lean(lanczos_matvec_fn_t matvec, void *user_data,
     free(v_curr); free(v_prev); free(w); free(alpha); free(beta); free(d); free(e);
     return 0;
 }
+
+/* ===========================================================================
+ *  Two-pass projecting Lanczos with eigenvector reconstruction.
+ *
+ *  Pass 1: lean 3-term recurrence + in-loop projection — saves α[k], β[k]
+ *  Pass 2: diagonalise the K×K tridiagonal, identify the smallest Ritz
+ *          value's eigenvector z[k] (length K) of the tridiagonal
+ *  Pass 3: replay Pass 1 with the same seed; at each step accumulate
+ *          out_eigvec += z[k] · v_k.  The projection in Pass 3 must be
+ *          identical to Pass 1 — same operations, deterministic.
+ *
+ *  Memory: 4-5 vectors (v_curr, v_prev, w, eigvec accumulator) at dim,
+ *          plus K² for the tridiagonal solve.  No O(K · dim) basis.
+ *  Wall:   2× the lean Lanczos time (Pass 1 + Pass 3, plus tiny Pass 2).
+ *
+ *  Required for any post-processing on N≥24 sectors that needs the
+ *  eigenvector (TEE, dynamic correlators, partial trace, …) where the
+ *  full-reorth Lanczos would blow memory budget.
+ * =========================================================================*/
+
+int lanczos_smallest_projected_lean_eigvec(lanczos_matvec_fn_t matvec, void *user_data,
+                                             long dim,
+                                             int max_iters, double tol,
+                                             const double *initial_vector,
+                                             lanczos_project_fn_t project, void *project_user,
+                                             double *out_eigenvalue,
+                                             double *out_eigenvector,
+                                             lanczos_result_t *out) {
+    if (!matvec || dim <= 0 || max_iters <= 0 || !out_eigenvector) return -1;
+    if (out) {
+        out->eigenvalue = 0.0;
+        out->iterations = 0;
+        out->converged = 0;
+        out->residual_norm = 0.0;
+    }
+    if (max_iters > dim) max_iters = (int)dim;
+
+    double *v_curr = calloc((size_t)dim, sizeof(double));
+    double *v_prev = calloc((size_t)dim, sizeof(double));
+    double *w      = calloc((size_t)dim, sizeof(double));
+    double *seed   = calloc((size_t)dim, sizeof(double));
+    double *alpha  = calloc((size_t)max_iters, sizeof(double));
+    double *beta   = calloc((size_t)(max_iters + 1), sizeof(double));
+    if (!v_curr || !v_prev || !w || !seed || !alpha || !beta) {
+        free(v_curr); free(v_prev); free(w); free(seed);
+        free(alpha); free(beta); return -1;
+    }
+
+    /* Build the seed vector — same logic as lanczos_smallest_projected_lean. */
+    if (initial_vector) {
+        memcpy(seed, initial_vector, (size_t)dim * sizeof(double));
+    } else {
+        unsigned long long rng = 0xA5A5A5A5A5A5A5A5ULL ^ (unsigned long long)dim;
+        for (long i = 0; i < dim; i++) {
+            rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+            double u = (double)(rng >> 11) / 9007199254740992.0;
+            seed[i] = u - 0.5;
+        }
+    }
+    if (project) project(seed, dim, project_user);
+    double sn = vec_norm(seed, dim);
+    if (sn < 1e-14) {
+        unsigned long long rng = 0xBEEFBABEULL ^ (unsigned long long)dim;
+        for (long i = 0; i < dim; i++) {
+            rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+            double u = (double)(rng >> 11) / 9007199254740992.0;
+            seed[i] = u - 0.5;
+        }
+        if (project) project(seed, dim, project_user);
+        sn = vec_norm(seed, dim);
+    }
+    if (sn > 0) for (long i = 0; i < dim; i++) seed[i] /= sn;
+
+    /* ----- Pass 1: build the tridiagonal coefficients only. */
+    memcpy(v_curr, seed, (size_t)dim * sizeof(double));
+    memset(v_prev, 0, (size_t)dim * sizeof(double));
+    double *d = malloc((size_t)max_iters * sizeof(double));
+    double *e = malloc((size_t)max_iters * sizeof(double));
+    if (!d || !e) {
+        free(v_curr); free(v_prev); free(w); free(seed);
+        free(alpha); free(beta); free(d); free(e); return -1;
+    }
+    int K = 0;
+    double lambda = 0.0, prev_lambda = 0.0;
+    for (int k = 0; k < max_iters; k++) {
+        matvec(v_curr, w, dim, user_data);
+        alpha[k] = vec_dot(v_curr, w, dim);
+        vec_axpy(w, -alpha[k], v_curr, dim);
+        if (k > 0) vec_axpy(w, -beta[k], v_prev, dim);
+        if (project) project(w, dim, project_user);
+        beta[k + 1] = vec_norm(w, dim);
+        K = k + 1;
+        if (beta[k + 1] < 1e-14) break;
+
+        /* Ritz check */
+        for (int i = 0; i < K; i++) d[i] = alpha[i];
+        for (int i = 0; i < K - 1; i++) e[i] = beta[i + 1];
+        e[K - 1] = 0.0;
+        tridiag_ql(d, e, K, NULL);
+        int idx = 0;
+        for (int i = 1; i < K; i++) if (d[i] < d[idx]) idx = i;
+        prev_lambda = lambda;
+        lambda = d[idx];
+        if (k > 5 && fabs(lambda - prev_lambda) < tol) break;
+
+        memcpy(v_prev, v_curr, (size_t)dim * sizeof(double));
+        double inv_b = 1.0 / beta[k + 1];
+        for (long i = 0; i < dim; i++) v_curr[i] = w[i] * inv_b;
+    }
+
+    /* ----- Pass 2: diagonalise the K×K tridiagonal, with the eigvec
+     *               accumulator Z so we can extract z[k] for the lowest. */
+    double *Z = malloc((size_t)K * (size_t)K * sizeof(double));
+    if (!Z) {
+        free(v_curr); free(v_prev); free(w); free(seed);
+        free(alpha); free(beta); free(d); free(e); return -1;
+    }
+    for (int i = 0; i < K; i++) d[i] = alpha[i];
+    for (int i = 0; i < K - 1; i++) e[i] = beta[i + 1];
+    e[K - 1] = 0.0;
+    for (int i = 0; i < K; i++)
+        for (int j = 0; j < K; j++)
+            Z[(size_t)i * (size_t)K + (size_t)j] = (i == j) ? 1.0 : 0.0;
+    tridiag_ql(d, e, K, Z);
+    int idx_min = 0;
+    for (int i = 1; i < K; i++) if (d[i] < d[idx_min]) idx_min = i;
+    lambda = d[idx_min];
+
+    /* z[k] = Z[k * K + idx_min], k = 0..K-1, the eigenvector of T_K
+     * at index idx_min in the (sorted) tridiagonal-eigenvector matrix. */
+
+    /* ----- Pass 3: replay Lanczos, accumulate Ritz vector. */
+    memset(out_eigenvector, 0, (size_t)dim * sizeof(double));
+    memcpy(v_curr, seed, (size_t)dim * sizeof(double));
+    memset(v_prev, 0, (size_t)dim * sizeof(double));
+
+    /* Add z[0] · v_0 to the accumulator. */
+    {
+        double z0 = Z[(size_t)0 * (size_t)K + (size_t)idx_min];
+        vec_axpy(out_eigenvector, z0, v_curr, dim);
+    }
+    for (int k = 0; k < K - 1; k++) {
+        matvec(v_curr, w, dim, user_data);
+        vec_axpy(w, -alpha[k], v_curr, dim);
+        if (k > 0) vec_axpy(w, -beta[k], v_prev, dim);
+        if (project) project(w, dim, project_user);
+        if (beta[k + 1] < 1e-14) break;
+        memcpy(v_prev, v_curr, (size_t)dim * sizeof(double));
+        double inv_b = 1.0 / beta[k + 1];
+        for (long i = 0; i < dim; i++) v_curr[i] = w[i] * inv_b;
+        double zk = Z[(size_t)(k + 1) * (size_t)K + (size_t)idx_min];
+        vec_axpy(out_eigenvector, zk, v_curr, dim);
+    }
+    /* Renormalise (numerical drift across many iters). */
+    double en = vec_norm(out_eigenvector, dim);
+    if (en > 0) vec_scale(out_eigenvector, 1.0 / en, dim);
+
+    if (out_eigenvalue) *out_eigenvalue = lambda;
+    if (out) {
+        out->eigenvalue    = lambda;
+        out->iterations    = K;
+        out->converged     = (K >= 6 && fabs(lambda - prev_lambda) < tol);
+        out->residual_norm = (K >= 2) ? fabs(lambda - prev_lambda) : 0.0;
+    }
+    free(v_curr); free(v_prev); free(w); free(seed);
+    free(alpha); free(beta); free(d); free(e); free(Z);
+    return 0;
+}

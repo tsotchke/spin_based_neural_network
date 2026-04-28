@@ -196,6 +196,17 @@ int nqs_lanczos_e0_kagome_heisenberg_projected_lean(
     double *out_eigenvalue,
     lanczos_result_t *out_result);
 
+/* Two-pass variant: also reconstructs the eigenvector via lean Lanczos
+ * replay.  Wall time 2× the E_0-only path.  Memory still O(few · dim).
+ * `out_eigenvector` is caller-allocated, length 2^N (where N = 3·Lx·Ly). */
+int nqs_lanczos_e0_kagome_heisenberg_projected_lean_eigvec(
+    int Lx_cells, int Ly_cells, double J, int pbc,
+    const int *perm, const double *characters, int G,
+    int max_iters, double tol,
+    double *out_eigenvalue,
+    double *out_eigenvector,
+    lanczos_result_t *out_result);
+
 /* Variant of nqs_materialise_state that takes an explicit log_amp
  * callback (so Marshall / translation wrappers feed in). */
 int nqs_materialise_state_with_cb(nqs_log_amp_fn_t log_amp, void *user,

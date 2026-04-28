@@ -148,6 +148,29 @@ int lanczos_smallest_projected_lean(lanczos_matvec_fn_t matvec, void *user_data,
                                      double *out_eigenvalue,
                                      lanczos_result_t *out);
 
+/* Two-pass lean projecting Lanczos with eigenvector reconstruction.
+ *
+ *   Pass 1: lean 3-term recurrence + in-loop projection — saves α, β.
+ *   Pass 2: diagonalise the K×K tridiagonal, identify smallest Ritz value.
+ *   Pass 3: replay Lanczos with same seed; at each step accumulate
+ *           out_eigvec += z[k] · v_k.  Projection in pass 3 is bit-
+ *           identical to pass 1.
+ *
+ * Memory: 4-5 vectors at dim, no O(K · dim) basis storage.
+ * Wall:   2× the no-eigenvector lean Lanczos.
+ *
+ * Required for any post-processing on N≥24 sectors that needs the
+ * eigenvector (TEE, dynamic correlators, partial trace, …) where
+ * full-reorth Lanczos would blow the memory budget. */
+int lanczos_smallest_projected_lean_eigvec(lanczos_matvec_fn_t matvec, void *user_data,
+                                             long dim,
+                                             int max_iters, double tol,
+                                             const double *initial_vector,
+                                             lanczos_project_fn_t project, void *project_user,
+                                             double *out_eigenvalue,
+                                             double *out_eigenvector,
+                                             lanczos_result_t *out);
+
 /* Run Lanczos starting from `seed` and return the tridiagonal
  * coefficients α[k], β[k] for k = 0..K-1 plus the seed norm.  Does
  * not extract eigenvalues — caller uses the (α, β) pair directly to

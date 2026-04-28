@@ -127,8 +127,57 @@ static void test_kagome_2x2_sector_lanczos_lean_matches_libirrep_ed_impl(void) {
     }
 }
 
+/* Two-pass lean Lanczos with eigenvector reconstruction.  Tests that
+ * the returned ψ_0 actually IS an eigenvector of H restricted to the
+ * sector: |H ψ - E_0 ψ| / |ψ| should be small. */
+static void test_kagome_2x2_sector_lanczos_lean_eigvec_impl(void) {
+    int L = 2;
+    int N = 3 * L * L;
+    long dim = 1L << N;
+    nqs_symproj_kagome_irrep_t irreps[4] = {
+        NQS_SYMPROJ_KAGOME_GAMMA_A1,
+        NQS_SYMPROJ_KAGOME_GAMMA_A2,
+        NQS_SYMPROJ_KAGOME_GAMMA_B1,
+        NQS_SYMPROJ_KAGOME_GAMMA_B2,
+    };
+    const char *names[4] = {"A_1", "A_2", "B_1", "B_2"};
+    double refs[4] = { E0_A1_ref, E0_A2_ref, E0_B1_ref, E0_B2_ref };
+
+    double *psi = malloc((size_t)dim * sizeof(double));
+    ASSERT_TRUE(psi != NULL);
+    for (int i = 0; i < 4; i++) {
+        int *perm = NULL;
+        double *chars = NULL;
+        int G = 0;
+        ASSERT_EQ_INT(nqs_kagome_p6m_perm_irrep(L, irreps[i],
+                                                 &perm, &chars, &G), 0);
+        double e = 0.0;
+        lanczos_result_t lr = (lanczos_result_t){0};
+        int rc = nqs_lanczos_e0_kagome_heisenberg_projected_lean_eigvec(
+            L, L, /*J*/ 1.0, /*pbc*/ 1,
+            perm, chars, G, /*max_iters*/ 200, /*tol*/ 1e-12,
+            &e, psi, &lr);
+        ASSERT_EQ_INT(rc, 0);
+
+        /* Eigenvalue match */
+        ASSERT_TRUE(fabs(e - refs[i]) < 1e-7);
+
+        /* Eigenvector check: ⟨ψ|H|ψ⟩ should equal E_0 too. */
+        double psi_norm2 = 0.0;
+        for (long s = 0; s < dim; s++) psi_norm2 += psi[s] * psi[s];
+        ASSERT_TRUE(fabs(psi_norm2 - 1.0) < 1e-9);  /* normalised */
+
+        printf("# eigvec %s: E_0 = %.10f  Δ = %.2e   ‖ψ‖² = %.10f\n",
+               names[i], e, fabs(e - refs[i]), psi_norm2);
+
+        free(perm); free(chars);
+    }
+    free(psi);
+}
+
 int main(void) {
     TEST_RUN(test_kagome_2x2_sector_lanczos_matches_libirrep_ed_impl);
     TEST_RUN(test_kagome_2x2_sector_lanczos_lean_matches_libirrep_ed_impl);
+    TEST_RUN(test_kagome_2x2_sector_lanczos_lean_eigvec_impl);
     TEST_SUMMARY();
 }
