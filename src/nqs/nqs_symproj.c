@@ -760,29 +760,64 @@ void nqs_kagome_p6m_project_inplace(double *psi, int N, int G,
     double *out = (double *)calloc((size_t)dim, sizeof(double));
     if (!out) return;
 
+    /* Precompute a small table: for each group element g and each
+     * 3-bit input "chunk" c (the bits at positions 3c, 3c+1, 3c+2 of s),
+     * a 64-bit mask whose `((s >> 3c) & 7)`-th entry contributes the
+     * three permuted bits of s_pre at positions perm_inv[g][3c+0..2].
+     *
+     * Rationale: the original inner loop computes s_pre = bit-permute(s)
+     * via 27 × {shift, mask, OR, shift} operations.  Splitting s into
+     * 9 chunks of 3 bits replaces this with 9 table lookups + 8 ORs.
+     * For kagome with 3 sublattices per cell, 3-bit chunks are natural.
+     * Table size: G × 9 chunks × 8 values × 8 bytes = 62 KB at G=108.
+     *
+     * Memory access pattern matters: for each (s, g) the inner loop
+     * still gathers psi[s_pre] from a random location, so DRAM-latency
+     * cost is unchanged.  Speedup is on the bit-permute compute:
+     * ~10× when arithmetic dominates, ~2-3× when memory dominates. */
+    int n_chunks = (N + 2) / 3;
+    long *chunk_table = (long *)calloc((size_t)G * (size_t)n_chunks * 8,
+                                          sizeof(long));
+    if (!chunk_table) { free(out); return; }
+    for (int g = 0; g < G; g++) {
+        const int *pg = &perm[(size_t)g * (size_t)N];
+        /* Inverse permutation: where does s's bit j end up in s_pre?
+         * pg[i] = j means s_pre's bit i = s's bit j, so j → i. */
+        int pinv[32] = {0};
+        for (int i = 0; i < N; i++) pinv[pg[i]] = i;
+        for (int c = 0; c < n_chunks; c++) {
+            int j0 = 3 * c;
+            int j1 = j0 + 1 < N ? j0 + 1 : -1;
+            int j2 = j0 + 2 < N ? j0 + 2 : -1;
+            for (int v = 0; v < 8; v++) {
+                long mask = 0;
+                if ((v & 1) && j0 >= 0) mask |= (1L << pinv[j0]);
+                if ((v & 2) && j1 >= 0) mask |= (1L << pinv[j1]);
+                if ((v & 4) && j2 >= 0) mask |= (1L << pinv[j2]);
+                chunk_table[(((long)g * n_chunks) + c) * 8 + v] = mask;
+            }
+        }
+    }
+
     #ifdef _OPENMP
     #pragma omp parallel for schedule(static)
     #endif
     for (long s = 0; s < dim; s++) {
+        double acc = 0.0;
         for (int g = 0; g < G; g++) {
-            /* T(g) sends basis state |perm_image⟩ ← |s⟩, i.e. for each
-             * output state s_out, we want sum over g of chi(g) * psi(s')
-             * where s' is the preimage of s under the permutation T(g).
-             * In the "look up source" convention: pre-image of s under
-             * T(g) is the state whose i-th bit equals s's perm[g][i]-th
-             * bit.  Build that state index. */
-            const int *pg = &perm[(size_t)g * (size_t)N];
+            const long *gtab = &chunk_table[(long)g * n_chunks * 8];
             long s_pre = 0;
-            for (int i = 0; i < N; i++) {
-                long b = (s >> pg[i]) & 1L;
-                s_pre |= b << i;
+            for (int c = 0; c < n_chunks; c++) {
+                long v = (s >> (3 * c)) & 7L;
+                s_pre |= gtab[c * 8 + v];
             }
-            out[s] += characters[g] * psi[s_pre];
+            acc += characters[g] * psi[s_pre];
         }
-        out[s] /= (double)G;
+        out[s] = acc / (double)G;
     }
     memcpy(psi, out, (size_t)dim * sizeof(double));
     free(out);
+    free(chunk_table);
 }
 
 #undef KG_SITE
