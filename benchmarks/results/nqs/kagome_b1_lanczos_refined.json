@@ -60,5 +60,20 @@
     "lanczos_seconds": 0.12,
     "total_seconds": 7.5
   },
-  "notes": "Lanczos post-processing on the sector-projected wavefunction reaches ED ground state to 11 digits in 33 Krylov iterations and 0.12 s, even from a deliberately under-trained ansatz with E_var ~ +1.0 (∼6.4 J above E_0). The B_1 projector guarantees nonzero overlap of psi_sym with the (Γ, B_1) ground state on the 4096-dim Hilbert space, and Lanczos converges to the lowest eigenvalue of any seed with nonzero overlap on it. P2.6 leverage move from architecture_v0.4.md realized end-to-end."
+  "sector_spectrum": {
+    "method": "lanczos_k_lowest_with_cb",
+    "max_iters": 300,
+    "k": 4,
+    "seed": "psi_sym",
+    "E_0": -5.4448752170,
+    "E_1": -5.3283924045,
+    "E_2": -5.2982365402,
+    "E_3": -5.2982365402,
+    "gap_E1_E0": 0.1164828125,
+    "gap_E2_E0": 0.1466386768,
+    "gap_E3_E0": 0.1466386768,
+    "k_lowest_seconds": 0.41,
+    "interpretation": "Lowest 4 eigenvalues of H restricted to (Γ, B_1) sector. E_2 and E_3 are degenerate (2-fold level). At this cluster size the 3 lowest globally also live in (Γ, B_1), so this matches the full-Hilbert k=3 result from test_kagome_lanczos_k_lowest. At larger N the spectra diverge."
+  },
+  "notes": "Lanczos post-processing on the sector-projected wavefunction reaches ED ground state to 11 digits in 33 Krylov iterations and 0.12 s, even from a deliberately under-trained ansatz with E_var ~ +1.0 (∼6.4 J above E_0). The B_1 projector guarantees nonzero overlap of psi_sym with the (Γ, B_1) ground state on the 4096-dim Hilbert space, and Lanczos converges to the lowest eigenvalue of any seed with nonzero overlap on it. P2.6 leverage move from architecture_v0.4.md realized end-to-end. Extended with sector-resolved low-energy spectrum via k-lowest Lanczos seeded from the same psi_sym; the Krylov subspace stays inside (Γ, B_1) because H commutes with the projector, so the returned k smallest Ritz values are the lowest k of H restricted to that sector — no sector-built sparse H needed."
 }
