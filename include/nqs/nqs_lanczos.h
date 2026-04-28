@@ -88,6 +88,18 @@ int nqs_exact_energy_kagome_heisenberg(nqs_ansatz_t *a,
                                         double J, int pbc,
                                         double *out_energy);
 
+/* Callback variant of nqs_exact_energy_kagome_heisenberg.  Same dense
+ * ⟨ψ|H|ψ⟩/⟨ψ|ψ⟩ computation, but the wavefunction comes from an
+ * arbitrary log-amplitude callback (e.g. nqs_symproj_log_amp wrapping
+ * a trained ansatz).  Used to read off the Monte-Carlo-noise-free
+ * variational energy of the projected wavefunction before running
+ * Lanczos refinement on top. */
+int nqs_exact_energy_kagome_heisenberg_with_cb(nqs_log_amp_fn_t log_amp,
+                                                 void *user,
+                                                 int Lx_cells, int Ly_cells,
+                                                 double J, int pbc,
+                                                 double *out_energy);
+
 int nqs_lanczos_refine_kagome_heisenberg(nqs_ansatz_t *a,
                                           int Lx_cells, int Ly_cells,
                                           double J, int pbc,
@@ -95,6 +107,22 @@ int nqs_lanczos_refine_kagome_heisenberg(nqs_ansatz_t *a,
                                           double *out_eigenvalue,
                                           double *out_eigenvector,
                                           lanczos_result_t *out_result);
+
+/* Callback variant: seeds Lanczos from an arbitrary log-amplitude
+ * source (e.g. a sector-projection wrapper around a trained ansatz).
+ * Identical semantics to the ansatz-based variant otherwise — same
+ * Hamiltonian, same dim = 2^N, same Krylov solver. The point is to
+ * let the projected wavefunction ψ_sym(s), not the bare base ansatz
+ * ψ_base(s), serve as the Krylov seed when training has been done in
+ * a non-trivial irrep sector. */
+int nqs_lanczos_refine_kagome_heisenberg_with_cb(nqs_log_amp_fn_t log_amp,
+                                                  void *user,
+                                                  int Lx_cells, int Ly_cells,
+                                                  double J, int pbc,
+                                                  int max_iters, double tol,
+                                                  double *out_eigenvalue,
+                                                  double *out_eigenvector,
+                                                  lanczos_result_t *out_result);
 
 /* k-lowest-eigenvalue variant for kagome Heisenberg. Returns the k
  * smallest Ritz values of H seeded from the trained ansatz's Re(ψ).

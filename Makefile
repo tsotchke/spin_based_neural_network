@@ -432,7 +432,7 @@ research_kagome_irrep_scan: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep
 research_kagome_b1_train: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/research_kagome_b1_train \
 	    scripts/research_kagome_b1_train.c \
-	    $(NQS_SRCS) $(LDFLAGS)
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
 
 test_nqs_translation: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_translation \

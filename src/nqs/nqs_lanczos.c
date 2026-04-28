@@ -448,6 +448,28 @@ int nqs_exact_energy_kagome_heisenberg(nqs_ansatz_t *a,
     return 0;
 }
 
+int nqs_exact_energy_kagome_heisenberg_with_cb(nqs_log_amp_fn_t log_amp,
+                                                 void *user,
+                                                 int Lx_cells, int Ly_cells,
+                                                 double J, int pbc,
+                                                 double *out_energy) {
+    if (!log_amp || !out_energy) return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    double *psi = NULL; long dim = 0;
+    if (nqs_materialise_state_with_cb_N(log_amp, user, N,
+                                          &psi, &dim) != 0) return -1;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    double *Hpsi = malloc((size_t)dim * sizeof(double));
+    if (!Hpsi) { free(psi); return -1; }
+    kagome_heis_matvec(psi, Hpsi, dim, &ctx);
+    double num = 0.0, den = 0.0;
+    for (long s = 0; s < dim; s++) { num += psi[s] * Hpsi[s]; den += psi[s] * psi[s]; }
+    *out_energy = num / den;
+    free(psi); free(Hpsi);
+    return 0;
+}
+
 int nqs_lanczos_refine_kagome_heisenberg(nqs_ansatz_t *a,
                                           int Lx_cells, int Ly_cells,
                                           double J, int pbc,
@@ -462,6 +484,34 @@ int nqs_lanczos_refine_kagome_heisenberg(nqs_ansatz_t *a,
     long dim = 1L << N;
     double *psi_seed = NULL; long pdim = 0;
     int rc_seed = nqs_materialise_state_with_cb_N(nqs_ansatz_log_amp, a, N,
+                                                    &psi_seed, &pdim);
+    int rc = (rc_seed == 0 && pdim == dim)
+        ? lanczos_smallest_with_init(kagome_heis_matvec, &ctx, dim,
+                                       max_iters, tol,
+                                       psi_seed, out_eigenvector, out_result)
+        : lanczos_smallest(kagome_heis_matvec, &ctx, dim,
+                             max_iters, tol,
+                             out_eigenvector, out_result);
+    free(psi_seed);
+    if (rc == 0 && out_result) *out_eigenvalue = out_result->eigenvalue;
+    return rc;
+}
+
+int nqs_lanczos_refine_kagome_heisenberg_with_cb(nqs_log_amp_fn_t log_amp,
+                                                  void *user,
+                                                  int Lx_cells, int Ly_cells,
+                                                  double J, int pbc,
+                                                  int max_iters, double tol,
+                                                  double *out_eigenvalue,
+                                                  double *out_eigenvector,
+                                                  lanczos_result_t *out_result) {
+    if (!log_amp || !out_eigenvalue) return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    long dim = 1L << N;
+    double *psi_seed = NULL; long pdim = 0;
+    int rc_seed = nqs_materialise_state_with_cb_N(log_amp, user, N,
                                                     &psi_seed, &pdim);
     int rc = (rc_seed == 0 && pdim == dim)
         ? lanczos_smallest_with_init(kagome_heis_matvec, &ctx, dim,

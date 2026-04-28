@@ -39,6 +39,8 @@
 #include "nqs/nqs_sampler.h"
 #include "nqs/nqs_optimizer.h"
 #include "nqs/nqs_symproj.h"
+#include "nqs/nqs_lanczos.h"
+#include "mps/lanczos.h"
 
 int main(int argc, char **argv) {
     int  iters = (argc > 1) ? atoi(argv[1]) : 600;
@@ -138,7 +140,61 @@ int main(int argc, char **argv) {
     printf("# per-site E/N:                              %.8f\n", e_tail / (double)N);
     printf("# ED per-site:                               %.8f\n", E_ED / (double)N);
     printf("\n");
-    printf("# elapsed: %.1f s\n", elapsed);
+
+    /* Step 2 — deterministic energy of the projected wavefunction.  This
+     * is ⟨ψ_sym|H|ψ_sym⟩/⟨ψ_sym|ψ_sym⟩ summed over all 2^12 = 4096 basis
+     * states, no Monte-Carlo noise — a strict upper bound on E_0 for the
+     * trained ansatz.  Should be ≤ e_tail by Jensen / variational princ. */
+    clock_t t1 = clock();
+    double e_det = NAN;
+    int rc_det = nqs_exact_energy_kagome_heisenberg_with_cb(
+        nqs_symproj_log_amp, &wrap, L, L, cfg.j_coupling, cfg.kagome_pbc,
+        &e_det);
+    double t_det = (double)(clock() - t1) / CLOCKS_PER_SEC;
+    if (rc_det == 0) {
+        printf("# deterministic E (proj.):                   %.8f  "
+               "(gap %.6f, %.3f%%)\n",
+               e_det, e_det - E_ED, 100.0 * (e_det - E_ED) / fabs(E_ED));
+        printf("# det.-energy time:                          %.2f s\n", t_det);
+    } else {
+        printf("# deterministic E:                           failed (rc=%d)\n",
+               rc_det);
+    }
+
+    /* Step 3 — Lanczos post-processing seeded from the projected ψ_sym.
+     * This builds a Krylov subspace over H_kagome starting from the
+     * trained wavefunction; a few dozen iterations typically removes 1-2
+     * orders of magnitude from the energy gap when seeded near the true
+     * ground state.  Reference test (no seed): test_kagome_lanczos_k_lowest
+     * reaches E_0 = −5.44487522 in ≤120 iterations from a random start;
+     * with a near-true seed convergence is much faster. */
+    clock_t t2 = clock();
+    lanczos_result_t lr = (lanczos_result_t){0};
+    double e_lanczos = NAN;
+    double *vec = malloc((size_t)(1L << N) * sizeof(double));
+    if (!vec) { fprintf(stderr, "Lanczos eigvec alloc failed\n"); }
+    int rc_lanczos = vec ? nqs_lanczos_refine_kagome_heisenberg_with_cb(
+        nqs_symproj_log_amp, &wrap, L, L, cfg.j_coupling, cfg.kagome_pbc,
+        200, 1e-12, &e_lanczos, vec, &lr) : -1;
+    double t_lanczos = (double)(clock() - t2) / CLOCKS_PER_SEC;
+    if (rc_lanczos == 0) {
+        printf("# Lanczos-refined E (seeded ψ_sym):          %.8f  "
+               "(gap %.6e, %.3e%%)\n",
+               e_lanczos, e_lanczos - E_ED,
+               100.0 * (e_lanczos - E_ED) / fabs(E_ED));
+        printf("# Lanczos iters:                             %d\n",
+               lr.iterations);
+        printf("# Lanczos time:                              %.2f s\n",
+               t_lanczos);
+    } else {
+        printf("# Lanczos refine:                            failed (rc=%d)\n",
+               rc_lanczos);
+    }
+    free(vec);
+
+    printf("\n");
+    printf("# total elapsed: %.1f s  (training %.1f s + post %.1f s)\n",
+           elapsed + t_det + t_lanczos, elapsed, t_det + t_lanczos);
 
     free(trace); free(perm); free(chars);
     nqs_sampler_free(s);
