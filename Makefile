@@ -391,6 +391,11 @@ test_nqs_sector_projected: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_sector_projected \
 	    tests/test_nqs_sector_projected.c $(NQS_SRCS) $(LDFLAGS)
 
+test_nqs_sector_lanczos: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_sector_lanczos \
+	    tests/test_nqs_sector_lanczos.c $(NQS_SRCS) \
+	    src/nqs/nqs_lanczos.c src/mps/lanczos.c $(LDFLAGS)
+
 test_nqs_symproj: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_nqs_symproj \
 	    tests/test_nqs_symproj.c $(NQS_SRCS) $(LDFLAGS)
@@ -609,7 +614,7 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
       test_matrix_neon test_nqs test_libirrep_bridge \
       test_nqs_convergence test_nqs_rbm test_nqs_complex_rbm test_nqs_holomorphic_sr \
       test_nqs_kitaev test_nqs_lanczos test_nqs_marshall test_nqs_translation \
-      test_nqs_tvmc test_nqs_xxz test_nqs_kagome test_nqs_chi_F test_nqs_excited test_nqs_minsr test_nqs_symproj test_nqs_vit test_nqs_sector_projected \
+      test_nqs_tvmc test_nqs_xxz test_nqs_kagome test_nqs_chi_F test_nqs_excited test_nqs_minsr test_nqs_symproj test_nqs_vit test_nqs_sector_projected test_nqs_sector_lanczos \
       test_hopfield test_rbm_cd \
       test_torque_net test_torque_net_llg test_torque_net_golden test_torque_net_micromagnetic_trajectory \
       test_torque_net_heisenberg_fit \
@@ -652,6 +657,7 @@ test: test_majorana test_toric_code test_ising test_ising_sw test_kitaev test_to
 	@$(BIN_DIR)/test_nqs_symproj
 	@$(BIN_DIR)/test_nqs_vit
 	@$(BIN_DIR)/test_nqs_sector_projected
+	@$(BIN_DIR)/test_nqs_sector_lanczos
 	@$(BIN_DIR)/test_nqs_lanczos
 	@$(BIN_DIR)/test_nqs_marshall
 	@$(BIN_DIR)/test_nqs_translation
