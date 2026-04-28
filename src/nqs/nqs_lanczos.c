@@ -525,6 +525,29 @@ int nqs_lanczos_refine_kagome_heisenberg_with_cb(nqs_log_amp_fn_t log_amp,
     return rc;
 }
 
+int nqs_lanczos_k_lowest_kagome_heisenberg_with_cb(nqs_log_amp_fn_t log_amp,
+                                                    void *user,
+                                                    int Lx_cells, int Ly_cells,
+                                                    double J, int pbc,
+                                                    int max_iters, int k,
+                                                    double *out_eigenvalues,
+                                                    lanczos_result_t *out_result) {
+    if (!log_amp || !out_eigenvalues || k <= 0) return -1;
+    int N = 3 * Lx_cells * Ly_cells;
+    kagome_heis_ctx_t ctx = { .Lx_cells = Lx_cells, .Ly_cells = Ly_cells,
+                               .N = N, .J = J, .pbc = pbc };
+    long dim = 1L << N;
+    double *psi_seed = NULL; long pdim = 0;
+    int rc_seed = nqs_materialise_state_with_cb_N(log_amp, user, N,
+                                                    &psi_seed, &pdim);
+    const double *seed = (rc_seed == 0 && pdim == dim) ? psi_seed : NULL;
+    int rc = lanczos_k_smallest_with_init(kagome_heis_matvec, &ctx, dim,
+                                            max_iters, seed, k,
+                                            out_eigenvalues, out_result);
+    free(psi_seed);
+    return rc;
+}
+
 int nqs_lanczos_k_lowest_kagome_heisenberg(nqs_ansatz_t *a,
                                             int Lx_cells, int Ly_cells,
                                             double J, int pbc,

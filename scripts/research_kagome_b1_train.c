@@ -192,9 +192,39 @@ int main(int argc, char **argv) {
     }
     free(vec);
 
+    /* Step 4 — Lanczos k-lowest within the (Γ, B_1) sector.  Seeded from
+     * the same ψ_sym, the Krylov subspace stays inside the projected
+     * sector (H commutes with the projector), so the lowest 4 Ritz values
+     * are the (Γ, B_1) sector spectrum: E_0, E_1, E_2, E_3. */
+    clock_t t3 = clock();
+    double evals[4] = {0};
+    lanczos_result_t klr = (lanczos_result_t){0};
+    int rc_klow = nqs_lanczos_k_lowest_kagome_heisenberg_with_cb(
+        nqs_symproj_log_amp, &wrap, L, L, cfg.j_coupling, cfg.kagome_pbc,
+        300, 4, evals, &klr);
+    double t_klow = (double)(clock() - t3) / CLOCKS_PER_SEC;
+    if (rc_klow == 0) {
+        printf("# (Γ, B_1) sector spectrum (k=4 lowest, seeded ψ_sym):\n");
+        printf("#   E_0 = %.10f\n", evals[0]);
+        printf("#   E_1 = %.10f  (gap E_1 − E_0 = %.6f J)\n",
+               evals[1], evals[1] - evals[0]);
+        printf("#   E_2 = %.10f  (gap E_2 − E_0 = %.6f J)\n",
+               evals[2], evals[2] - evals[0]);
+        printf("#   E_3 = %.10f  (gap E_3 − E_0 = %.6f J)\n",
+               evals[3], evals[3] - evals[0]);
+        printf("# k-lowest iters:                             %d\n",
+               klr.iterations);
+        printf("# k-lowest time:                              %.2f s\n",
+               t_klow);
+    } else {
+        printf("# k-lowest:                                  failed (rc=%d)\n",
+               rc_klow);
+    }
+
     printf("\n");
     printf("# total elapsed: %.1f s  (training %.1f s + post %.1f s)\n",
-           elapsed + t_det + t_lanczos, elapsed, t_det + t_lanczos);
+           elapsed + t_det + t_lanczos + t_klow, elapsed,
+           t_det + t_lanczos + t_klow);
 
     free(trace); free(perm); free(chars);
     nqs_sampler_free(s);

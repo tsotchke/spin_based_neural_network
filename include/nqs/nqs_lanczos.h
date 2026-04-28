@@ -135,6 +135,21 @@ int nqs_lanczos_k_lowest_kagome_heisenberg(nqs_ansatz_t *a,
                                             double *out_eigenvalues,
                                             lanczos_result_t *out_result);
 
+/* Callback variant of k-lowest.  Lanczos's Krylov subspace
+ * commutes with H, so when seeded from a sector-projected ψ_sym (e.g.
+ * via nqs_symproj_log_amp on a trained ansatz) the returned k-lowest
+ * eigenvalues are the lowest k of H restricted to that sector.  This
+ * is the natural way to extract the low-energy spectrum within a
+ * named irrep sector without needing a sector-resolved sparse
+ * Hamiltonian. */
+int nqs_lanczos_k_lowest_kagome_heisenberg_with_cb(nqs_log_amp_fn_t log_amp,
+                                                    void *user,
+                                                    int Lx_cells, int Ly_cells,
+                                                    double J, int pbc,
+                                                    int max_iters, int k,
+                                                    double *out_eigenvalues,
+                                                    lanczos_result_t *out_result);
+
 /* Variant of nqs_materialise_state that takes an explicit log_amp
  * callback (so Marshall / translation wrappers feed in). */
 int nqs_materialise_state_with_cb(nqs_log_amp_fn_t log_amp, void *user,
