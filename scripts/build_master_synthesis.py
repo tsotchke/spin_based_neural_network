@@ -23,7 +23,7 @@ import time
 
 def fit_log_linear(xs, ys):
     n = len(xs)
-    if n < 3:
+    if n < 2:
         return None, None, 0.0
     sx = sum(xs); sy = sum(ys)
     sxx = sum(x*x for x in xs); sxy = sum(x*y for x, y in zip(xs, ys))
@@ -32,6 +32,9 @@ def fit_log_linear(xs, ys):
         return None, None, 0.0
     slope = (n*sxy - sx*sy) / denom
     intercept = (sy - slope*sx) / n
+    if n < 3:
+        # Two-point fit is exact; R² is 1.0 by definition (no DOF for residual)
+        return slope, intercept, 1.0
     ss_tot = sum((y - sy/n)**2 for y in ys)
     ss_res = sum((y - (slope*x + intercept))**2 for x, y in zip(xs, ys))
     r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 1e-15 else 1.0

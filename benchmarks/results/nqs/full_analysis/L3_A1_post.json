@@ -1,5 +1,3 @@
-# loaded eigvec: N=27, L=3, ir=0, E_0=-11.6098548093
-# computing all C_{ij}...
 {
   "system": {"L": 3, "N": 27, "irrep": 0, "E_0": -11.6098548093},
   "structure_factor": [
