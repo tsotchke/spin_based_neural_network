@@ -1,0 +1,52 @@
+{
+  "suite": "nqs",
+  "name": "kagome_3x3_observables_A2",
+  "kind": "research_observable",
+  "utc_epoch": 1777441142,
+  "binary": "build/research_kagome_observables_lean",
+  "argv": ["3", "1", "200"],
+  "openmp_threads": 14,
+  "system": {
+    "lattice": "kagome",
+    "Lx": 3,
+    "Ly": 3,
+    "num_sites": 27,
+    "hilbert_dim": 134217728,
+    "pbc": true,
+    "hamiltonian": "heisenberg",
+    "j_coupling": 1.0,
+    "irrep": "A_2"
+  },
+  "ground_state": {
+    "E_0": -11.5575586914,
+    "iters": 85,
+    "converged": true,
+    "wall_seconds": 5597.5,
+    "libirrep_ED_reference": -11.5575586915,
+    "delta_vs_libirrep_ED": 1.0e-10,
+    "per_site_E_over_N": -0.4280577293,
+    "S_total_squared": 0.750000,
+    "S_total_recovered": 0.5
+  },
+  "static_correlations": {
+    "NN_avg": -0.2140288647,
+    "NN_bond_count": 54,
+    "hamiltonian_sum_rule_residual": 2.03e-10
+  },
+  "tee_extraction": {
+    "compact_subsystems": [
+      {"nA": 1, "boundary": 4, "S_1_vN": 0.692461},
+      {"nA": 3, "boundary": 6, "S_1_vN": 1.640093},
+      {"nA": 6, "boundary": 10, "S_1_vN": 3.108205}
+    ],
+    "alpha_per_bond": 0.397539,
+    "intercept": -0.836672,
+    "gamma_TEE_nats": 0.836672,
+    "gamma_TEE_in_log2": 1.207
+  },
+  "degeneracy_with_B_1": {
+    "B_1_E_0": -11.5575586914,
+    "delta": 0.0,
+    "comment": "A_2 and B_1 sectors are degenerate to ALL DECIMALS in (E_0, NN ⟨S·S⟩ avg, γ_TEE).  This confirms the 2-fold spatial-irrep multiplet at L=3 PBC is sister-state-related — eigenvectors orthogonal (different sectors) but local observables identical (sector-scalar quantities).  Internal consistency check on the projecting-Lanczos pipeline."
+  }
+}
