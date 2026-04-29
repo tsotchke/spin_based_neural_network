@@ -1,0 +1,4 @@
+{
+  "system": {"L": 2, "N": 12, "Sz_2x": 0, "popcount": 6, "sector_dim": 924},
+  "lanczos": {"E_0": -5.444875216941, "iters": 52, "converged": 1, "wall_s": 0.0}
+}

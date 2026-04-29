@@ -501,6 +501,14 @@ research_kagome_full_analysis: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libir
 	    src/libirrep_bridge.c \
 	    $(LDFLAGS) $(IRREP_LDFLAGS) $(OMP_LDFLAGS)
 
+# True spin gap via Sz-projected lean Lanczos (S=S_GS+1 lowest state).
+research_kagome_spin_gap: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_spin_gap \
+	    scripts/research_kagome_spin_gap.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
+	    $(LDFLAGS) $(OMP_LDFLAGS)
+
 # Post-processor: load saved eigvec, compute additional observables
 # without re-running the 90-min Lanczos.
 research_kagome_eigvec_post: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
