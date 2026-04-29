@@ -123,19 +123,29 @@ int main(int argc, char **argv) {
     };
     const char *names[4] = {"A_1", "A_2", "B_1", "B_2"};
 
-    double *psi[4];
-    double E0[4];
+    double *psi[4] = {NULL, NULL, NULL, NULL};
+    double E0[4] = {0};
+    int loaded[4] = {0};
+    int n_loaded = 0;
     int N_check, ir_check;
     long dim_check;
     for (int i = 0; i < 4; i++) {
         if (load_eigvec(paths[i], &N_check, &ir_check,
                          &E0[i], &psi[i], &dim_check) != 0) {
-            fprintf(stderr, "FAIL: could not load %s — has the run completed?\n",
+            fprintf(stderr, "# WARN: missing %s (run not yet complete?), skipping\n",
                     paths[i]);
-            return 1;
+            continue;
         }
+        loaded[i] = 1;
+        n_loaded++;
         fprintf(stderr, "# loaded %s: E_0 = %.10f\n", names[i], E0[i]);
     }
+    if (n_loaded < 2) {
+        fprintf(stderr, "FAIL: need at least 2 sectors loaded; have %d\n",
+                n_loaded);
+        return 1;
+    }
+    fprintf(stderr, "# proceeding with %d/4 sectors loaded\n", n_loaded);
 
     /* Get the C_6 permutation from nqs_kagome_p6m_perm_irrep.
      * In our convention (build_p6m_perm_row in nqs_symproj.c), op=1 is
@@ -166,10 +176,14 @@ int main(int argc, char **argv) {
     double *temp = malloc((size_t)dim * sizeof(double));
     if (!temp) return 1;
 
+    /* NaN means "sector not loaded" — propagates to JSON as null. */
     double M[4][4];
+    for (int a = 0; a < 4; a++) for (int b = 0; b < 4; b++) M[a][b] = 0.0/0.0;
     for (int b = 0; b < 4; b++) {
+        if (!loaded[b]) continue;
         apply_bit_perm(psi[b], temp, N, perm_C6);
         for (int a = 0; a < 4; a++) {
+            if (!loaded[a]) continue;
             M[a][b] = dot_product(psi[a], temp, dim);
         }
     }
@@ -184,17 +198,31 @@ int main(int argc, char **argv) {
         {0, 0, 0, -1}
     };
 
-    /* JSON output. */
+    /* JSON output.  Use null for unloaded sectors so output is valid JSON. */
     printf("{\n");
     printf("  \"system\": {\"L\": %d, \"N\": %d},\n", L, N);
-    printf("  \"E_0\": [%.10f, %.10f, %.10f, %.10f],\n",
-           E0[0], E0[1], E0[2], E0[3]);
+    printf("  \"sectors_loaded\": [%s, %s, %s, %s],\n",
+           loaded[0] ? "true" : "false",
+           loaded[1] ? "true" : "false",
+           loaded[2] ? "true" : "false",
+           loaded[3] ? "true" : "false");
+    printf("  \"E_0\": [");
+    for (int i = 0; i < 4; i++) {
+        if (loaded[i]) printf("%.10f", E0[i]);
+        else printf("null");
+        if (i < 3) printf(", ");
+    }
+    printf("],\n");
     printf("  \"sector_labels\": [\"A_1\", \"A_2\", \"B_1\", \"B_2\"],\n");
     printf("  \"empirical_C6_matrix\": [\n");
     for (int a = 0; a < 4; a++) {
-        printf("    [%.10f, %.10f, %.10f, %.10f]%s\n",
-               M[a][0], M[a][1], M[a][2], M[a][3],
-               (a < 3) ? "," : "");
+        printf("    [");
+        for (int b = 0; b < 4; b++) {
+            if (loaded[a] && loaded[b]) printf("%.10f", M[a][b]);
+            else printf("null");
+            if (b < 3) printf(", ");
+        }
+        printf("]%s\n", (a < 3) ? "," : "");
     }
     printf("  ],\n");
     printf("  \"symbolic_C6_matrix_predicted_by_KagomeZ2\": [\n");
@@ -204,9 +232,10 @@ int main(int argc, char **argv) {
                (a < 3) ? "," : "");
     }
     printf("  ],\n");
-    /* Residual */
+    /* Residual — only over loaded (a,b). */
     double max_residual = 0.0;
     for (int a = 0; a < 4; a++) for (int b = 0; b < 4; b++) {
+        if (!loaded[a] || !loaded[b]) continue;
         double r = fabs(M[a][b] - M_pred[a][b]);
         if (r > max_residual) max_residual = r;
     }
