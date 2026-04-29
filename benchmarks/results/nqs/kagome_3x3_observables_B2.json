@@ -1,0 +1,49 @@
+{
+  "suite": "nqs",
+  "name": "kagome_3x3_observables_B2",
+  "kind": "research_observable",
+  "utc_epoch": 1777448000,
+  "binary": "build/research_kagome_observables_lean",
+  "argv": ["3", "3", "300"],
+  "openmp_threads": 14,
+  "system": {
+    "lattice": "kagome",
+    "Lx": 3,
+    "Ly": 3,
+    "num_sites": 27,
+    "hilbert_dim": 134217728,
+    "pbc": true,
+    "hamiltonian": "heisenberg",
+    "j_coupling": 1.0,
+    "irrep": "B_2"
+  },
+  "ground_state": {
+    "E_0": -11.4338926662,
+    "iters": 106,
+    "converged": true,
+    "wall_seconds": 6646.7,
+    "libirrep_ED_reference": -11.4338926663,
+    "delta_vs_libirrep_ED": 1.0e-10,
+    "per_site_E_over_N": -0.4234775062,
+    "S_total_squared": 3.750000,
+    "S_total_recovered": 1.5,
+    "comment": "B_2 GS lives in S=3/2 quadruplet — DIFFERENT from A_1, A_2, B_1 sectors which all have S=1/2 doublets at L=3 PBC.  Each spatial irrep hosts the lowest-S state available within the irrep × spin tensor product."
+  },
+  "static_correlations": {
+    "NN_avg": -0.2117387531,
+    "NN_bond_count": 54,
+    "hamiltonian_sum_rule_residual": 1.02e-10
+  },
+  "tee_extraction": {
+    "compact_subsystems": [
+      {"nA": 1, "boundary": 4, "S_1_vN": 0.689257},
+      {"nA": 3, "boundary": 6, "S_1_vN": 1.629110},
+      {"nA": 6, "boundary": 10, "S_1_vN": 3.080323}
+    ],
+    "alpha_per_bond": 0.393410,
+    "intercept": -0.823169,
+    "gamma_TEE_nats": 0.823169,
+    "gamma_TEE_in_log2": 1.188
+  },
+  "notes": "Final N=27 sector observable to complete the 4-irrep finite-size flow table.  B_2 took 106 iters to converge (most of any sector), required max_iters=300 instead of 200.  Notable finding: at L=3 the four 1D irreps host ground states in two different total-spin sectors: S=1/2 in A_1/A_2/B_1 and S=3/2 in B_2.  This sector-vs-spin coupling is a finite-size feature; in the bulk all sectors should be sector-symmetry-protected and S-degenerate."
+}
