@@ -509,6 +509,16 @@ research_kagome_spin_gap: $(BIN_DIR)
 	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
 	    $(LDFLAGS) $(OMP_LDFLAGS)
 
+# Numerical extraction of modular matrix elements ⟨ψ_α | σ_g | ψ_β⟩
+# from saved eigvecs. Bridges to symbolic predictions in
+# tsotchke-private:theory/higher_algebra/KagomeZ2.{wl,py}.
+research_kagome_modular: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_modular \
+	    scripts/research_kagome_modular.c \
+	    $(NQS_SRCS) \
+	    $(LDFLAGS) $(OMP_LDFLAGS)
+
 # Post-processor: load saved eigvec, compute additional observables
 # without re-running the 90-min Lanczos.
 research_kagome_eigvec_post: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
