@@ -490,6 +490,17 @@ research_kagome_observables_lean: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),li
 	    src/libirrep_bridge.c \
 	    $(LDFLAGS) $(IRREP_LDFLAGS) $(OMP_LDFLAGS)
 
+# Comprehensive single-run analysis: E_0, eigvec save, sum rules,
+# distance-resolved C(d), structure factor, TEE area-law fit, full
+# entanglement spectrum (Z₂ vs U(1) Dirac diagnostic).  All in one pass.
+research_kagome_full_analysis: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
+	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_full_analysis \
+	    scripts/research_kagome_full_analysis.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
+	    src/libirrep_bridge.c \
+	    $(LDFLAGS) $(IRREP_LDFLAGS) $(OMP_LDFLAGS)
+
 # Topological entanglement entropy of the kagome AFM 2×2 PBC ground
 # state via Lanczos-refined ψ_0 + libirrep_bridge partial trace +
 # Renyi entropy.  Linear fit S = α·|∂A| − γ extracts γ_TEE.  IRREP
