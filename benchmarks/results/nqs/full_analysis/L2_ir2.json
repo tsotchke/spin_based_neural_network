@@ -1,0 +1,23 @@
+{
+  "system": {"L": 2, "N": 12, "irrep": "B_1", "dim": 4096},
+  "lanczos": {"E_0": -5.444875216971, "iters": 13, "converged": 1, "wall_s": 0.0},
+  "hamiltonian_sum_rule": {"NN_bonds": 24, "NN_avg": -0.2268698007, "E_0_check": -5.4448752170, "residual": 1.172e-13},
+  "total_spin": {"S_squared": 0.000000, "S_total": 0.0000},
+  "correlation_shells": [
+    {"d": 0.5000, "npairs": 24, "C_avg": -0.2268698007, "|C|_avg": 0.2268698007},
+    {"d": 0.8660, "npairs": 16, "C_avg": 0.0887401929, "|C|_avg": 0.0887401929},
+    {"d": 1.0000, "npairs": 13, "C_avg": -0.0636099539, "|C|_avg": 0.0636099539},
+    {"d": 1.3229, "npairs": 8, "C_avg": 0.0887401929, "|C|_avg": 0.0887401929},
+    {"d": 1.7321, "npairs": 5, "C_avg": -0.0715920021, "|C|_avg": 0.0715920021}
+  ],
+  "tee": {
+    "compact_fit": [{"nA": 1, "|∂A|": 4, "S_1": 0.693147}, {"nA": 3, "|∂A|": 6, "S_1": 1.573648}, {"nA": 6, "|∂A|": 8, "S_1": 2.329381}],
+    "alpha": 0.409058, "intercept": -0.922292, "gamma_nats": 0.922292, "gamma_log2": 1.3306
+  },
+  "entanglement_spectrum_nA_6": {
+    "total_eigenvalues": 64,
+    "top_32_minus_log_lambda": [1.114841, 2.324839, 2.576205, 2.576205, 2.576205, 2.576205, 2.576205, 2.576205, 4.002630, 4.062432, 4.062432, 4.062432, 5.637236, 5.637236, 5.637236, 5.637237, 5.637237, 5.672660, 5.672660, 5.672661, 5.672661, 5.672662, 5.672662, 5.916123, 5.916125, 5.916126, 8.039054, 8.039054, 8.039055, 10.002919, 10.002919, 10.002922],
+    "largest_gap_in_lowest_8": 1.209998, "gap_position": 0,
+    "comment": "Z₂ topological order: gapped entanglement spectrum (large gap below low-lying levels). U(1) Dirac: power-law / CFT-like spectrum (small gaps)."
+  }
+}
