@@ -210,6 +210,99 @@ def main():
         res = d['hamiltonian_sum_rule']['residual']
         print(f"  L={L}  {ir}: {res:.3e}")
 
+    # 7. Quantitative correlation-length / power-law-vs-exponential fit
+    print()
+    print("Correlation-length fits — exponential vs power-law on |C(d)|:")
+    print(f"{'L':<3} {'irrep':<5} {'ξ (exp fit)':<14} {'η (power-law fit)':<20} {'preferred (R²)'}")
+    for (L, ir), d in sorted(runs.items()):
+        shells = d['correlation_shells']
+        # Fit log|C| vs d (exponential)
+        xs = [s['d'] for s in shells]
+        ys = [math.log(abs(s['C_avg'])) if s['C_avg'] != 0 else None
+                for s in shells]
+        # Filter out zeros
+        pts = [(x, y) for x, y in zip(xs, ys) if y is not None]
+        if len(pts) < 3:
+            continue
+        n = len(pts)
+        sx = sum(p[0] for p in pts); sy = sum(p[1] for p in pts)
+        sxx = sum(p[0]**2 for p in pts)
+        sxy = sum(p[0]*p[1] for p in pts)
+        denom = n*sxx - sx*sx
+        slope_exp = (n*sxy - sx*sy) / denom if denom != 0 else 0
+        intercept_exp = (sy - slope_exp*sx) / n
+        xi = -1.0 / slope_exp if slope_exp < 0 else float('inf')
+        ss_res_exp = sum((y - (slope_exp*x + intercept_exp))**2 for x, y in pts)
+        ss_tot = sum((y - sy/n)**2 for y in (p[1] for p in pts))
+        r2_exp = 1.0 - (ss_res_exp / ss_tot) if ss_tot > 0 else 1.0
+
+        # Fit log|C| vs log d (power-law)
+        pts_log = [(math.log(p[0]), p[1]) for p in pts]
+        sx2 = sum(p[0] for p in pts_log); sy2 = sum(p[1] for p in pts_log)
+        sxx2 = sum(p[0]**2 for p in pts_log)
+        sxy2 = sum(p[0]*p[1] for p in pts_log)
+        denom2 = n*sxx2 - sx2*sx2
+        slope_pow = (n*sxy2 - sx2*sy2) / denom2 if denom2 != 0 else 0
+        eta = -slope_pow
+        ss_res_pow = sum((y - (slope_pow*x + (sy2 - slope_pow*sx2)/n))**2
+                          for x, y in pts_log)
+        r2_pow = 1.0 - (ss_res_pow / ss_tot) if ss_tot > 0 else 1.0
+
+        # Preferred fit
+        better = "exp" if r2_exp > r2_pow else "power-law"
+        diff = r2_exp - r2_pow
+        if r2_exp > r2_pow:
+            preferred = f"EXP (R²={r2_exp:.3f}, ξ={xi:.2f})  vs power R²={r2_pow:.3f}"
+        else:
+            preferred = f"POWER (R²={r2_pow:.3f}, η={eta:.2f})  vs exp R²={r2_exp:.3f}"
+        print(f"{L:<3} {ir:<5} ξ={xi:<10.3f}  η={eta:<14.3f}  {preferred}")
+    print("  Z₂ topological:   exp(-d/ξ) decay → exp fit better; ξ finite")
+    print("  U(1) Dirac:       d^(-η) power-law → power-law fit better; η ~ 0.5-1")
+
+    # 8. Z₂ vs U(1) Dirac scoring
+    print()
+    print("Z₂ vs U(1) Dirac scoring (sum of weighted indicators):")
+    for (L, ir), d in sorted(runs.items()):
+        score_z2 = 0.0
+        score_dirac = 0.0
+        # γ ≈ log 2 → Z₂; γ ≈ 0 → trivial; intermediate ambiguous
+        gam = d.get('tee', {}).get('gamma_log2')
+        if gam is not None:
+            # Z₂ score peaks at γ=1 (= log 2 / log 2)
+            score_z2 += max(0.0, 1.0 - abs(gam - 1.0)) * 1.0
+            # Dirac (γ=0) scores poorly at large γ
+            score_dirac += max(0.0, 1.0 - gam/2.0) * 0.5
+        # Entanglement spectrum gap > 0.5 → gapped → Z₂
+        spec = d.get('entanglement_spectrum_nA_6')
+        if spec:
+            gap = spec['largest_gap_in_lowest_8']
+            score_z2 += min(1.0, gap / 1.0) * 1.0
+            score_dirac += max(0.0, 1.0 - gap) * 0.5
+        # CFT R² > 0.9 → Dirac, < 0.7 → Z₂ multiplets
+        # (computed in section 4c — recompute here briefly)
+        if spec:
+            levels = [v for v in spec['top_32_minus_log_lambda'][:8]
+                       if isinstance(v, (int, float))]
+            if len(levels) >= 4:
+                ys = [v - levels[0] for v in levels]
+                xs = list(range(len(ys)))
+                n = len(xs)
+                sxc = sum(xs); syc = sum(ys)
+                sxxc = sum(x*x for x in xs)
+                sxyc = sum(x*y for x, y in zip(xs, ys))
+                denomc = n*sxxc - sxc*sxc
+                if denomc > 0:
+                    slopec = (n*sxyc - sxc*syc) / denomc
+                    interceptc = (syc - slopec*sxc) / n
+                    ss_totc = sum((y - syc/n)**2 for y in ys)
+                    ss_resc = sum((y - (slopec*x + interceptc))**2
+                                   for x, y in zip(xs, ys))
+                    r2c = 1.0 - (ss_resc / ss_totc) if ss_totc > 0 else 1.0
+                    score_z2 += max(0.0, 1.0 - r2c) * 1.0
+                    score_dirac += max(0.0, r2c) * 1.0
+        # Print scores
+        print(f"  L={L}  {ir}:  Z₂ score = {score_z2:.2f},   U(1) Dirac score = {score_dirac:.2f}")
+
     print()
     print("=" * 78)
 
