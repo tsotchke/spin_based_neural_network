@@ -501,6 +501,15 @@ research_kagome_full_analysis: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libir
 	    src/libirrep_bridge.c \
 	    $(LDFLAGS) $(IRREP_LDFLAGS) $(OMP_LDFLAGS)
 
+# Post-processor: load saved eigvec, compute additional observables
+# without re-running the 90-min Lanczos.
+research_kagome_eigvec_post: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
+	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_eigvec_post \
+	    scripts/research_kagome_eigvec_post.c \
+	    src/libirrep_bridge.c \
+	    $(LDFLAGS) $(IRREP_LDFLAGS) $(OMP_LDFLAGS)
+
 # Topological entanglement entropy of the kagome AFM 2×2 PBC ground
 # state via Lanczos-refined ψ_0 + libirrep_bridge partial trace +
 # Renyi entropy.  Linear fit S = α·|∂A| − γ extracts γ_TEE.  IRREP
