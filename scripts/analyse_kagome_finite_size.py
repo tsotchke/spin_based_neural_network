@@ -132,6 +132,63 @@ def main():
                           for v, c in groups for m in [v])
         print(f"{L:<3} {ir:<5} {levels[0]:<14.4f} {gap:<10.4f} {pat}")
 
+    # 4b. Renyi entropy α=2,∞ from entanglement spectrum
+    print()
+    print("Renyi entropies from entanglement spectrum (S_α = (1/(1-α)) ln Σ λ^α):")
+    print(f"{'L':<3} {'irrep':<5} {'S_1 (vN)':<10} {'S_2':<10} {'S_∞ (-ln λ_max)':<16}")
+    for (L, ir), d in sorted(runs.items()):
+        spec = d.get('entanglement_spectrum_nA_6')
+        if not spec:
+            continue
+        levels = [v for v in spec['top_32_minus_log_lambda']
+                   if isinstance(v, (int, float))]
+        if not levels:
+            continue
+        # λ_i = exp(-level_i). Renyi α: S_α = ln(Σ λ^α) / (1-α).
+        lams = [math.exp(-v) for v in levels]
+        # Renormalise (top 32 may be a partial trace; rescale to sum=1).
+        Z = sum(lams)
+        lams = [x/Z for x in lams]
+        S1 = -sum(x * math.log(x) for x in lams if x > 1e-15)
+        S2 = -math.log(sum(x*x for x in lams))
+        S_inf = -math.log(max(lams))
+        print(f"{L:<3} {ir:<5} {S1:<10.4f} {S2:<10.4f} {S_inf:<16.4f}")
+    print(f"{'':5} (nominal max S = nA·log 2 = 6·{math.log(2):.4f} = {6*math.log(2):.4f})")
+
+    # 4c. CFT fit on entanglement spectrum: ξ_n − ξ_0 ≈ (2π v_F / L_∂A) · n
+    # If the data fit a linear-in-n curve cleanly, that's a Dirac/CFT signature.
+    # If non-linear (gapped + multiplet), that's Z₂.
+    print()
+    print("Linear-in-n CFT fit on lowest 8 entanglement levels:")
+    print(f"{'L':<3} {'irrep':<5} {'slope (v_F · 2π / L_∂A)':<24} {'R² (linearity)':<14}")
+    for (L, ir), d in sorted(runs.items()):
+        spec = d.get('entanglement_spectrum_nA_6')
+        if not spec:
+            continue
+        levels = [v for v in spec['top_32_minus_log_lambda'][:8]
+                   if isinstance(v, (int, float))]
+        if len(levels) < 4:
+            continue
+        # Subtract the lowest level
+        ys = [v - levels[0] for v in levels]
+        xs = list(range(len(ys)))
+        # Linear regression
+        n = len(xs)
+        sx = sum(xs); sy = sum(ys)
+        sxx = sum(x*x for x in xs); sxy = sum(x*y for x, y in zip(xs, ys))
+        denom = n*sxx - sx*sx
+        if denom == 0:
+            continue
+        slope = (n*sxy - sx*sy) / denom
+        intercept = (sy - slope*sx) / n
+        # R²
+        ss_tot = sum((y - sy/n)**2 for y in ys)
+        ss_res = sum((y - (slope*x + intercept))**2 for x, y in zip(xs, ys))
+        r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 1e-15 else 1.0
+        print(f"{L:<3} {ir:<5} {slope:<24.4f} {r2:<14.4f}")
+    print("  Z₂ topological:   gapped + multiplets → R² < 0.95 (non-linear)")
+    print("  U(1) Dirac:       linear CFT spectrum → R² > 0.95")
+
     # 5. C(d) decay: extract |C(d)| vs d, fit log decay rate
     print()
     print("Distance-resolved correlations |C(d)| at GS sectors:")
