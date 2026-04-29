@@ -19,6 +19,7 @@
  * Lanczos basis and the T eigenvector.
  */
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "mps/lanczos.h"
@@ -879,6 +880,16 @@ int lanczos_smallest_projected_lean(lanczos_matvec_fn_t matvec, void *user_data,
     double prev_lambda = 0.0;
     int k;
     int converged = 0;
+    /* Periodic progress to stderr — long runs at large N are otherwise
+     * opaque (stdout is line-buffered; users see nothing for an hour).
+     * Controlled by the LANCZOS_PROGRESS environment variable.  Honoured:
+     *   unset / "0" → silent (default)
+     *   any other value → log every iteration (one line/iter to stderr) */
+    int log_progress = 0;
+    {
+        const char *p = getenv("LANCZOS_PROGRESS");
+        if (p && *p && p[0] != '0') log_progress = 1;
+    }
 
     for (k = 0; k < max_iters; k++) {
         /* w = H v_curr */
@@ -906,6 +917,13 @@ int lanczos_smallest_projected_lean(lanczos_matvec_fn_t matvec, void *user_data,
         for (int i = 1; i < K; i++) if (d[i] < d[idx]) idx = i;
         prev_lambda = lambda;
         lambda = d[idx];
+
+        if (log_progress) {
+            fprintf(stderr,
+                    "[lanczos lean] iter %4d  λ = %.10f  Δλ = %.2e  β = %.3e\n",
+                    k, lambda, fabs(lambda - prev_lambda), beta[k + 1]);
+            fflush(stderr);
+        }
 
         /* Convergence based on Ritz-value stability (no eigenvector
          * residual since we don't have it). */
