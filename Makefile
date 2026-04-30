@@ -529,6 +529,16 @@ research_kagome_p6m_rep: $(BIN_DIR)
 	    $(NQS_SRCS) \
 	    $(LDFLAGS) $(OMP_LDFLAGS)
 
+# Generalised 6-state version (4 1D + 2 2D irreps).  Computes the full
+# 6×6×12 = 432 matrix-element representation on the low-energy manifold
+# including the E_2 doublet that hosts the L=3 PBC global GS.
+research_kagome_p6m_rep_6state: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_p6m_rep_6state \
+	    scripts/research_kagome_p6m_rep_6state.c \
+	    $(NQS_SRCS) \
+	    $(LDFLAGS) $(OMP_LDFLAGS)
+
 # Joint Sz + spatial-irrep projected Lanczos.  Used to find the lowest
 # *singlet* state inside each spatial irrep — addresses the L=3 PBC
 # observation that B_2 sector ground state is S_total = 3/2, not the
