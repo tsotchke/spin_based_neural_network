@@ -23,6 +23,7 @@
  *           L 1..3, irrep 0..3 (A_1 A_2 B_1 B_2),
  *           iters default 200, eigvec_path optional save target.
  */
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -145,18 +146,37 @@ int main(int argc, char **argv) {
     fprintf(stderr, "# Lanczos: E_0=%.10f  iters=%d  conv=%d  (%.1f s)\n",
             e0, lr.iterations, lr.converged, t_lanczos);
 
-    /* Save eigvec if requested. */
+    /* Save eigvec if requested.  Check fwrite return values — silent
+     * truncation on disk-full leaves a stub file masquerading as a
+     * valid eigvec (see commit history for the kagome E_1/E_2 incident). */
     if (eigvec_path) {
         FILE *f = fopen(eigvec_path, "wb");
-        if (f) {
+        if (!f) {
+            fprintf(stderr, "# ERROR: cannot open %s for write: %s\n",
+                    eigvec_path, strerror(errno));
+        } else {
             int header[4] = {N, L, ir, (int)lr.iterations};
-            fwrite(header, sizeof(int), 4, f);
             double meta[2] = {e0, (double)dim};
-            fwrite(meta, sizeof(double), 2, f);
-            fwrite(psi, sizeof(double), (size_t)dim, f);
-            fclose(f);
-            fprintf(stderr, "# eigvec saved to %s (%.2f GB)\n",
-                    eigvec_path, (double)dim * 8.0 / 1e9);
+            int ok = (fwrite(header, sizeof(int), 4, f) == 4)
+                  && (fwrite(meta, sizeof(double), 2, f) == 2);
+            if (ok) {
+                size_t want = (size_t)dim;
+                size_t got = fwrite(psi, sizeof(double), want, f);
+                if (got != want) {
+                    fprintf(stderr,
+                            "# ERROR: eigvec fwrite truncated: %zu/%zu doubles (%s)\n",
+                            got, want, strerror(errno));
+                    ok = 0;
+                }
+            }
+            if (fflush(f) != 0 || fclose(f) != 0) ok = 0;
+            if (ok) {
+                fprintf(stderr, "# eigvec saved to %s (%.2f GB)\n",
+                        eigvec_path, (double)dim * 8.0 / 1e9);
+            } else {
+                fprintf(stderr, "# WARNING: eigvec save failed at %s — file may be truncated\n",
+                        eigvec_path);
+            }
         }
     }
 
