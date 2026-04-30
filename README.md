@@ -75,6 +75,25 @@ runtime dependency.
 > v0.5+ roadmap (factored-attention ViT wavefunctions, real µMAG
 > #1/#3/#4, foundation NQS, learned surface-code decoders).
 >
+> **Research in flight (post-v0.4.3, unreleased)** — A thorough
+> empirical–symbolic study of the kagome AFM Heisenberg ground-state
+> manifold at L=3 PBC (N=27) probing all 6 irreps of C_6v.  The full
+> p6m point-group representation matches the C_6v character-table
+> prediction to **1.835·10⁻¹¹** in the diagonal and **3.331·10⁻¹⁶**
+> (machine ε) in the off-diagonal — a machine-precision empirical-
+> symbolic bridge to the higher-algebra MTC verification (Drinfeld
+> centre Z(Vec_{Z₂}), F/R-symbols, pentagon/hexagon, Verlinde,
+> Lagrangian algebras, Witt class, RT lens-space invariants).  The
+> 2D-irrep probe revealed the L=3 PBC GLOBAL ground state lives in
+> the E_2 sector (2-fold doublet) at -11.7795 J — 0.17 J BELOW the
+> A_1 reading that was previously thought to be the GS.  7 quasi-
+> degenerate S=1/2 states in 0.222 J spread favours U(1) Dirac over
+> Z_2 Toric Code.  Full empirical pipeline + symbolic verification
+> are under [docs/nqs.md §4](docs/nqs.md), the
+> [Unreleased] block of [CHANGELOG.md](CHANGELOG.md), and (private)
+> tsotchke-private:theory/higher_algebra/KagomeZ2.{wl,py}.  v0.5
+> tag will land once the modular-S MES extraction completes.
+>
 > **Cumulative since v0.4.0** — the diagnostic stack and exact
 > Lanczos reference solver (v0.4.2: `nqs_compute_chi_F`,
 > `nqs_compute_kagome_bond_phase`, `nqs_sr_{step,run}_excited`,

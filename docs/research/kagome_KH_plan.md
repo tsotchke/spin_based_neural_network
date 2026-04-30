@@ -133,3 +133,14 @@ the diagnostic stack itself (independent of which phase wins).
 
 - 2026-04-23: initial plan; capability kernel landed; coordination
   protocol set with libirrep 1.3.0-alpha.1 cycle.
+- 2026-04-30: post-v0.4.3 thread complete in 4 of 5 diagnostics;
+  60+ commits since v0.4.3.  Pipeline tools listed in §4 of
+  docs/nqs.md.  Full p6m representation extraction matches C_6v
+  character-table prediction to 1.835·10⁻¹¹ (192 matrix elements).
+  Empirical-symbolic bridge to tsotchke-private KagomeZ2.{wl,py}
+  (Drinfeld centre + F/R + pentagon/hexagon + Verlinde + Lagrangian
+  + Witt + RT) at machine precision.  REVISED reading post-2D-irrep
+  probe: L=3 PBC global GS lives in E_2 (2-fold doublet at -11.78);
+  7 quasi-degenerate S=1/2 states in 0.222 J spread; U(1) Dirac
+  FAVOURED over Z_2 Toric Code at this finite size.  Modular-S MES
+  extraction in flight — v0.5 release-tag held until that lands.
