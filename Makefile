@@ -519,6 +519,16 @@ research_kagome_modular: $(BIN_DIR)
 	    $(NQS_SRCS) \
 	    $(LDFLAGS) $(OMP_LDFLAGS)
 
+# Full p6m point-group representation extraction: 12 elements × 4×4 GS-Hilbert
+# matrices, compared against the C_6v character-table prediction symbolically
+# verified in tsotchke-private:theory/higher_algebra/KagomeZ2.{wl,py}.
+research_kagome_p6m_rep: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_p6m_rep \
+	    scripts/research_kagome_p6m_rep.c \
+	    $(NQS_SRCS) \
+	    $(LDFLAGS) $(OMP_LDFLAGS)
+
 # Post-processor: load saved eigvec, compute additional observables
 # without re-running the 90-min Lanczos.
 research_kagome_eigvec_post: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
