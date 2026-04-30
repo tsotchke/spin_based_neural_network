@@ -811,7 +811,8 @@ void nqs_local_energy_complex(const nqs_config_t *cfg,
                                void *log_amp_user,
                                double *out_re, double *out_im) {
     if (!cfg || !spins || !log_amp || !out_re || !out_im) {
-        if (out_re) *out_re = 0; if (out_im) *out_im = 0;
+        if (out_re) *out_re = 0;
+        if (out_im) *out_im = 0;
         return;
     }
     /* Per-Hamiltonian site count — kagome uses 3 sublattices per cell. */

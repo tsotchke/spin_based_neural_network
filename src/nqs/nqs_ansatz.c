@@ -479,6 +479,7 @@ static int vit_gradient(const nqs_ansatz_t *a,
     int d; long V_off, a_off, Wout_off, bout_off;
     vit_offsets(a, &d, &V_off, &a_off, &Wout_off, &bout_off);
     int N = a->num_sites;
+    if (N <= 0) return -1;   /* gcc -Walloc-size-larger-than guard */
     const double *V      = &a->params[V_off];
     const double *W_out  = &a->params[Wout_off];
 
@@ -732,6 +733,7 @@ static int vit_c_gradient(const nqs_ansatz_t *a,
                           const int *spins, double *out) {
     vit_c_offsets_t o; vit_c_offsets(a, &o);
     int N = o.N, d = o.d;
+    if (N <= 0) return -1;   /* gcc -Walloc-size-larger-than guard */
     const double *VR = &a->params[o.V_R];
     const double *VI = &a->params[o.V_I];
     const double *WR = &a->params[o.W_out_R];

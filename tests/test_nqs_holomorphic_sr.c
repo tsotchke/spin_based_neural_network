@@ -279,6 +279,8 @@ static void test_real_sr_on_kh_heisenberg_limit_end_to_end(void) {
     head /= 10.0; tail /= 10.0;
     printf("# KH K=0 J=1 2x2 (real MLP + plain SR): head=%.4f  tail=%.4f\n", head, tail);
     ASSERT_TRUE(tail < head + 0.1);    /* learning, with MC slack  */
+    nqs_sampler_free(s);
+    nqs_ansatz_free(a);
 }
 
 int main(void) {
