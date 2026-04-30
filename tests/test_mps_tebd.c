@@ -136,6 +136,7 @@ static void test_real_time_tfim_quench_loschmidt(void) {
     for (int s = 0; s < steps; s++) if (los[s] < min_echo) min_echo = los[s];
     printf("# TFIM quench N=6 Γ=1.5: Loschmidt min = %.4f\n", min_echo);
     ASSERT_TRUE(min_echo < 0.2);    /* clear decay out of initial state */
+    free(los);
 }
 static void test_real_time_magnetisation_tracks(void) {
     /* Single-site check: start with spin pointing along +x, no
