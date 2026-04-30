@@ -231,6 +231,55 @@ nqs_local_energy_batch(&cfg, L, L, batch, batch_size,
 Plus an accumulator (`nqs_energy_accumulator_t`) for streaming mean
 and variance, used inside the SR step.
 
+#### Kagome research thread (post-v0.4.3)
+
+The 60+ research commits since v0.4.3 build out the empirical side of
+the kagome Z₂-vs-U(1)-Dirac question on PBC clusters at machine
+precision.  Pipeline in `scripts/research_kagome_*.c`:
+
+| Tool                                     | Purpose                                                                                                    |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `research_kagome_full_analysis`          | (Γ, irrep) projected Lanczos with eigenvector reconstruction; emits S(q), Renyi spectrum, sum-rule checks |
+| `research_kagome_sz_spatial`             | Joint Sz + spatial-irrep projected Lanczos (incl. 2D irreps E₁, E₂)                                      |
+| `research_kagome_p6m_rep`                | 4-state empirical extraction of ⟨ψ_α \| σ_g \| ψ_β⟩ for all 12 C₆ᵥ elements                            |
+| `research_kagome_p6m_rep_6state`         | Generalisation to the full 6-state low-energy manifold (1D + 2D irreps)                                  |
+| `research_kagome_modular`                | C₆ matrix-element extraction with finer-grained reporting                                                |
+| `research_kagome_mes`                    | Empirical lattice modular S via Zhang-Grover-Vishwanath MES protocol                                    |
+| `build_master_synthesis.py`              | Aggregates per-sector JSONs into `master_synthesis.json` with cross-validation table                     |
+
+**Empirical–symbolic agreement at machine precision.** The full p6m
+representation (12 group elements × 4 1D-irrep ground states = 192
+matrix elements) matches the C₆ᵥ character-table prediction to
+**1.835·10⁻¹¹** in the diagonal and **3.331·10⁻¹⁶** (machine ε) in
+the off-diagonal — an end-to-end empirical–symbolic bridge to the
+companion synthetic-symbolic verification in
+`tsotchke-private:theory/higher_algebra/KagomeZ2.{wl,py}` (Drinfeld
+centre Z(Vec_{Z₂}) construction, F/R-symbols, pentagon + hexagon,
+Verlinde, Lagrangian algebras, Witt class, RT lens-space invariants,
+Witt tower of Z₂ TC ⊠ Ising^Q).
+
+**Dramatic finding (post-2D-irrep probe).** Probing the previously-
+overlooked 2D C₆ᵥ irreps E₁, E₂ at L=3 PBC reveals:
+
+```
+E_2:  -11.7795  S=1/2  (GLOBAL GS, 2-fold doublet)
+A_1:  -11.6099  S=1/2
+E_1:  -11.5930  S=1/2  (2-fold doublet)
+A_2:  -11.5576  S=1/2  ┐ degenerate to 10⁻¹⁰
+B_1:  -11.5576  S=1/2  ┘
+B_2:  -11.4339  S=3/2  (S=3/2 multiplet — NOT lowest-spin)
+```
+
+7 quasi-degenerate S=1/2 states across [-11.7795, -11.5576] = 0.222 J.
+Z₂ Toric Code predicts 4 ground states on the torus, Ising 3 — both
+inconsistent with empirical 7-fold quasi-degeneracy.  The U(1) Dirac
+scenario (gapless, continuum of low-energy states) is FAVOURED at L=3
+PBC, revising the previous Z₂-favourable reading that came from
+probing only the 4 1D-irrep sectors.
+
+See `benchmarks/results/nqs/full_analysis/master_synthesis.json` for
+the full cross-validation table and per-sector observables.
+
 ## 5. Ansätze
 
 Three concrete ansatz kinds ship in v0.4, all plugged into the same

@@ -93,6 +93,86 @@ infrastructure to extend to N=27 PBC.
 - **libirrep_bridge_entropy doc bug**: `n` parameter is the matrix
   *dimension* (= 2^nA for spin-1/2 RDM), not site count.  Header
   docstrings updated to clarify.
+- **Silent eigvec-save truncation on disk-full**: `fwrite` short-count
+  was unchecked in `research_kagome_full_analysis` and
+  `research_kagome_sz_spatial`, leaving 4 KB stubs masquerading as
+  1 GB eigvecs.  Cost: two ~3 hour Lanczos runs (E_1, E_2 sectors
+  at L=3 PBC) discarded.  Fixed: defensive return-value checking +
+  explicit "WARNING: eigvec save failed" emission.
+
+### Added — full p6m representation extraction (post-v0.4.3)
+
+- **`scripts/research_kagome_p6m_rep`**: extract the full 4×4×12 = 192
+  matrix elements ⟨ψ_α | σ_g | ψ_β⟩ for all 12 elements g of C_6v on
+  the L=3 PBC kagome AFM 4-state (1D-irrep) ground-state subspace.
+- **`scripts/research_kagome_p6m_rep_6state`**: generalisation to the
+  full 6-state low-energy manifold including the 2D irreps E_1, E_2 —
+  6×6×12 = 432 matrix elements.
+- **`scripts/research_kagome_modular`**: focused C_6 sector-by-sector
+  matrix-element extraction with finer-grained reporting.
+- **`scripts/research_kagome_sz_spatial`**: joint Sz + spatial-irrep
+  projected Lanczos.  Allows finding the lowest-spin state inside any
+  (Sz, Γ, irrep) sector — addressed the L=3 "B_2 sector lowest state
+  is S=3/2 not S=1/2" observation, and (more importantly) revealed
+  that the L=3 PBC global GS lives in the previously-unprobed E_2
+  sector at -11.7795 J.
+
+  Adds NQS_SYMPROJ_KAGOME_GAMMA_E1 / GAMMA_E2 to the
+  `nqs_symproj_kagome_irrep_t` enum, with d_E·χ_E(g) baked into the
+  character array so the existing (1/G) Σ chars·T projector formula
+  gives the correct (d_E/G) Σ χ·T isotypic projector uniformly.
+
+- **`scripts/research_kagome_mes`**: empirical lattice modular S
+  matrix extraction via the Zhang-Grover-Vishwanath 2012 minimum-
+  entropy-state protocol.  Two cycle bipartitions × grid scan over
+  S^3 unit α, finds K=4 MES per cut, basis-change matrix is the
+  empirical lattice S in the MES basis.
+
+### Empirical–symbolic agreement (machine precision)
+
+The empirical 192-element p6m representation matches the C_6v
+character-table prediction to:
+  - **max diagonal residual:    1.835e-11**
+  - **max off-diagonal residual: 3.331e-16**  (machine ε)
+
+This is the machine-precision bridge between the spin_based_neural_-
+network ED pipeline and the synthetic-symbolic verification in
+`tsotchke-private:theory/higher_algebra/KagomeZ2.{wl,py}` covering:
+  - Drinfeld centre Z(Vec_{Z_2}) explicit (g, ρ) construction
+  - F-symbols (trivial associator) + R-symbols
+  - Pentagon (vacuous) + hexagon (R bicharacter on Z_2 × Z_2)
+  - Verlinde formula vs group-multiplication fusion
+  - Lagrangian algebras: L_smooth = 1⊕e, L_rough = 1⊕m
+  - Witt class via Müger's Drinfeld-centre criterion (trivial)
+  - Reshetikhin-Turaev lens-space invariants
+  - Witt tower of Z_2 TC ⊠ Ising^Q in W ⊃ Z/16Z
+
+### REVISED conclusion on the kagome AFM Z_2-vs-U(1)-Dirac question
+
+The previous Z_2-favourable reading (γ_TEE ≈ log 2 + 4-fold sector
+quasi-degeneracy) came from probing only the 4 1D irreps (A_1, A_2,
+B_1, B_2) at L=3 PBC.  Probing the 2D irreps E_1, E_2 reveals:
+
+```
+E_2:  -11.7795  S=1/2  (GLOBAL GS, 2-fold doublet)
+A_1:  -11.6099  S=1/2  (1-fold)
+E_1:  -11.5930  S=1/2  (2-fold doublet)
+A_2:  -11.5576  S=1/2  ┐ degenerate to 10⁻¹⁰
+B_1:  -11.5576  S=1/2  ┘
+B_2:  -11.4339  S=3/2  (S=3/2 — NOT lowest spin)
+```
+
+Total LOWEST-SPIN states in 0.222 J spread:
+**E_2 (2) + A_1 (1) + E_1 (2) + A_2 (1) + B_1 (1) = 7**
+
+Z_2 TC predicts 4 GS, Ising 3 — both INCONSISTENT with empirical 7.
+The U(1) Dirac scenario (gapless, continuum of low-energy states)
+becomes FAVOURED at L=3 PBC.  The empirical-symbolic verification of
+the C_6v p6m representation at machine precision STILL holds — but
+the topological Z_2 TC interpretation requires 4 GS and we see 7.
+
+This is the most important post-v0.4.3 research finding.  Cleaner
+identification still requires larger N + thermal Hall κ_xy.
 
 ## [0.4.3] — 2026-04-26 — MinSR + kagome p6m + audit corrections
 
