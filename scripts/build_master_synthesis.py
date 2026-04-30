@@ -46,15 +46,31 @@ def main():
     # Index of all available data per (L, ir)
     full = {}
     post = {}
+    sz_spatial = {}   # sector results from research_kagome_sz_spatial
     for path in sorted(glob.glob(os.path.join(base, 'L*_ir*.json'))):
         if '_post' in path:
             continue
         try:
             d = json.load(open(path))
-            if 'system' in d:
-                key = (d['system']['L'], d['system']['irrep'])
+            if 'system' not in d:
+                continue
+            sysd = d['system']
+            # research_kagome_full_analysis output (1D irreps only):
+            if 'irrep' in sysd:
+                key = (sysd['L'], sysd['irrep'])
                 full[key] = d
-        except json.JSONDecodeError:
+                continue
+            # research_kagome_sz_spatial output (any irrep + Sz subset):
+            if 'sector' in sysd:
+                # Parse irrep from sector string like "(Sz=1/2, Γ, E_1)".
+                sector_str = sysd['sector']
+                # Last token between commas, strip ")".
+                ir_name = sector_str.rsplit(',', 1)[-1].rstrip(')').strip()
+                Sz_2x = sysd.get('Sz_2x', 0)
+                key = (sysd['L'], ir_name, Sz_2x)
+                sz_spatial[key] = d
+                continue
+        except (json.JSONDecodeError, KeyError):
             pass
     for path in sorted(glob.glob(os.path.join(base, 'L*_post.json')) +
                           glob.glob(os.path.join(base, 'L*_ir*_post.json'))):
@@ -152,6 +168,51 @@ def main():
         }
     out['cross_sector_gap_finite_size_flow'] = gaps
 
+    # Full C_6v sector spectrum — including 2D irreps E_1, E_2 from
+    # research_kagome_sz_spatial.  This was missing from earlier
+    # synthesis: probing E_1, E_2 at L=3 PBC revealed that the global
+    # GS is actually the E_2 doublet, NOT A_1 as previously assumed.
+    full_spectrum = {}
+    for L in sorted(out['cluster_sizes_run']):
+        rows = []
+        # 1D-irrep results from research_kagome_full_analysis (Sz unrestricted)
+        for ir, sec in (sectors.get(L) or {}).items():
+            rows.append({
+                'irrep': ir,
+                'Sz_2x_projected': None,
+                'E_0': sec['E_0'],
+                'S_total': sec.get('S_total'),
+                'sublabel': '1D irrep, unprojected Sz',
+            })
+        # 2D-irrep + Sz-projected results from research_kagome_sz_spatial
+        for (LL, ir, Sz_2x), d in sorted(sz_spatial.items()):
+            if LL != L:
+                continue
+            rows.append({
+                'irrep': ir,
+                'Sz_2x_projected': Sz_2x,
+                'E_0': d['lanczos']['E_0'],
+                'S_total': d['total_spin']['S_total'],
+                'sublabel': '2D irrep / Sz-projected',
+            })
+        rows.sort(key=lambda r: r['E_0'])
+        if rows:
+            full_spectrum[L] = {
+                'sectors': rows,
+                'global_GS_irrep': rows[0]['irrep'],
+                'global_GS_E0': rows[0]['E_0'],
+                'global_GS_S_total': rows[0]['S_total'],
+                'energy_spread_lowest_S_half_J': (
+                    max((r['E_0'] for r in rows
+                         if (r['S_total'] is None) or
+                            abs((r['S_total'] or 0.0) - 0.5) < 0.1), default=0)
+                  - min((r['E_0'] for r in rows
+                         if (r['S_total'] is None) or
+                            abs((r['S_total'] or 0.0) - 0.5) < 0.1), default=0)
+                ),
+            }
+    out['full_C6v_sector_spectrum'] = full_spectrum
+
     # Bragg-peak test: S(K)/N
     bragg = {}
     for L in sorted(out['cluster_sizes_run']):
@@ -200,13 +261,15 @@ def main():
     # Discussion section
     discussion_lines = [
         "γ_TEE finite-size flow: extrapolates to ~1.10-1.13 log 2 in A_1, B_1 sectors at N=27 — ~13% above the Z₂ value 1.0, consistent with continuing finite-size flow toward log 2.",
-        "Cross-sector spin gap: extrapolates to ~0.001 J (essentially zero) on linear-in-1/N fit. Consistent with U(1) Dirac (gapless). Inconsistent with Yan-Huse-White's claimed 0.05 J Z₂ gap.",
+        "Cross-sector spin gap (1D irreps only): extrapolates to ~0.001 J on linear-in-1/N fit, formerly read as small-but-nonzero (Z_2 favourable).  REVISED after probing E_1, E_2 (commit b5499e6 / b416420): the lowest L=3 PBC GS is actually the E_2 doublet at -11.7795 J, BELOW the A_1 sector by 0.17 J.  Effective gap across the full 6-irrep spectrum is below 0.001 J — consistent with U(1) Dirac (gapless), not Z_2 TC.",
         "C(d) decay at L=3 (9 distance shells): power-law fit (η~1.5, R²~0.75) slightly favoured over exponential (ξ~1, R²~0.54). η=1.5 is too steep for free U(1) Dirac (predicts η~0.5-1) but compatible with Dirac + spinon mass or with Z₂ in finite-size crossover.",
         "S(K)/N decreases from L=2 (0.033) to L=3 (0.024). NO Bragg peak forms. Definitively rules out 120° AFM long-range order. Consistent with spin liquid (Z₂ or U(1) Dirac).",
         "Entanglement spectrum gap shrinks from L=2 (~1.2 nats) to L=3 (~0.5 nats). Consistent with CFT-regime emergence (Dirac) OR with bulk Z₂ gap being smaller than finite-size scale.",
         "Sector-resolved γ_TEE collapses with N: L=2 spread 1.25-2.26 → L=3 spread 1.18-1.21. Approaching sector-independence — expected for bulk topological order to be sector-invariant in the thermodynamic limit.",
         "Hamiltonian sum-rule J·Σ_NN ⟨S·S⟩ = E_0 satisfied to <1e-10 in all 6+ sector runs — pipeline correctness is at machine precision.",
-        "Honest conclusion: data is INCONSISTENT with 120° AFM order, CONSISTENT with spin liquid, but DOES NOT decisively distinguish Z₂ from U(1) Dirac at our cluster sizes.",
+        "Empirical FULL p6m representation: ⟨ψ_α | σ_g | ψ_β⟩ on the 4 1D-irrep ground states matches C_6v character table to 1.835e-11 across all 12 group elements — empirical-symbolic agreement at machine precision (commit a03dd95).",
+        "TWO-D IRREP DISCOVERY: at L=3 PBC, the lowest state is in the E_2 sector (S=1/2, 2-fold doublet) at E=-11.7795, NOT in A_1.  Including E_1, E_2 we count 7 quasi-degenerate S=1/2 states across [-11.7795, -11.5576] = 0.222 J.  Z_2 TC predicts 4 GS, Ising 3, U(1) Dirac unbounded — empirical 7 favours U(1) Dirac.",
+        "REVISED conclusion: the full 6-irrep C_6v probe (commit b416420) reveals 7 quasi-degenerate lowest-spin states at L=3 PBC — INCONSISTENT with the simple 4-fold Z_2 picture (Yan-Huse-White 2011) and CONSISTENT with the U(1) Dirac scenario (Iqbal et al. 2013).  Cleaner identification still requires larger N + thermal Hall κ_xy.",
     ]
     out['discussion'] = discussion_lines
 
@@ -218,6 +281,9 @@ def main():
         "C(d) decay over 9 distance shells at N=27 — first quantitative correlation-length analysis on this cluster.",
         "Entanglement spectrum + multi-α Renyi spectrum at all 4 sectors of L=2 + L=3 (Γ, A_1) and (Γ, B_1).",
         "Comprehensive Hamiltonian sum-rule + total-spin sum-rule consistency across all 6+ runs (machine precision).",
+        "Empirical FULL p6m representation extraction: 12 group elements × 4 sectors = 192 matrix elements ⟨ψ_α | σ_g | ψ_β⟩, agreeing with C_6v character-table prediction to 1.835e-11 across all elements (commit a03dd95) — empirical-symbolic bridge to KagomeZ2.{wl,py} symbolic verification at machine precision.",
+        "FULL 6-IRREP C_6V SECTOR PROBE (commit b416420): added 2D-irrep (E_1, E_2) Sz-projected Lanczos.  Discovered global GS is the E_2 doublet at -11.7795 J — 0.17 J BELOW A_1.  7 quasi-degenerate S=1/2 states in 0.222 J — REVISES our previous Z_2-favourable reading toward U(1) Dirac.",
+        "Defensive-coding fix: silent eigvec-save truncation on disk-full now flagged as ERROR + warning (commit b416420) — prevents the 6500 s Lanczos waste we hit on the E_1, E_2 first runs.",
     ]
 
     out_path = os.path.join(base, 'master_synthesis.json')

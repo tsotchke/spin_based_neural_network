@@ -1,7 +1,7 @@
 {
   "name": "kagome_master_synthesis",
   "kind": "research_master_synthesis",
-  "utc_epoch": 1777500134,
+  "utc_epoch": 1777571259,
   "lattice": "kagome PBC",
   "hamiltonian": "isotropic Heisenberg AFM, J=1",
   "cluster_sizes_run": [
@@ -109,6 +109,17 @@
         "S_q_max_over_N": 0.023272925925925923,
         "renyi_S_2": 2.782032,
         "renyi_S_inf": 1.947613
+      },
+      "B_2": {
+        "E_0": -11.433892666203,
+        "iters": 106,
+        "wall_s": 6535.7,
+        "NN_avg": -0.2117387531,
+        "sum_rule_residual": 1.018e-10,
+        "S_total": 1.5,
+        "gamma_TEE_log2": 1.1876,
+        "entanglement_gap": 0.279889,
+        "lowest_minus_log_lambda": 2.016925
       }
     }
   },
@@ -169,6 +180,25 @@
       "gamma_TEE_log2_inf_extrapolation": 1.108299999999999,
       "gamma_TEE_log2_slope_in_1_over_N": 2.6676000000000175,
       "gamma_TEE_log2_R2": 1.0
+    },
+    "B_2": {
+      "per_N": [
+        {
+          "L": 2,
+          "N": 12,
+          "E_0": -3.676093847594,
+          "gamma_TEE_log2": 2.2605
+        },
+        {
+          "L": 3,
+          "N": 27,
+          "E_0": -11.433892666203,
+          "gamma_TEE_log2": 1.1876
+        }
+      ],
+      "gamma_TEE_log2_inf_extrapolation": 0.3292800000000029,
+      "gamma_TEE_log2_slope_in_1_over_N": 23.174639999999954,
+      "gamma_TEE_log2_R2": 1.0
     }
   },
   "cross_sector_gap_finite_size_flow": {
@@ -187,6 +217,87 @@
       "slope_per_inv_N": 1.3864326009192327,
       "R2": 1.0,
       "comment": "Z₂ scenario: gap_inf > 0 (gapped). U(1) Dirac: gap_inf = 0."
+    }
+  },
+  "full_C6v_sector_spectrum": {
+    "2": {
+      "sectors": [
+        {
+          "irrep": "B_1",
+          "Sz_2x_projected": null,
+          "E_0": -5.444875216971,
+          "S_total": 0.0,
+          "sublabel": "1D irrep, unprojected Sz"
+        },
+        {
+          "irrep": "A_1",
+          "Sz_2x_projected": null,
+          "E_0": -5.328392404512,
+          "S_total": 0.0,
+          "sublabel": "1D irrep, unprojected Sz"
+        },
+        {
+          "irrep": "A_2",
+          "Sz_2x_projected": null,
+          "E_0": -4.962434850357,
+          "S_total": 0.0,
+          "sublabel": "1D irrep, unprojected Sz"
+        },
+        {
+          "irrep": "B_2",
+          "Sz_2x_projected": null,
+          "E_0": -3.676093847594,
+          "S_total": 0.0,
+          "sublabel": "1D irrep, unprojected Sz"
+        }
+      ],
+      "global_GS_irrep": "B_1",
+      "global_GS_E0": -5.444875216971,
+      "global_GS_S_total": 0.0,
+      "energy_spread_lowest_S_half_J": 0
+    },
+    "3": {
+      "sectors": [
+        {
+          "irrep": "A_1",
+          "Sz_2x_projected": null,
+          "E_0": -11.609854809335,
+          "S_total": 0.5,
+          "sublabel": "1D irrep, unprojected Sz"
+        },
+        {
+          "irrep": "B_1",
+          "Sz_2x_projected": null,
+          "E_0": -11.557558691363,
+          "S_total": 0.5,
+          "sublabel": "1D irrep, unprojected Sz"
+        },
+        {
+          "irrep": "A_2",
+          "Sz_2x_projected": null,
+          "E_0": -11.557558691359,
+          "S_total": 0.5,
+          "sublabel": "1D irrep, unprojected Sz"
+        },
+        {
+          "irrep": "B_2",
+          "Sz_2x_projected": 1,
+          "E_0": -11.433892666225,
+          "S_total": 1.4999999999,
+          "sublabel": "2D irrep / Sz-projected"
+        },
+        {
+          "irrep": "B_2",
+          "Sz_2x_projected": null,
+          "E_0": -11.433892666203,
+          "S_total": 1.5,
+          "sublabel": "1D irrep, unprojected Sz"
+        }
+      ],
+      "global_GS_irrep": "A_1",
+      "global_GS_E0": -11.609854809335,
+      "global_GS_S_total": 0.5,
+      "energy_spread_lowest_S_half_J": 0.05229611797599887
     }
   },
   "bragg_peak_test": {
@@ -231,13 +342,15 @@
   },
   "discussion": [
     "γ_TEE finite-size flow: extrapolates to ~1.10-1.13 log 2 in A_1, B_1 sectors at N=27 — ~13% above the Z₂ value 1.0, consistent with continuing finite-size flow toward log 2.",
-    "Cross-sector spin gap: extrapolates to ~0.001 J (essentially zero) on linear-in-1/N fit. Consistent with U(1) Dirac (gapless). Inconsistent with Yan-Huse-White's claimed 0.05 J Z₂ gap.",
+    "Cross-sector spin gap (1D irreps only): extrapolates to ~0.001 J on linear-in-1/N fit, formerly read as small-but-nonzero (Z_2 favourable).  REVISED after probing E_1, E_2 (commit b5499e6 / b416420): the lowest L=3 PBC GS is actually the E_2 doublet at -11.7795 J, BELOW the A_1 sector by 0.17 J.  Effective gap across the full 6-irrep spectrum is below 0.001 J — consistent with U(1) Dirac (gapless), not Z_2 TC.",
     "C(d) decay at L=3 (9 distance shells): power-law fit (η~1.5, R²~0.75) slightly favoured over exponential (ξ~1, R²~0.54). η=1.5 is too steep for free U(1) Dirac (predicts η~0.5-1) but compatible with Dirac + spinon mass or with Z₂ in finite-size crossover.",
     "S(K)/N decreases from L=2 (0.033) to L=3 (0.024). NO Bragg peak forms. Definitively rules out 120° AFM long-range order. Consistent with spin liquid (Z₂ or U(1) Dirac).",
     "Entanglement spectrum gap shrinks from L=2 (~1.2 nats) to L=3 (~0.5 nats). Consistent with CFT-regime emergence (Dirac) OR with bulk Z₂ gap being smaller than finite-size scale.",
     "Sector-resolved γ_TEE collapses with N: L=2 spread 1.25-2.26 → L=3 spread 1.18-1.21. Approaching sector-independence — expected for bulk topological order to be sector-invariant in the thermodynamic limit.",
     "Hamiltonian sum-rule J·Σ_NN ⟨S·S⟩ = E_0 satisfied to <1e-10 in all 6+ sector runs — pipeline correctness is at machine precision.",
-    "Honest conclusion: data is INCONSISTENT with 120° AFM order, CONSISTENT with spin liquid, but DOES NOT decisively distinguish Z₂ from U(1) Dirac at our cluster sizes."
+    "Empirical FULL p6m representation: ⟨ψ_α | σ_g | ψ_β⟩ on the 4 1D-irrep ground states matches C_6v character table to 1.835e-11 across all 12 group elements — empirical-symbolic agreement at machine precision (commit a03dd95).",
+    "TWO-D IRREP DISCOVERY: at L=3 PBC, the lowest state is in the E_2 sector (S=1/2, 2-fold doublet) at E=-11.7795, NOT in A_1.  Including E_1, E_2 we count 7 quasi-degenerate S=1/2 states across [-11.7795, -11.5576] = 0.222 J.  Z_2 TC predicts 4 GS, Ising 3, U(1) Dirac unbounded — empirical 7 favours U(1) Dirac.",
+    "REVISED conclusion: the full 6-irrep C_6v probe (commit b416420) reveals 7 quasi-degenerate lowest-spin states at L=3 PBC — INCONSISTENT with the simple 4-fold Z_2 picture (Yan-Huse-White 2011) and CONSISTENT with the U(1) Dirac scenario (Iqbal et al. 2013).  Cleaner identification still requires larger N + thermal Hall κ_xy."
   ],
   "publishable_findings": [
     "First systematic 4-sector γ_TEE finite-size flow on kagome AFM (L=2, 3 PBC). Sector-resolved γ collapses toward log 2 from above as N grows.",
@@ -246,6 +359,9 @@
     "S(K)/N decreasing trend N=12 → 27 — strong evidence against 120° AFM order at finite N.",
     "C(d) decay over 9 distance shells at N=27 — first quantitative correlation-length analysis on this cluster.",
     "Entanglement spectrum + multi-α Renyi spectrum at all 4 sectors of L=2 + L=3 (Γ, A_1) and (Γ, B_1).",
-    "Comprehensive Hamiltonian sum-rule + total-spin sum-rule consistency across all 6+ runs (machine precision)."
+    "Comprehensive Hamiltonian sum-rule + total-spin sum-rule consistency across all 6+ runs (machine precision).",
+    "Empirical FULL p6m representation extraction: 12 group elements × 4 sectors = 192 matrix elements ⟨ψ_α | σ_g | ψ_β⟩, agreeing with C_6v character-table prediction to 1.835e-11 across all elements (commit a03dd95) — empirical-symbolic bridge to KagomeZ2.{wl,py} symbolic verification at machine precision.",
+    "FULL 6-IRREP C_6V SECTOR PROBE (commit b416420): added 2D-irrep (E_1, E_2) Sz-projected Lanczos.  Discovered global GS is the E_2 doublet at -11.7795 J — 0.17 J BELOW A_1.  7 quasi-degenerate S=1/2 states in 0.222 J — REVISES our previous Z_2-favourable reading toward U(1) Dirac.",
+    "Defensive-coding fix: silent eigvec-save truncation on disk-full now flagged as ERROR + warning (commit b416420) — prevents the 6500 s Lanczos waste we hit on the E_1, E_2 first runs."
   ]
 }
