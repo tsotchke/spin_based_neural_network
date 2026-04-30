@@ -687,6 +687,22 @@ static double cv6_character(int op, nqs_symproj_kagome_irrep_t name) {
     int is_C2   = !is_mirror && (rotk == 3);
     /* (E, C_3 are the remaining "always +1" rotations.) */
 
+    /* For 2D irreps E_1, E_2: distinguish by rotation index (0..5).
+     * Conjugacy classes within the rotations:
+     *   E (k=0)               χ_{E_1}=2, χ_{E_2}=2
+     *   2C_6 (k=1, 5)         χ_{E_1}=1, χ_{E_2}=-1
+     *   2C_3 (k=2, 4)         χ_{E_1}=-1, χ_{E_2}=-1
+     *   C_2  (k=3)            χ_{E_1}=-2, χ_{E_2}=2
+     * All mirrors:             χ_{E_1}=0,  χ_{E_2}=0
+     *
+     * The character array is then multiplied by d_E = 2 to bake the
+     * 2D-irrep dimension factor into the (1/G) Σ chars·T projector,
+     * giving the correct isotypic projector (d_E/G) Σ χ·T.        */
+    int rotk_full = is_mirror ? 0 : rotk;
+    int is_E      = !is_mirror && (rotk == 0);
+    int is_C3     = !is_mirror && (rotk == 2 || rotk == 4);
+    (void)rotk_full;
+
     switch (name) {
     case NQS_SYMPROJ_KAGOME_GAMMA_A1:
         return 1.0;
@@ -702,6 +718,21 @@ static double cv6_character(int op, nqs_symproj_kagome_irrep_t name) {
         if (is_sigma_v)     return -1.0;
         (void)is_sigma_d;
         return 1.0;
+    case NQS_SYMPROJ_KAGOME_GAMMA_E1:
+        /* d_E · χ(g)  with d_E = 2. */
+        if (is_mirror)        return 0.0;
+        if (is_E)             return 2.0 * 2.0;   /* 2 · 2 = 4 */
+        if (is_C6)            return 2.0 * 1.0;   /* 2 · 1 = 2 */
+        if (is_C3)            return 2.0 * (-1.0); /* 2 · (-1) = -2 */
+        if (is_C2)            return 2.0 * (-2.0); /* 2 · (-2) = -4 */
+        return 0.0;
+    case NQS_SYMPROJ_KAGOME_GAMMA_E2:
+        if (is_mirror)        return 0.0;
+        if (is_E)             return 2.0 * 2.0;   /* 4 */
+        if (is_C6)            return 2.0 * (-1.0); /* -2 */
+        if (is_C3)            return 2.0 * (-1.0); /* -2 */
+        if (is_C2)            return 2.0 * 2.0;   /* 4 */
+        return 0.0;
     }
     return 1.0;
 }

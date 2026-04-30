@@ -180,14 +180,23 @@ int nqs_kagome_p6m_perm(int L,
                          double **out_characters,
                          int *out_num_elements);
 
-/* Named 1D irrep of C_6v at Γ for the kagome p6m wallpaper group.
+/* Named irrep of C_6v at Γ for the kagome p6m wallpaper group.
  * Mirrors `nqs_kspace_irrep_t` from nqs_kspace_ed.h but kept here for
- * dependency hygiene (nqs_symproj must build with or without libirrep). */
+ * dependency hygiene (nqs_symproj must build with or without libirrep).
+ *
+ * 1D irreps (A_1, A_2, B_1, B_2) — character table χ(g) ∈ {±1}.
+ * 2D irreps (E_1, E_2) — character is the trace of the 2×2 rep matrix,
+ * χ(g) ∈ {-2, -1, 0, +1, +2}.  For 2D irreps, the isotypic projector
+ * is P_E = (d_E / |G|) Σ_g χ(g)* T(g) with d_E = 2.  The character
+ * array returned by nqs_kagome_p6m_perm_irrep encodes d_E · χ(g) so
+ * the same project_inplace formula (1/G) Σ chars·T applies uniformly. */
 typedef enum {
     NQS_SYMPROJ_KAGOME_GAMMA_A1 = 0, /* trivial — what _p6m_perm builds  */
     NQS_SYMPROJ_KAGOME_GAMMA_A2 = 1, /* sign on all 6 mirrors            */
     NQS_SYMPROJ_KAGOME_GAMMA_B1 = 2, /* sign on C_6, σ_d                 */
-    NQS_SYMPROJ_KAGOME_GAMMA_B2 = 3  /* sign on C_6, σ_v                 */
+    NQS_SYMPROJ_KAGOME_GAMMA_B2 = 3, /* sign on C_6, σ_v                 */
+    NQS_SYMPROJ_KAGOME_GAMMA_E1 = 4, /* 2D irrep, χ(C_6)=+1, χ(σ)=0     */
+    NQS_SYMPROJ_KAGOME_GAMMA_E2 = 5  /* 2D irrep, χ(C_6)=-1, χ(σ)=0     */
 } nqs_symproj_kagome_irrep_t;
 
 /* Same |G| = 12·L² p6m permutation as nqs_kagome_p6m_perm, but the

@@ -529,6 +529,27 @@ research_kagome_p6m_rep: $(BIN_DIR)
 	    $(NQS_SRCS) \
 	    $(LDFLAGS) $(OMP_LDFLAGS)
 
+# Joint Sz + spatial-irrep projected Lanczos.  Used to find the lowest
+# *singlet* state inside each spatial irrep — addresses the L=3 PBC
+# observation that B_2 sector ground state is S_total = 3/2, not the
+# expected singlet of a Z_2 TC topological-sector vacuum.
+research_kagome_sz_spatial: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_sz_spatial \
+	    scripts/research_kagome_sz_spatial.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
+	    $(LDFLAGS) $(OMP_LDFLAGS)
+
+# Empirical lattice modular S extraction via the Zhang-Grover-Vishwanath
+# 2012 minimum-entropy-state (MES) protocol.  Operates on saved
+# sector eigvecs; requires libirrep for partial-trace + entropy.
+research_kagome_mes: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
+	$(CC) $(TEST_CFLAGS) $(IRREP_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_mes \
+	    scripts/research_kagome_mes.c \
+	    src/libirrep_bridge.c \
+	    $(LDFLAGS) $(IRREP_LDFLAGS) $(OMP_LDFLAGS)
+
 # Post-processor: load saved eigvec, compute additional observables
 # without re-running the 90-min Lanczos.
 research_kagome_eigvec_post: $(BIN_DIR) $(if $(filter 1,$(IRREP_ENABLE)),libirrep,)
