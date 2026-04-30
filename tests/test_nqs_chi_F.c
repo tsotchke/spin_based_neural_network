@@ -187,6 +187,8 @@ static void test_kagome_bond_phase_basic(void) {
                c, (const char*[]){"A-B","A-C","B-C"}[c],
                re[c], im[c], sqrt(re[c]*re[c] + im[c]*im[c]), cnt[c]);
     }
+    nqs_sampler_free(s);
+    nqs_ansatz_free(a);
 }
 
 static void test_kagome_bond_phase_rejects_non_kagome(void) {
