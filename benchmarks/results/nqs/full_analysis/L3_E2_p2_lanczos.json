@@ -1,0 +1,11 @@
+{
+  "system": {"L": 3, "N": 27, "sector": "(Sz=1/2, Γ, E_2 partner 2)", "dim": 134217728, "popcount": 13},
+  "E0_p1_loaded": -11.779504985507,
+  "E0_p2_bare":   -11.779504985490,
+  "E0_p2_penal":  -11.779504985488,
+  "penalty_lambda": 10.0000,
+  "orthogonality_p1_p2": -2.602085e-17,
+  "doublet_split": 1.768186e-11,
+  "lanczos": {"iters": 84, "converged": 1, "wall_s": 5088.6},
+  "total_spin": {"S_squared": 0.7500000005, "S_total": 0.5000000003}
+}
