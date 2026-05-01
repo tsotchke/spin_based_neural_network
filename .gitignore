@@ -22,3 +22,7 @@ build/
 .clangd/
 .cache/
 compile_commands.json
+
+# Research-run scratch space: large eigenvector dumps + raw run logs.
+# Curated JSON summaries live in benchmarks/results/ and ARE tracked.
+research_data/

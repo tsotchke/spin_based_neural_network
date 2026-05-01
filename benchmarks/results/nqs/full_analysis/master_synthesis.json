@@ -1,7 +1,7 @@
 {
   "name": "kagome_master_synthesis",
   "kind": "research_master_synthesis",
-  "utc_epoch": 1777571259,
+  "utc_epoch": 1777611685,
   "lattice": "kagome PBC",
   "hamiltonian": "isotropic Heisenberg AFM, J=1",
   "cluster_sizes_run": [
@@ -259,11 +259,25 @@
     "3": {
       "sectors": [
         {
+          "irrep": "E_2",
+          "Sz_2x_projected": 1,
+          "E_0": -11.779504985507,
+          "S_total": 0.5000000002,
+          "sublabel": "2D irrep / Sz-projected"
+        },
+        {
           "irrep": "A_1",
           "Sz_2x_projected": null,
           "E_0": -11.609854809335,
           "S_total": 0.5,
           "sublabel": "1D irrep, unprojected Sz"
+        },
+        {
+          "irrep": "E_1",
+          "Sz_2x_projected": 1,
+          "E_0": -11.593030277036,
+          "S_total": 0.5000000006,
+          "sublabel": "2D irrep / Sz-projected"
         },
         {
           "irrep": "B_1",
@@ -294,10 +308,10 @@
           "sublabel": "1D irrep, unprojected Sz"
         }
       ],
-      "global_GS_irrep": "A_1",
-      "global_GS_E0": -11.609854809335,
-      "global_GS_S_total": 0.5,
-      "energy_spread_lowest_S_half_J": 0.05229611797599887
+      "global_GS_irrep": "E_2",
+      "global_GS_E0": -11.779504985507,
+      "global_GS_S_total": 0.5000000002,
+      "energy_spread_lowest_S_half_J": 0.22194629414799927
     }
   },
   "bragg_peak_test": {

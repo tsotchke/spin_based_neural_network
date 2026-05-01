@@ -1,0 +1,6 @@
+{
+  "system": {"L": 3, "N": 27, "sector": "(Sz=1/2, Γ, E_2)", "Sz_2x": 1, "dim": 134217728, "popcount": 13},
+  "lanczos": {"E_0": -11.779504985507, "iters": 88, "converged": 1, "wall_s": 10890.7},
+  "total_spin": {"S_squared": 0.7500000005, "S_total": 0.5000000002},
+  "interpretation": "Lowest singlet (or lowest state) of the (Γ, E_2) sector restricted to Sz=0 manifold.  Compares to the unprojected sector ground state from research_kagome_full_analysis.c."
+}
