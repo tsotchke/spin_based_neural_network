@@ -125,8 +125,67 @@ infrastructure to extend to N=27 PBC.
 - **`scripts/research_kagome_mes`**: empirical lattice modular S
   matrix extraction via the Zhang-Grover-Vishwanath 2012 minimum-
   entropy-state protocol.  Two cycle bipartitions × grid scan over
-  S^3 unit α, finds K=4 MES per cut, basis-change matrix is the
-  empirical lattice S in the MES basis.
+  S^{K-1} unit α, finds K MES per cut, basis-change matrix is the
+  empirical lattice S in the MES basis.  Generalised from K=4 to
+  runtime K up to MAX_K = 8 (commit c4927e5).  Includes parallel
+  real-input partial trace cross-validated against
+  `libirrep_partial_trace` at machine precision (commit fc5ff1e).
+- **`scripts/research_kagome_e2_p2`**: orthogonal-projection-penalty
+  Lanczos that finds the SECOND partner of the (Γ, E_2, Sz=1/2)
+  doublet at L=3 PBC.  Builds H' = H + λ·|ψ_p1⟩⟨ψ_p1| with extra
+  explicit ortho-projection in the projector step.  Reports bare
+  ⟨p2|H|p2⟩, ⟨p1|p2⟩, |E(p2) − E(p1)|, ⟨S²⟩.
+- **`scripts/launch_mes_5state_doublet.sh`**: pre-checked launcher
+  for the FULL 5-state MES on (E_2_p1, E_2_p2, A_1, E_1_p1, A_2)
+  closing the doublet-asymmetry caveat from the lowest-4 run.
+- **`scripts/analyze_mes_result.sh`**: post-processing for the MES
+  JSON output.  K=4: column-permutation + sign-gauge fit to
+  (1/2)·Hadamard_4, reports Frobenius distance.  K≥5: singular-
+  value spectrum + closest 4-of-K sub-matrix Frobenius distance +
+  σ_{K-1}/σ_K rank-gap diagnostic.
+
+### Empirical lattice modular S — three runs
+
+The MES extraction landed in three progressively-more-complete variants:
+
+| run | manifold                                        | wall   | top observable                            |
+|-----|-------------------------------------------------|--------|-------------------------------------------|
+| 1   | A_1, A_2, B_1, B_2 (lowest 1D irreps)           | 76 m   | ‖·‖_F − (1/2)H_4 = 1.92                   |
+| 2   | E_2_p1, A_1, E_1_p1, A_2 (lowest 4 distinct)    | 83 m   | ‖·‖_F − (1/2)H_4 = 1.07                   |
+| 3   | E_2_p1, E_2_p2, A_1, E_1_p1, A_2 (full doublet) | 233 m  | rank-4, σ = (0.92, 0.80, 0.20, 0.013, ≈0) |
+
+For Z_2 TC the modular S in MES basis is unitary (1/2)·Hadamard_4
+with ALL singular values equal to 1/2.  Run 3 (the methodologically
+clean, doublet-symmetric run) finds numerical rank 4 (σ_5/σ_4 ≈
+5·10⁻⁵) but with the four non-zero singular values in the
+hierarchy 1, 1, 0.2, 0.01 — NOT the flat-1/2 spectrum Z_2 TC
+predicts.  Closest 4-of-5 sub-matrix Frobenius distance from
+(1/2)·H_4 is 1.17 — comparable to run 2.
+
+The persistent 2×2 block structure across runs 1 and 2 (within-
+cluster overlaps DIFFERENT from between-cluster overlaps), and the
+non-flat singular-value spectrum in run 3, identify an emergent Z_2
+sector grading on the lowest-energy manifold that is NOT the
+topological-anyon grading Z_2 TC requires.
+
+### Methodology contributions
+
+- **Parallel real-input partial trace** (in `research_kagome_mes.c`).
+  Per-thread upper-triangle accumulation of ρ_A then serial
+  reduction; 8× wall-time speedup over the libirrep complex-cast
+  baseline (85 s/eval → 11 s/eval at 14 OpenMP threads).
+  Cross-validated against `libirrep_bridge_partial_trace_spin_half`
+  on N=12 random real ψ at 1.4·10⁻¹⁷ max element-wise difference.
+- **Runtime-K MES**: the script now reads K from CLI (K ≤ MAX_K = 8)
+  and generates the unit α-grid on S^{K-1} via spherical coords with
+  K-1 angles.  Backwards-compat: legacy K=4 invocations are detected
+  by argv[2] looking-like-a-path heuristic and routed to K=4.
+- **Orthogonal-projection-penalty Lanczos**: H' = H + λ|p1⟩⟨p1| with
+  λ = 10 J shifts the existing partner up by λ; restricted to the
+  symmetry-projected subspace, the lowest H' eigenstate is the
+  doublet partner.  Empirically gives partner-2 in 1.4 hours
+  vs partner-1's 3 hours — the penalty removes the near-degenerate
+  level slowing Krylov convergence.
 
 ### Empirical–symbolic agreement (machine precision)
 
@@ -171,8 +230,28 @@ becomes FAVOURED at L=3 PBC.  The empirical-symbolic verification of
 the C_6v p6m representation at machine precision STILL holds — but
 the topological Z_2 TC interpretation requires 4 GS and we see 7.
 
-This is the most important post-v0.4.3 research finding.  Cleaner
-identification still requires larger N + thermal Hall κ_xy.
+### Five independent observables rejecting simple Z_2 TC at N=27
+
+After the modular-S MES extraction landed (commits fc5ff1e, 48e8c0c,
+736004a, bb55b50), the empirical case against simple Z_2 TC at this
+finite size now rests on FIVE INDEPENDENT OBSERVABLES:
+
+1. **Global GS in E_2 doublet** at -11.7795 J, BELOW the A_1
+   sector that was previously assumed to be the GS.
+2. **7 quasi-degenerate S=½ states** in 0.222 J spread (Z_2 predicts
+   exactly 4; Ising 3; U(1) Dirac unbounded).
+3. **Cross-sector gap → 0** under linear-in-1/N extrapolation across
+   the full 6-irrep spectrum at L=3 (gapless → U(1) Dirac).
+4. **C(d) decay η ≈ 1.5** over 9 distance shells at N=27 — algebraic,
+   not exponential as Z_2 TC requires.
+5. **Modular S not Hadamard_4**: across all three MES variants (4-of-1D,
+   lowest-4, doublet-symmetric 5-state), the empirical lattice
+   modular S is incompatible with the Z_2 TC prediction (1/2)·H_4.
+   The methodologically clean 5-state run with both E_2 doublet
+   partners gives singular-value spectrum (1, 1, 0.2, 0.01, ≈0) —
+   numerical rank 4 but NOT the flat σ = 1/2 spectrum Z_2 TC requires.
+
+Cleaner identification still requires larger N + thermal Hall κ_xy.
 
 ## [0.4.3] — 2026-04-26 — MinSR + kagome p6m + audit corrections
 
@@ -481,7 +560,14 @@ Every new capability is opt-in via new entry points.
   warnings under `-Wall -Wextra`, 0 regressions. (See v0.4.2 for
   the follow-up count of 359 / 359.)
 
-## [Unreleased] — v0.5 pillar landings
+## v0.5 pillar work staged in v0.4.x
+
+> **Note (2026-05-01):** this block predates the v0.4.3 tag and was
+> originally intended as a forward-looking v0.5 staging area.  Most
+> items landed inline during the v0.4.x patch line (MinSR, kagome
+> p6m, µMAG-lite, equivariant LLG); the rest sit alongside the
+> kagome research thread above as v0.5-candidate code.  The single
+> live `[Unreleased]` block is at the top of this file.
 
 ### Added — pillar P2.1 (time-dependent NQS)
 - **Real-time tVMC integrator** (`nqs_tvmc_step_real_time`). For real

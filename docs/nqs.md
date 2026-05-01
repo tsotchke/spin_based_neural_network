@@ -244,7 +244,9 @@ precision.  Pipeline in `scripts/research_kagome_*.c`:
 | `research_kagome_p6m_rep`                | 4-state empirical extraction of ⟨ψ_α \| σ_g \| ψ_β⟩ for all 12 C₆ᵥ elements                            |
 | `research_kagome_p6m_rep_6state`         | Generalisation to the full 6-state low-energy manifold (1D + 2D irreps)                                  |
 | `research_kagome_modular`                | C₆ matrix-element extraction with finer-grained reporting                                                |
-| `research_kagome_mes`                    | Empirical lattice modular S via Zhang-Grover-Vishwanath MES protocol                                    |
+| `research_kagome_mes`                    | Empirical lattice modular S via Zhang-Grover-Vishwanath MES protocol; runtime K ≤ MAX_K = 8              |
+| `research_kagome_e2_p2`                  | Orthogonal-projection-penalty Lanczos for the second partner of the (Γ, E₂, Sz=1/2) doublet              |
+| `analyze_mes_result.sh`                  | Post-processor: K=4 Frobenius fit to (1/2)·H₄, K≥5 SV-spectrum + closest-sub-fit + rank-gap diagnostics  |
 | `build_master_synthesis.py`              | Aggregates per-sector JSONs into `master_synthesis.json` with cross-validation table                     |
 
 **Empirical–symbolic agreement at machine precision.** The full p6m
@@ -277,8 +279,30 @@ scenario (gapless, continuum of low-energy states) is FAVOURED at L=3
 PBC, revising the previous Z₂-favourable reading that came from
 probing only the 4 1D-irrep sectors.
 
+**Empirical lattice modular S (Zhang-Grover-Vishwanath MES).** The
+modular-S extraction landed in three progressively-more-complete
+variants on this manifold:
+
+| Run | Manifold                                      | Wall  | Top observable                                |
+| --- | --------------------------------------------- | ----- | --------------------------------------------- |
+| 1   | A₁, A₂, B₁, B₂ (lowest 1D irreps)             | 76 m  | ‖·‖_F − (1/2)H₄ = 1.92                        |
+| 2   | E₂_p1, A₁, E₁_p1, A₂ (lowest 4 distinct)      | 83 m  | ‖·‖_F − (1/2)H₄ = 1.07                        |
+| 3   | E₂_p1, E₂_p2, A₁, E₁_p1, A₂ (full doublet)    | 233 m | rank-4, σ = (0.92, 0.80, 0.20, 0.013, ≈0)     |
+
+Z₂ Toric Code requires the modular S in MES basis to be unitary
+(1/2)·Hadamard₄ with all four singular values equal to 1/2.  Run 3
+(the methodologically clean, doublet-symmetric run obtained after the
+second E₂ doublet partner was found via orthogonal-projection-penalty
+Lanczos) finds numerical rank 4 (σ_5/σ_4 ≈ 5·10⁻⁵) but with the four
+non-zero singular values in the hierarchy 1, 1, 0.2, 0.01 — NOT the
+flat-1/2 spectrum Z₂ TC predicts.  This is the FIFTH independent
+observable rejecting simple Z₂ TC at N=27, with the
+doublet-asymmetry caveat now fully addressed.
+
 See `benchmarks/results/nqs/full_analysis/master_synthesis.json` for
-the full cross-validation table and per-sector observables.
+the full cross-validation table and per-sector observables, and
+`benchmarks/results/nqs/full_analysis/L3_mes_*.json` for the three
+MES experiments.
 
 ## 5. Ansätze
 

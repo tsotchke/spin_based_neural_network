@@ -125,9 +125,27 @@ N=12 runs ~16M samples/s, well above the bar.
 
 ## Publication target
 
-Still open. If the 3-of-5 bar resolves cleanly, a Letter-length piece
-is the natural form. If it doesn't, a longer methods paper describing
-the diagnostic stack itself (independent of which phase wins).
+5-of-5 bar resolved (2026-05-01) — see revision history.  All five
+observables at L=3 PBC favour U(1) Dirac over Z_2 Toric Code:
+
+  1. Global GS in E_2 doublet (not A_1).
+  2. 7 quasi-degenerate S=½ states (Z_2 predicts 4).
+  3. Cross-sector gap extrapolation → 0.
+  4. C(d) decay η ≈ 1.5 (algebraic, not exponential).
+  5. Modular S not Hadamard_4 (3 MES variants, all consistent).
+
+A Letter-length piece is now the natural form.  Companion
+empirical-symbolic verification (private) at machine precision
+across the full p6m representation makes the methods contribution
+defensible: the diagnostic stack reproduces the C_6v character
+table to 10⁻¹¹ on the diagonal and machine ε on the off-diagonal,
+across all 432 matrix elements of the 6-state lowest-energy
+manifold.
+
+Cleaner phase identification still requires either (a) larger N —
+N=30 OBC clusters via the Lanczos-torus tradition, or (b) a
+finite-temperature thermal Hall κ_xy probe to settle gapped vs
+gapless directly.
 
 ## Revision history
 
@@ -143,14 +161,26 @@ the diagnostic stack itself (independent of which phase wins).
   probe: L=3 PBC global GS lives in E_2 (2-fold doublet at -11.78);
   7 quasi-degenerate S=1/2 states in 0.222 J spread; U(1) Dirac
   FAVOURED over Z_2 Toric Code at this finite size.
-- 2026-05-01: 4-of-1D-irrep MES (Zhang-Grover-Vishwanath protocol,
-  6×6×6 α-grid, 4587 s wall) lands at
-  benchmarks/results/nqs/full_analysis/L3_mes_1Dirreps_6x6x6.json.
-  Empirical lattice modular S deviates from (1/2)·Hadamard_4 by
-  ||·|F = 1.92 (worst-case for the comparison) — MES collapses to
-  ~95 % weight on the lowest-energy sector rather than the
-  equal-weight Z_2 TC superposition.  FIFTH independent rejection
-  of simple Z_2 TC at N=27.  Follow-up MES on the actual lowest-4
-  sectors (E_2_p1, A_1, E_1_p1, A_2) in flight.  v0.5 still held
-  until both MES variants and a final re-read of the master
-  synthesis are complete.
+- 2026-05-01: MODULAR-S MES extraction completes in three runs
+  (Zhang-Grover-Vishwanath protocol).  All artefacts under
+  `benchmarks/results/nqs/full_analysis/L3_mes_*.json`.
+  - Run 1 (4-of-1D-irrep, 6×6×6 α-grid, 4587 s wall): single-sector
+    collapse, Frobenius distance from (1/2)·H_4 = 1.92.
+  - Run 2 (lowest-4 distinct = E_2_p1, A_1, E_1_p1, A_2; 6×6×6 grid,
+    4951 s): Cut Y MES is a non-trivial 3-sector mix
+    α = (0.707, 0.183, -0.683, 0); Frobenius distance drops to 1.07.
+  - E_2 partner-2 found via orthogonal-projection-penalty Lanczos
+    (commit 736004a, 1.4 h wall): ⟨p1|p2⟩ = -2.6·10⁻¹⁷, doublet
+    split = 1.77·10⁻¹¹ J.
+  - Run 3 (full 5-state with both E_2 partners; 5×5×5×5 = 625 grid,
+    13964 s = 3.9 h): empirical σ-spectrum (0.92, 0.80, 0.20, 0.013,
+    ≈0).  Numerical rank 4 (σ_5/σ_4 ≈ 5·10⁻⁵) but the four non-zero
+    singular values are NOT all equal — Z_2 TC requires σ_i = 1/2
+    for all four anyons.  Closest 4-of-5 sub-matrix Frobenius
+    distance from (1/2)·H_4 is 1.17.
+  Combined with the prior four observables (GS in E_2 not A_1, 7
+  quasi-degen S=½ states, gap extrapolation, C(d) η=1.5), this is
+  the FIFTH independent observable rejecting simple Z_2 TC at N=27,
+  with the doublet-asymmetry caveat now fully addressed.  5-of-5
+  bar resolved.  v0.5 release-tag is now unblocked from the
+  experimental side.
