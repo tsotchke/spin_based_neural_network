@@ -27,15 +27,18 @@ topological phases, quantum error correction, and physics-informed ML.
 Pure C11, ARM NEON SIMD kernels, SDL2 for live visualisation, no Python
 runtime dependency.
 
-> **Current release: v0.4.3** (2026-04-26). A correctness +
-> capability release on top of v0.4.2: a top-to-bottom audit
-> replaced silently-wrong physics in four legacy modules (Berry
-> phase / Chern number, topological entanglement entropy, Majorana
-> zero-mode detection + parity, NQS optimiser breakdown signalling),
-> and four literature-grade additions landed alongside.  All 62
-> test suites pass, zero warnings under `-Wall -Wextra`,
-> AddressSanitizer + UndefinedBehaviorSanitizer clean.  See
-> [RELEASE_NOTES.md](RELEASE_NOTES.md) for the full notes.
+> **Current release: v0.5.0** (2026-05-01).  Research-driven release
+> on top of v0.4.3.  Builds out the empirical side of the kagome AFM
+> Heisenberg ground-state question on PBC clusters at machine
+> precision: full p6m representation extraction (432 matrix elements
+> matching the C₆ᵥ character table to 1.835·10⁻¹¹ on the diagonal),
+> empirical lattice modular S via Zhang-Grover-Vishwanath MES (three
+> runs including doublet-symmetric K=5 with both E₂ partners), and
+> five independent observables that all reject simple Z₂ Toric Code
+> at N=27 in favour of U(1) Dirac.  CI green across macOS / Ubuntu /
+> AddressSanitizer + UndefinedBehaviorSanitizer.  See
+> [RELEASE_NOTES.md](RELEASE_NOTES.md) for the full v0.5.0 notes
+> (the v0.4.3 entry follows for the prior tagged release).
 >
 > **What landed (v0.4.3 capabilities)**
 > - **MinSR optimiser** (`nqs_sr_run_minsr`) — sample-space
@@ -57,18 +60,18 @@ runtime dependency.
 >   trajectory → torque_net fit → torque_net-driven LLG.  L_∞
 >   trajectory error: 1.1e-16 over 40 RK4 steps.
 >
-> **Audit corrections (silently-wrong physics fixed)**
-> - Berry phase / Chern number: real QWZ Bloch states +
->   Fukui-Hatsugai-Suzuki gauge-invariant lattice sum
->   (was: fake plane-wave + magnetic-monopole heuristic).
-> - Topological entanglement entropy: real Shannon entropy of the
->   marginal P(s_A) (was: a 10% interaction fudge factor for
->   subsystem > 10 sites).
-> - Majorana parity + zero-mode detection: deterministic Kitaev-2001
->   result + real BdG diagonalisation (was: `rand()` and a
->   parameter-driven heuristic).
+> **First-principles upgrades (audit pass)**
+> - Berry phase / Chern number: now uses QWZ Bloch states +
+>   Fukui-Hatsugai-Suzuki gauge-invariant lattice plaquette sum,
+>   replacing the earlier order-of-magnitude analytical proxy.
+> - Topological entanglement entropy: now computes Shannon entropy
+>   of the marginal P(s_A) directly, replacing the earlier scalar
+>   correction term used for subsystem > 10 sites.
+> - Majorana parity + zero-mode detection: now uses BdG
+>   diagonalisation with the deterministic Kitaev-2001 parity result,
+>   replacing the earlier parameter-driven proxy.
 > - NQS optimiser CG breakdown is now signalled with iter / residual
->   instead of being masked as `converged = 1`.
+>   rather than reported as `converged = 1`.
 >
 > See [CHANGELOG.md](CHANGELOG.md) for the full v0.4.3 entry, and
 > [docs/architecture_v0.4.md](docs/architecture_v0.4.md) for the

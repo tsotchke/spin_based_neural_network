@@ -9,7 +9,7 @@
 #
 # --- this tree --------------------------------------------------------
 
-SPIN_NN_VERSION=0.4.0
+SPIN_NN_VERSION=0.5.0
 
 # --- toolchain minimums ----------------------------------------------
 # Floor versions; anything older is unsupported.

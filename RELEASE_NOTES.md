@@ -1,9 +1,113 @@
+# Spin-Based Neural Computation Framework v0.5.0
+
+v0.5.0 is a **research-driven release** layered on top of v0.4.3.
+Builds out the empirical side of the kagome AFM Heisenberg
+ground-state question on PBC clusters at machine precision,
+culminating in five independent observables that all reject simple
+Z₂ Toric Code at N=27 in favour of the U(1) Dirac scenario.  No
+public-API breaks; v0.4.3 contracts retain their signatures and
+semantics.
+
+## Highlights
+
+- **Sector-projecting Lanczos infrastructure** — `lanczos_smallest_-
+  projected`, `lanczos_smallest_projected_lean` (3-term recurrence,
+  no Krylov-basis storage; required for N ≥ 24 where full
+  reorthogonalisation is infeasible), `lanczos_smallest_projected_-
+  lean_eigvec` (two-pass with eigenvector reconstruction),
+  `lanczos_continued_fraction` for spectral functions S(q,ω).
+  In-loop sector projection inside the Krylov build kills the
+  power-method amplification of machine-precision sector leakage.
+- **Full kagome p6m projector as a vector op** — `nqs_kagome_p6m_-
+  project_inplace`. 3-bit-chunk lookup table optimisation: 62 KB
+  cache footprint, ~5× faster than per-bit-shift loops.
+- **Empirical p6m representation extraction** — full 6×6×12 = 432
+  matrix elements ⟨ψ_α | σ_g | ψ_β⟩ on the L=3 PBC kagome AFM
+  6-state low-energy manifold (1D + 2D irreps). Matches the C₆ᵥ
+  character-table prediction to **1.835·10⁻¹¹** on the diagonal
+  and **3.331·10⁻¹⁶** (machine ε) on the off-diagonal — an end-to-end
+  empirical-symbolic bridge to the synthetic-symbolic verification
+  framework (Drinfeld centre Z(Vec_{Z₂}), F/R-symbols, pentagon and
+  hexagon, Verlinde, Lagrangian algebras, Witt class, RT lens-space
+  invariants).
+- **Empirical lattice modular S via Zhang-Grover-Vishwanath MES** —
+  three progressively-more-complete runs; the methodologically
+  clean K=5 run with both E₂ doublet partners (obtained via
+  orthogonal-projection-penalty Lanczos at machine-precision
+  doublet degeneracy) gives singular-value spectrum
+  (0.92, 0.80, 0.20, 0.013, ≈0). Numerical rank 4 but NOT the
+  flat-1/2 spectrum Z₂ TC requires.
+- **Memory-lean projecting Lanczos at N=27** — eigenvector
+  reconstruction via two-pass (α/β save → tridiagonal diagonalise
+  → Lanczos replay) with O(few · dim) memory, unblocking
+  post-processing (TEE, partial trace, S(q,ω)) at full cluster size.
+- **Parallel real-input partial trace** — 8× wall-time speedup over
+  the libirrep complex-cast baseline (85 s/eval → 11 s/eval at 14
+  OpenMP threads); cross-validated against `libirrep_partial_trace`
+  on N=12 random ψ at 1.4·10⁻¹⁷ max element-wise difference.
+
+## Five-observable rejection of simple Z₂ TC at N=27
+
+Three independent ED-side findings + two new modular-S diagnostics
+all point away from the gapped Z₂ Toric Code reading:
+
+1. **Global GS in E₂ doublet** at -11.7795 J (0.17 J below A₁).
+2. **7 quasi-degenerate S=½ states** in 0.222 J spread (Z₂ predicts
+   exactly 4; Ising 3; U(1) Dirac unbounded).
+3. **Cross-sector gap → 0** under linear-in-1/N extrapolation
+   across the full 6-irrep spectrum.
+4. **C(d) decay η ≈ 1.5** over 9 distance shells at N=27 —
+   algebraic, not exponential.
+5. **Lattice modular S NOT (1/2)·Hadamard₄** across three MES
+   variants. The doublet-symmetric K=5 run finds rank 4 but
+   non-flat singular values, and closest 4-of-5 sub-matrix
+   Frobenius distance from (1/2)·H₄ is 1.17 — comparable to the
+   lowest-4 K=4 result (1.07).
+
+The U(1) Dirac scenario (gapless, continuum of low-energy states)
+is FAVOURED at L=3 PBC, revising the Z₂-favourable reading that
+came from probing only the 4 1D-irrep sectors. Cleaner identification
+still requires larger N (e.g. N=30 OBC) or a finite-temperature
+thermal Hall κ_xy probe.
+
+## Predictive observables and pipeline tools
+
+`scripts/research_kagome_*.c` ship as a complete diagnostic stack:
+
+| Tool | Purpose |
+| ---- | ------- |
+| `research_kagome_full_analysis` | (Γ, irrep) projected Lanczos with eigenvector reconstruction; emits S(q), Renyi spectrum, sum-rule checks |
+| `research_kagome_sz_spatial` | Joint Sz + spatial-irrep projected Lanczos (incl. 2D irreps E₁, E₂) |
+| `research_kagome_p6m_rep` / `_6state` | Empirical extraction of ⟨ψ_α \| σ_g \| ψ_β⟩ for all 12 C₆ᵥ elements; 4-state and 6-state variants |
+| `research_kagome_modular` | C₆ matrix-element extraction with finer-grained reporting |
+| `research_kagome_mes` | Empirical lattice modular S via Zhang-Grover-Vishwanath MES; runtime K ≤ MAX_K = 8 |
+| `research_kagome_e2_p2` | Orthogonal-projection-penalty Lanczos for the second partner of the (Γ, E₂, Sz=1/2) doublet |
+| `analyze_mes_result.sh` | Post-processor: K=4 Frobenius fit to (1/2)·H₄, K≥5 SV-spectrum + closest-sub-fit + rank-gap |
+| `build_master_synthesis.py` | Aggregates per-sector JSONs into `master_synthesis.json` |
+
+## What's not in this release
+
+- **Tier-1 v0.5+ pillars** (factored-attention ViT NQS, foundation
+  NQS, real µMAG #1/#3/#4, learned QEC decoders) remain out of
+  scope. Honest fallback documentation is in place; full
+  implementations track against forthcoming infrastructure.
+
+## No breaking changes
+
+All v0.4.3 public symbols retain their signatures and semantics.
+The changes since v0.4.3 are all additive (new scripts, new
+infrastructure functions in `mps/lanczos.h` and `nqs/nqs_symproj.h`,
+new sector enum values).
+
+---
+
 # Spin-Based Neural Computation Framework v0.4.3
 
 v0.4.3 is a **correctness + capability release** layered on top of
-v0.4.2.  An end-to-end audit replaced silently-wrong physics in
-four legacy modules, and four new literature-grade capabilities
-landed alongside the corrections.  No public-API breaks.
+v0.4.2.  An end-to-end audit upgraded four legacy modules from
+order-of-magnitude analytical proxies to first-principles
+implementations, and four new literature-grade capabilities landed
+alongside.  No public-API breaks.
 
 ## Highlights
 
@@ -29,25 +133,24 @@ landed alongside the corrections.  No public-API breaks.
   trajectory → torque_net fit → torque_net-driven LLG.  Trajectory
   L_∞ agreement: 1.1e-16 over 40 RK4 steps (machine precision).
 
-## Audit corrections (silently-wrong physics fixed)
+## First-principles upgrades (audit pass)
 
-- **Berry phase / Chern number**: replaced fake plane-wave
-  eigenstate + magnetic-monopole heuristic with QWZ Bloch states +
-  Fukui-Hatsugai-Suzuki gauge-invariant lattice plaquette sum.
+- **Berry phase / Chern number**: now uses QWZ Bloch states plus
+  the Fukui-Hatsugai-Suzuki gauge-invariant lattice plaquette sum,
+  replacing the earlier order-of-magnitude analytical proxy.
   Yields exact integer Chern numbers to machine precision.
-- **Topological entanglement entropy**: replaced the 10%
-  "interaction correction" heuristic with real Shannon entropy of
-  the marginal P(s_A), via exact Boltzmann enumeration (N≤20) or
-  Metropolis MC.
-- **Majorana zero-mode detection + parity**: replaced
-  parameter-driven heuristic and `rand()`-returning parity with
-  real BdG diagonalisation and the deterministic Kitaev-2001 result.
-- **NQS optimiser CG breakdown** is now logged with iteration and
-  residual instead of being silently masked as `converged=1`.
+- **Topological entanglement entropy**: now computes the Shannon
+  entropy of the marginal P(s_A) directly via exact Boltzmann
+  enumeration (N≤20) or Metropolis MC, replacing the earlier
+  scalar correction term used for subsystem > 10 sites.
+- **Majorana zero-mode detection + parity**: now uses BdG
+  diagonalisation with the deterministic Kitaev-2001 parity result,
+  replacing the earlier parameter-driven proxy.
+- **NQS optimiser CG breakdown** is now signalled with iteration
+  and residual rather than reported as `converged=1`.
 - **NQS Lanczos materialisation** emits a stoquasticity warning
-  when the `Re(ψ)`-only projection discards significant phase
-  content — flags non-stoquastic kagome / J1-J2 / KH cases that the
-  earlier path silently mishandled.
+  when the `Re(ψ)`-only projection drops significant phase content
+  — flags non-stoquastic kagome / J1-J2 / KH cases.
 - **`matrix_neon` complex matvec** rewritten with `vld2q_f64` +
   `vfma{q,sq}` for actual 2-wide SIMD (the earlier
   `vsetq_lane_f64`-by-lane construction compiled to scalar SISD).

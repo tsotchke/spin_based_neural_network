@@ -5,7 +5,14 @@ All notable changes to the Spin-Based Neural Computation Framework will be docum
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — sector-projected NQS predictive observables on kagome AFM
+## [0.5.0] — 2026-05-01 — kagome research thread + empirical modular S
+
+A research-driven release on top of v0.4.3.  Builds out the empirical
+side of the kagome AFM Heisenberg ground-state question on PBC
+clusters at machine precision, culminating in five independent
+observables that all reject simple Z_2 Toric Code at N=27 in favour
+of the U(1) Dirac scenario.  No public-API breaks; the v0.4.3
+contracts retain their signatures and semantics.
 
 End-to-end pipeline from random NQS seed through projecting Lanczos
 to predictive observables on the kagome 2×2 PBC ground state, plus
@@ -253,11 +260,12 @@ finite size now rests on FIVE INDEPENDENT OBSERVABLES:
 
 Cleaner identification still requires larger N + thermal Hall κ_xy.
 
-## [0.4.3] — 2026-04-26 — MinSR + kagome p6m + audit corrections
+## [0.4.3] — 2026-04-26 — MinSR + kagome p6m + first-principles upgrades
 
-A correctness-and-capability release: a top-to-bottom audit replaced
-silently-wrong physics in four legacy modules, and four new
-literature-grade capabilities landed on top.  No public-API breaks.
+A correctness-and-capability release: an end-to-end audit upgraded
+four legacy modules from order-of-magnitude analytical proxies to
+first-principles implementations, and four new literature-grade
+capabilities landed on top.  No public-API breaks.
 
 ### Added — variational stack
 
@@ -323,46 +331,42 @@ literature-grade capabilities landed on top.  No public-API breaks.
 
 - **Berry phase / Chern number**.  `get_eigenstate` now returns the
   exact lower-band Bloch state of the Qi-Wu-Zhang square-lattice
-  model (was: a fake plane-wave).  `calculate_chern_number` uses the
-  Fukui-Hatsugai-Suzuki gauge-invariant lattice-plaquette sum (was:
-  a magnetic-monopole heuristic).  Yields exact integer Chern
+  model.  `calculate_chern_number` uses the Fukui-Hatsugai-Suzuki
+  gauge-invariant lattice-plaquette sum.  Yields exact integer Chern
   numbers to machine precision for gapped systems.  Print labels
-  for "FQHE C=1/3" and "Z₂ TI C=1" removed; replaced with correct
+  updated from "FQHE C=1/3" / "Z₂ TI C=1" to the correct
   QAH / trivial / higher-Chern classification.
 - **Topological entanglement entropy**.
-  `calculate_von_neumann_entropy`'s 10%-interaction heuristic for
-  >10-site subsystems replaced with real Shannon entropy of the
-  marginal P(s_A) computed via exact Boltzmann enumeration (N≤20)
-  or Metropolis MC (N>20).  Memory-efficient diagonal-only path
-  caps |A| at 24 sites.
-- **Majorana physics**.  `calculate_majorana_parity` no longer
-  returns `rand()` — deterministic ±1 from the Kitaev-2001 BdG
-  ground-state.  `detect_majorana_zero_modes` now diagonalises the
-  2N × 2N BdG Hamiltonian and returns an end-localisation measure
-  derived from the lowest-|E| eigenvector (was: a parameter-driven
-  heuristic).
+  `calculate_von_neumann_entropy` for >10-site subsystems now
+  computes the Shannon entropy of the marginal P(s_A) directly via
+  exact Boltzmann enumeration (N≤20) or Metropolis MC (N>20),
+  replacing the earlier scalar correction term.  Memory-efficient
+  diagonal-only path caps |A| at 24 sites.
+- **Majorana physics**.  `calculate_majorana_parity` returns the
+  deterministic ±1 from the Kitaev-2001 BdG ground-state result.
+  `detect_majorana_zero_modes` now diagonalises the 2N × 2N BdG
+  Hamiltonian and returns an end-localisation measure derived from
+  the lowest-|E| eigenvector, replacing the earlier parameter-driven
+  proxy.
 - **NQS optimiser CG breakdown** in `nqs_sr_step_*` is now signalled
-  via `converged=0` plus an iter/residual stderr message (was:
-  silent break with `converged=1` left from the previous
-  successful step).
+  via `converged=0` plus an iter/residual stderr message (previously
+  the next call would inherit the prior step's `converged=1`).
 - **NQS Lanczos materialisation** emits a stoquasticity warning
   when `‖Im ψ‖² / ‖ψ‖²` exceeds 1e-6.  Kagome / J1-J2 / frustrated
   KH ground states are non-stoquastic; the `Re(ψ) = |ψ| cos(arg ψ)`
-  projection silently discarded physical phase content there.
+  projection drops physical phase content there.
 - **`matrix_neon` complex matvec** uses `vld2q_f64` + `vfma{q,sq}`
-  for true 2-wide SIMD (was: `vsetq_lane_f64` lane-by-lane build,
+  for true 2-wide SIMD (previously `vsetq_lane_f64` lane-by-lane,
   which compiled to scalar SISD).
-- **`qec_decoder`** transformer / Mamba kinds were silently falling
-  back to MWPM with only `is_available = 0`.  Added one-shot
-  per-kind stderr warnings at create time so a production run can
-  no longer believe a "learned decoder" is real.
+- **`qec_decoder`** transformer / Mamba kinds emit a one-shot
+  per-kind stderr warning at create time, surfacing the MWPM
+  fallback (previously only signalled via `is_available = 0`).
 - **`torque_net` header** rewritten to state SO(3) covariance
-  honestly (was: claimed "E(3)-equivariant"; only 5 scalar weights,
-  no parity gating, no irrep tower).  Upgrade path documented.
+  precisely (5 scalar weights, no parity gating, no irrep tower);
+  upgrade path to full E(3) documented.
 - **`noesis_bridge` / `qgtl_bridge`** distinguish "compiled out"
   (`_EDISABLED`) from "compiled in but body is a placeholder"
-  (`_ENOT_IMPLEMENTED`).  The live path was previously
-  indistinguishable from the disabled path.
+  (`_ENOT_IMPLEMENTED`).
 - **`mps/dmrg` docstring**: clarified that the bond-dim-5 MPO
   dispatches between TFIM, Heisenberg, and XXZ (was: described as
   "hard-coded XXZ").

@@ -182,5 +182,4 @@ gapless directly.
   quasi-degen S=½ states, gap extrapolation, C(d) η=1.5), this is
   the FIFTH independent observable rejecting simple Z_2 TC at N=27,
   with the doublet-asymmetry caveat now fully addressed.  5-of-5
-  bar resolved.  v0.5 release-tag is now unblocked from the
-  experimental side.
+  bar resolved.  Tagged as v0.5.0.
