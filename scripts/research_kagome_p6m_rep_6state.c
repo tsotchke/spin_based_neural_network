@@ -144,13 +144,14 @@ int main(int argc, char **argv) {
     fprintf(stderr, "# 6-state full p6m representation extraction at L=%d\n", L);
     fprintf(stderr, "# N=%d, dim=%ld\n", N, dim);
 
-    /* Default eigvec paths — A_1..B_2 from /tmp (full_analysis output),
-     * E_1, E_2 from research_data/eigvecs (sz_spatial output). */
+    /* Default eigvec paths — all 6 in research_data/eigvecs/ as of
+     * the 2026-04-30 stage-3 orchestration; the prior /tmp paths
+     * were truncated when /tmp filled mid-write. */
     const char *paths[K] = {
-        "/tmp/kagome_3x3_A1_eigvec.bin",
-        "/tmp/kagome_3x3_A2_eigvec.bin",
-        "/tmp/kagome_3x3_B1_eigvec.bin",
-        "/tmp/kagome_3x3_B2_eigvec.bin",
+        "/Users/tyr/Desktop/spin_based_neural_network/research_data/eigvecs/kagome_3x3_A1_eigvec.bin",
+        "/Users/tyr/Desktop/spin_based_neural_network/research_data/eigvecs/kagome_3x3_A2_eigvec.bin",
+        "/Users/tyr/Desktop/spin_based_neural_network/research_data/eigvecs/kagome_3x3_B1_eigvec.bin",
+        "/Users/tyr/Desktop/spin_based_neural_network/research_data/eigvecs/kagome_3x3_B2_eigvec.bin",
         "/Users/tyr/Desktop/spin_based_neural_network/research_data/eigvecs/kagome_3x3_E1_sz1_eigvec.bin",
         "/Users/tyr/Desktop/spin_based_neural_network/research_data/eigvecs/kagome_3x3_E2_sz1_eigvec.bin"
     };
