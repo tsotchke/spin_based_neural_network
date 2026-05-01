@@ -44,6 +44,10 @@
 #include "libirrep_bridge.h"
 #include <irrep/irrep.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 static double wall_seconds(void) {
     struct timeval tv; gettimeofday(&tv, NULL);
     return (double)tv.tv_sec + 1e-6 * (double)tv.tv_usec;
@@ -72,23 +76,121 @@ static int load_eigvec_real(const char *path, int *out_N, int *out_ir,
     return 0;
 }
 
+/* Real-input partial trace, OpenMP-parallel over the β bucket loop.
+ * Avoids the 2 GB complex copy of psi.  ψ is real, so ρ_A is real-symmetric
+ * and we accumulate only the upper triangle, then mirror to full rho_c
+ * (complex output for libirrep eigvalsh).
+ *
+ * Per thread we allocate a private rho_part[dimA*dimA] of doubles
+ * (= 0.5M·8 B = 4 MB at nA=9).  14 threads → 56 MB scratch.  No global
+ * locks needed; final reduction is serial over thread arrays.
+ */
+static int partial_trace_real_omp(const double *psi_real, int N, long dim,
+                                   const int *sites_A, int nA,
+                                   double _Complex *rho_c) {
+    (void)dim;
+    int local_dim = 2;
+    int in_A[32] = {0};
+    for (int k = 0; k < nA; k++) in_A[sites_A[k]] = 1;
+    int nB = N - nA;
+    int sites_B[32]; { int bi = 0;
+        for (int s = 0; s < N; s++) if (!in_A[s]) sites_B[bi++] = s;
+    }
+    long dA = 1L << nA;
+    long dB = 1L << nB;
+    long weight[32];
+    for (int s = 0; s < N; s++) weight[s] = 1L << s;
+
+    int nthreads = 1;
+    #ifdef _OPENMP
+    #pragma omp parallel
+    { if (omp_get_thread_num() == 0) nthreads = omp_get_num_threads(); }
+    #endif
+
+    double *rho_thr = calloc((size_t)nthreads * dA * dA, sizeof(double));
+    if (!rho_thr) return -1;
+
+    #ifdef _OPENMP
+    #pragma omp parallel
+    #endif
+    {
+        int tid = 0;
+        #ifdef _OPENMP
+        tid = omp_get_thread_num();
+        #endif
+        double *rho_local = rho_thr + (size_t)tid * dA * dA;
+        double *v = malloc((size_t)dA * sizeof(double));
+        if (v) {
+            #ifdef _OPENMP
+            #pragma omp for schedule(static)
+            #endif
+            for (long beta = 0; beta < dB; beta++) {
+                long b_remaining = beta;
+                int b_digits[32] = {0};
+                for (int k = 0; k < nB; k++) {
+                    b_digits[k] = (int)(b_remaining % local_dim);
+                    b_remaining /= local_dim;
+                }
+                long i_base = 0;
+                for (int k = 0; k < nB; k++)
+                    i_base += (long)b_digits[k] * weight[sites_B[k]];
+
+                for (long alpha = 0; alpha < dA; alpha++) {
+                    long a_remaining = alpha;
+                    long offset = 0;
+                    for (int k = 0; k < nA; k++) {
+                        int d = (int)(a_remaining % local_dim);
+                        a_remaining /= local_dim;
+                        offset += (long)d * weight[sites_A[k]];
+                    }
+                    v[alpha] = psi_real[i_base + offset];
+                }
+
+                /* Accumulate upper triangle: rho_local[a,c] += v[a]*v[c]. */
+                for (long a = 0; a < dA; a++) {
+                    double va = v[a];
+                    double *row = rho_local + a * dA;
+                    for (long c = a; c < dA; c++) row[c] += va * v[c];
+                }
+            }
+            free(v);
+        }
+    }
+
+    /* Reduce per-thread upper triangles into a single double matrix,
+     * then symmetrise and copy into the complex output rho_c. */
+    double *rho = calloc((size_t)dA * dA, sizeof(double));
+    if (!rho) { free(rho_thr); return -1; }
+    for (int t = 0; t < nthreads; t++) {
+        double *src = rho_thr + (size_t)t * dA * dA;
+        for (long a = 0; a < dA; a++)
+            for (long c = a; c < dA; c++)
+                rho[a*dA + c] += src[a*dA + c];
+    }
+    for (long a = 0; a < dA; a++)
+        for (long c = a; c < dA; c++) {
+            double v = rho[a*dA + c];
+            rho_c[a*dA + c] = v + 0.0*I;
+            if (c != a) rho_c[c*dA + a] = v + 0.0*I;
+        }
+    free(rho); free(rho_thr);
+    return 0;
+}
+
 /* Compute bipartite von Neumann entropy S of ψ_real (length dim) on the
- * subsystem given by sites_A (size nA).  ψ is real-valued; converted
- * to complex on the fly.  Returns 0 on success and writes into *out_S. */
+ * subsystem given by sites_A (size nA). */
 static int entropy_of_real_state(const double *psi_real, int N, long dim,
                                   const int *sites_A, int nA, double *out_S) {
     long dimA = 1L << nA;
-    double _Complex *psi_c = malloc((size_t)dim * sizeof(double _Complex));
-    if (!psi_c) return -1;
-    for (long s = 0; s < dim; s++) psi_c[s] = psi_real[s] + 0.0 * I;
+    (void)dim;
     double _Complex *rho = malloc((size_t)dimA * dimA * sizeof(double _Complex));
-    if (!rho) { free(psi_c); return -1; }
-    int rc = libirrep_bridge_partial_trace_spin_half(N, psi_c, sites_A, nA, rho);
-    if (rc != 0) { free(psi_c); free(rho); return rc; }
+    if (!rho) return -1;
+    int rc = partial_trace_real_omp(psi_real, N, dim, sites_A, nA, rho);
+    if (rc != 0) { free(rho); return rc; }
     double *eigs = malloc((size_t)dimA * sizeof(double));
-    if (!eigs) { free(psi_c); free(rho); return -1; }
+    if (!eigs) { free(rho); return -1; }
     if (irrep_hermitian_eigvals((int)dimA, rho, eigs) != IRREP_OK) {
-        free(psi_c); free(rho); free(eigs); return -1;
+        free(rho); free(eigs); return -1;
     }
     double S = 0.0;
     for (long j = 0; j < dimA; j++) {
@@ -96,7 +198,7 @@ static int entropy_of_real_state(const double *psi_real, int N, long dim,
         if (l > 1e-15) S -= l * log(l);
     }
     *out_S = S;
-    free(psi_c); free(rho); free(eigs);
+    free(rho); free(eigs);
     return 0;
 }
 

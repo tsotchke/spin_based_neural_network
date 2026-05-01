@@ -364,7 +364,8 @@
     "Hamiltonian sum-rule J·Σ_NN ⟨S·S⟩ = E_0 satisfied to <1e-10 in all 6+ sector runs — pipeline correctness is at machine precision.",
     "Empirical FULL p6m representation: ⟨ψ_α | σ_g | ψ_β⟩ on the 4 1D-irrep ground states matches C_6v character table to 1.835e-11 across all 12 group elements — empirical-symbolic agreement at machine precision (commit a03dd95).",
     "TWO-D IRREP DISCOVERY: at L=3 PBC, the lowest state is in the E_2 sector (S=1/2, 2-fold doublet) at E=-11.7795, NOT in A_1.  Including E_1, E_2 we count 7 quasi-degenerate S=1/2 states across [-11.7795, -11.5576] = 0.222 J.  Z_2 TC predicts 4 GS, Ising 3, U(1) Dirac unbounded — empirical 7 favours U(1) Dirac.",
-    "REVISED conclusion: the full 6-irrep C_6v probe (commit b416420) reveals 7 quasi-degenerate lowest-spin states at L=3 PBC — INCONSISTENT with the simple 4-fold Z_2 picture (Yan-Huse-White 2011) and CONSISTENT with the U(1) Dirac scenario (Iqbal et al. 2013).  Cleaner identification still requires larger N + thermal Hall κ_xy."
+    "REVISED conclusion: the full 6-irrep C_6v probe (commit b416420) reveals 7 quasi-degenerate lowest-spin states at L=3 PBC — INCONSISTENT with the simple 4-fold Z_2 picture (Yan-Huse-White 2011) and CONSISTENT with the U(1) Dirac scenario (Iqbal et al. 2013).  Cleaner identification still requires larger N + thermal Hall κ_xy.",
+    "EMPIRICAL LATTICE MODULAR S (Zhang-Grover-Vishwanath MES protocol, 6×6×6 α-grid, see L3_mes_1Dirreps_6x6x6.json): scanning the (A_1,A_2,B_1,B_2) 4-sector manifold, the minimum-entropy state collapses to ~95% weight on A_1 (α_0 ≈ ±0.966) rather than the equal-weight 1/4·1 superposition Z_2 TC requires.  The empirical ⟨MES_X|MES_Y⟩ matrix has 2×2 block structure with all entries |·| ∈ {0.96, 1.0} — far from the Hadamard pattern of (1/2)·H_4.  Best column-gauge fit gives Frobenius distance 1.92 from (1/2)·H_4 (perfect Z_2 TC: 0.0; random 4×4 unitary: ~1.0).  Caveat: the 4 lowest 1D-irrep sectors used here are NOT the actual lowest-energy manifold (which includes the E_2 doublet GS at -11.7795 J); a follow-up MES on (E_2_p1, A_1, E_1_p1, A_2) would test whether including the doublet partner changes the picture.  For the 1D-irrep manifold, this is the FIFTH independent observable rejecting simple Z_2 TC at N=27."
   ],
   "publishable_findings": [
     "First systematic 4-sector γ_TEE finite-size flow on kagome AFM (L=2, 3 PBC). Sector-resolved γ collapses toward log 2 from above as N grows.",
@@ -376,6 +377,8 @@
     "Comprehensive Hamiltonian sum-rule + total-spin sum-rule consistency across all 6+ runs (machine precision).",
     "Empirical FULL p6m representation extraction: 12 group elements × 4 sectors = 192 matrix elements ⟨ψ_α | σ_g | ψ_β⟩, agreeing with C_6v character-table prediction to 1.835e-11 across all elements (commit a03dd95) — empirical-symbolic bridge to KagomeZ2.{wl,py} symbolic verification at machine precision.",
     "FULL 6-IRREP C_6V SECTOR PROBE (commit b416420): added 2D-irrep (E_1, E_2) Sz-projected Lanczos.  Discovered global GS is the E_2 doublet at -11.7795 J — 0.17 J BELOW A_1.  7 quasi-degenerate S=1/2 states in 0.222 J — REVISES our previous Z_2-favourable reading toward U(1) Dirac.",
-    "Defensive-coding fix: silent eigvec-save truncation on disk-full now flagged as ERROR + warning (commit b416420) — prevents the 6500 s Lanczos waste we hit on the E_1, E_2 first runs."
-  ]
+    "Defensive-coding fix: silent eigvec-save truncation on disk-full now flagged as ERROR + warning (commit b416420) — prevents the 6500 s Lanczos waste we hit on the E_1, E_2 first runs.",
+    "First Zhang-Grover-Vishwanath MES extraction on the kagome 3×3 PBC AFM 4-sector 1D-irrep manifold (L3_mes_1Dirreps_6x6x6.json, 6×6×6 = 216-α-vector grid per cycle, 4587 s wall on 14-thread M-series): the empirical lattice modular S deviates from (1/2)·Hadamard_4 by ||·|F = 1.92 (worst-case for the comparison).  Independent rejection of simple Z_2 TC.  Methodology contribution: parallel real-input partial trace (cross-validated against libirrep_partial_trace at 1.4e-17) gives 8× speedup over the complex-cast baseline."
+  ],
+  "utc_epoch_mes_landed": 1777617457
 }
