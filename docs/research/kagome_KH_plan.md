@@ -142,5 +142,15 @@ the diagnostic stack itself (independent of which phase wins).
   + Witt + RT) at machine precision.  REVISED reading post-2D-irrep
   probe: L=3 PBC global GS lives in E_2 (2-fold doublet at -11.78);
   7 quasi-degenerate S=1/2 states in 0.222 J spread; U(1) Dirac
-  FAVOURED over Z_2 Toric Code at this finite size.  Modular-S MES
-  extraction in flight — v0.5 release-tag held until that lands.
+  FAVOURED over Z_2 Toric Code at this finite size.
+- 2026-05-01: 4-of-1D-irrep MES (Zhang-Grover-Vishwanath protocol,
+  6×6×6 α-grid, 4587 s wall) lands at
+  benchmarks/results/nqs/full_analysis/L3_mes_1Dirreps_6x6x6.json.
+  Empirical lattice modular S deviates from (1/2)·Hadamard_4 by
+  ||·|F = 1.92 (worst-case for the comparison) — MES collapses to
+  ~95 % weight on the lowest-energy sector rather than the
+  equal-weight Z_2 TC superposition.  FIFTH independent rejection
+  of simple Z_2 TC at N=27.  Follow-up MES on the actual lowest-4
+  sectors (E_2_p1, A_1, E_1_p1, A_2) in flight.  v0.5 still held
+  until both MES variants and a final re-read of the master
+  synthesis are complete.
