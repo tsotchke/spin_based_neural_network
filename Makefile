@@ -257,6 +257,14 @@ test_majorana: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_majorana \
 	    tests/test_majorana.c src/majorana_modes.c src/kitaev_model.c $(LDFLAGS)
 
+# Skyrmion magnetisation field generator (Belavin-Polyakov) +
+# Berg-Lüscher topological-charge integrator.  Standalone, no
+# external deps beyond libm.  Foundation for the skyrmion-Majorana
+# v0.6 trajectory (BdG Hamiltonian for s-wave SC + exchange field).
+test_skyrmion_field: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_skyrmion_field \
+	    tests/test_skyrmion_field.c src/skyrmion/skyrmion_field.c $(LDFLAGS)
+
 test_toric_code: $(BIN_DIR)
 	$(CC) $(TEST_CFLAGS) -o $(BIN_DIR)/test_toric_code \
 	    tests/test_toric_code.c src/toric_code.c src/kitaev_model.c $(LDFLAGS)
