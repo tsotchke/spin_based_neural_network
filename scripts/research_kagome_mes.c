@@ -53,7 +53,13 @@ static double wall_seconds(void) {
     return (double)tv.tv_sec + 1e-6 * (double)tv.tv_usec;
 }
 
-#define K 4   /* number of sector states */
+/* Maximum supported number of sector states.  Runtime K ≤ MAX_K is
+ * read from argv (see main).  MAX_K caps the fixed-size scratch arrays
+ * in the sample_t struct and the alpha vector.  Bumping it to 12 would
+ * cover most realistic anyon-model GS manifolds without recompiling. */
+#define MAX_K 8
+/* For backwards compat the legacy code referred to a fixed `K`; we keep
+ * the symbol but resolve it to a runtime variable inside main(). */
 
 static int load_eigvec_real(const char *path, int *out_N, int *out_ir,
                               double *out_E0, double **out_psi, long *out_dim) {
@@ -228,30 +234,46 @@ static void form_combination(const double * const *psi_a, const double *alpha,
     }
 }
 
-/* Generate a coarse grid of unit 4-vectors in ℝ^4 via spherical coords:
- *   α_0 = cos(θ_1)
- *   α_1 = sin(θ_1) cos(θ_2)
- *   α_2 = sin(θ_1) sin(θ_2) cos(θ_3)
- *   α_3 = sin(θ_1) sin(θ_2) sin(θ_3)
- * with θ_1, θ_2 ∈ [0, π], θ_3 ∈ [0, 2π).
- * Half-redundancy from antipodal symmetry α ↔ -α (same |ψ|, same RDM)
- * we keep redundancy because phases matter for the basis-change matrix. */
-static long grid_size(int n_t1, int n_t2, int n_t3) {
-    return (long)n_t1 * n_t2 * n_t3;
+/* Generate a coarse grid of unit K-vectors on S^{K-1} ⊂ ℝ^K via
+ * spherical coordinates with K-1 angles:
+ *   α_0     = cos(θ_1)
+ *   α_1     = sin(θ_1) cos(θ_2)
+ *   α_k     = sin(θ_1)...sin(θ_k) cos(θ_{k+1})    (1 ≤ k ≤ K-2)
+ *   α_{K-1} = sin(θ_1)...sin(θ_{K-2}) sin(θ_{K-1})
+ * The first K-2 angles run over [0, π] (polar), the last over [0, 2π)
+ * (azimuthal).  Half-redundancy from antipodal symmetry α ↔ -α (same
+ * |ψ|, same RDM) is kept because phases matter for the basis-change
+ * matrix output.
+ *
+ * The `n_t[]` array is of length K-1.
+ */
+static long grid_size_kgen(int K_states, const int *n_t) {
+    long s = 1;
+    for (int k = 0; k < K_states - 1; k++) s *= n_t[k];
+    return s;
 }
 
-static void grid_to_alpha(int i, int n_t1, int n_t2, int n_t3, double alpha[K]) {
-    int it1 = i / (n_t2 * n_t3);
-    int it23 = i % (n_t2 * n_t3);
-    int it2 = it23 / n_t3;
-    int it3 = it23 % n_t3;
-    double t1 = M_PI * (it1 + 0.5) / n_t1;
-    double t2 = M_PI * (it2 + 0.5) / n_t2;
-    double t3 = 2.0 * M_PI * it3 / n_t3;
-    alpha[0] = cos(t1);
-    alpha[1] = sin(t1) * cos(t2);
-    alpha[2] = sin(t1) * sin(t2) * cos(t3);
-    alpha[3] = sin(t1) * sin(t2) * sin(t3);
+static void grid_to_alpha_kgen(long i, int K_states, const int *n_t,
+                                 double *alpha) {
+    int idx[MAX_K];
+    long rem = i;
+    for (int k = K_states - 2; k >= 0; k--) {
+        idx[k] = (int)(rem % n_t[k]);
+        rem /= n_t[k];
+    }
+    /* Build angles. */
+    double theta[MAX_K];
+    for (int k = 0; k < K_states - 2; k++)
+        theta[k] = M_PI * (idx[k] + 0.5) / n_t[k];
+    /* Last angle is azimuthal in [0, 2π). */
+    theta[K_states - 2] = 2.0 * M_PI * idx[K_states - 2] / n_t[K_states - 2];
+    /* Spherical → Cartesian. */
+    double s = 1.0;
+    for (int k = 0; k < K_states - 1; k++) {
+        alpha[k] = s * cos(theta[k]);
+        s *= sin(theta[k]);
+    }
+    alpha[K_states - 1] = s;
 }
 
 /* ---- Geometry: extract the kagome strip bipartition. ------------ */
@@ -286,26 +308,71 @@ static int build_strip_x(int L, int strip_w, int *sites_A) {
 
 int main(int argc, char **argv) {
     if (argc < 5) {
-        fprintf(stderr, "usage: %s L psi_path_A1 psi_path_A2 psi_path_B1 psi_path_B2 [n_t1=8 [n_t2=8 [n_t3=8]]]\n", argv[0]);
-        fprintf(stderr, "  Loads the 4 sector eigvecs and runs MES search on x- and y-cycle bipartitions.\n");
+        fprintf(stderr,
+                "usage: %s L K psi_path_1 ... psi_path_K [n_t_1 ... n_t_{K-1}]\n",
+                argv[0]);
+        fprintf(stderr,
+                "  K = number of sector states (2 ≤ K ≤ %d).  K-1 grid args\n"
+                "  follow the eigvec paths; each defaults to 6 if omitted.\n"
+                "  Backwards-compat: if argv[2] is a path (not a small int),\n"
+                "  K=4 is assumed and the legacy CLI is honoured.\n",
+                MAX_K);
         return 1;
     }
     int L = atoi(argv[1]);
-    const char *paths[K] = {argv[2], argv[3], argv[4], argv[5]};
-    int n_t1 = (argc > 6) ? atoi(argv[6]) : 8;
-    int n_t2 = (argc > 7) ? atoi(argv[7]) : 8;
-    int n_t3 = (argc > 8) ? atoi(argv[8]) : 8;
+    /* Detect legacy K=4 invocation: if argv[2] looks like a path (has '/'
+     * or contains a '.' likely a file extension), fall back to K=4. */
+    int K_states;
+    int first_path_idx;
+    {
+        const char *a2 = argv[2];
+        int looks_like_path = 0;
+        for (const char *c = a2; *c; c++)
+            if (*c == '/' || *c == '.') { looks_like_path = 1; break; }
+        if (looks_like_path) {
+            K_states = 4;
+            first_path_idx = 2;
+        } else {
+            K_states = atoi(argv[2]);
+            first_path_idx = 3;
+        }
+    }
+    if (K_states < 2 || K_states > MAX_K) {
+        fprintf(stderr, "FAIL: K=%d out of range [2, %d]\n", K_states, MAX_K);
+        return 1;
+    }
+    int needed_argc = first_path_idx + K_states;
+    if (argc < needed_argc) {
+        fprintf(stderr, "FAIL: K=%d requires %d eigvec paths, got %d\n",
+                K_states, K_states, argc - first_path_idx);
+        return 1;
+    }
+    const char *paths[MAX_K];
+    for (int a = 0; a < K_states; a++) paths[a] = argv[first_path_idx + a];
+
+    /* Read K-1 grid args; default 6. */
+    int n_t[MAX_K];
+    int grid_argc_avail = argc - (first_path_idx + K_states);
+    for (int k = 0; k < K_states - 1; k++) {
+        if (k < grid_argc_avail) n_t[k] = atoi(argv[first_path_idx + K_states + k]);
+        else n_t[k] = 6;
+        if (n_t[k] < 1) n_t[k] = 1;
+    }
     int N = 3 * L * L;
     long dim = 1L << N;
-    fprintf(stderr, "# Kagome MES extraction at L=%d, N=%d, dim=%ld\n", L, N, dim);
-    fprintf(stderr, "# Grid: n_t1=%d n_t2=%d n_t3=%d → %ld α points per cut\n",
-            n_t1, n_t2, n_t3, grid_size(n_t1, n_t2, n_t3));
+    fprintf(stderr, "# Kagome MES extraction at L=%d, N=%d, dim=%ld, K=%d\n",
+            L, N, dim, K_states);
+    fprintf(stderr, "# Grid: n_t = [");
+    for (int k = 0; k < K_states - 1; k++)
+        fprintf(stderr, "%d%s", n_t[k], (k < K_states-2) ? ", " : "");
+    fprintf(stderr, "] → %ld α points per cut\n",
+            grid_size_kgen(K_states, n_t));
 
     /* Load eigvecs. */
-    double *psi[K] = {NULL};
-    double E0[K] = {0};
+    double *psi[MAX_K] = {NULL};
+    double E0[MAX_K] = {0};
     int Ncheck, ircheck; long dimcheck;
-    for (int a = 0; a < K; a++) {
+    for (int a = 0; a < K_states; a++) {
         if (load_eigvec_real(paths[a], &Ncheck, &ircheck, &E0[a],
                               &psi[a], &dimcheck) != 0 ||
             Ncheck != N || dimcheck != dim) {
@@ -328,11 +395,20 @@ int main(int argc, char **argv) {
 
     /* Output JSON. */
     printf("{\n");
-    printf("  \"system\": {\"L\": %d, \"N\": %d, \"K_sectors\": %d},\n", L, N, K);
-    printf("  \"sectors_E0\": [%.10f, %.10f, %.10f, %.10f],\n",
-           E0[0], E0[1], E0[2], E0[3]);
-    printf("  \"grid\": {\"n_t1\": %d, \"n_t2\": %d, \"n_t3\": %d},\n",
-           n_t1, n_t2, n_t3);
+    printf("  \"system\": {\"L\": %d, \"N\": %d, \"K_sectors\": %d},\n",
+           L, N, K_states);
+    printf("  \"sectors_E0\": [");
+    for (int a = 0; a < K_states; a++)
+        printf("%.10f%s", E0[a], (a < K_states-1) ? ", " : "");
+    printf("],\n");
+    printf("  \"sectors_paths\": [");
+    for (int a = 0; a < K_states; a++)
+        printf("\"%s\"%s", paths[a], (a < K_states-1) ? ", " : "");
+    printf("],\n");
+    printf("  \"grid\": {\"n_t\": [");
+    for (int k = 0; k < K_states-1; k++)
+        printf("%d%s", n_t[k], (k < K_states-2) ? ", " : "");
+    printf("]},\n");
     printf("  \"bipartitions\": {\n");
     printf("    \"X\": {\"nA\": %d, \"sites_A\": [", nA_X);
     for (int i = 0; i < nA_X; i++) printf("%d%s", sites_X[i], (i<nA_X-1)?", ":"");
@@ -341,7 +417,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < nA_Y; i++) printf("%d%s", sites_Y[i], (i<nA_Y-1)?", ":"");
     printf("]}\n  },\n");
 
-    long n_pts = grid_size(n_t1, n_t2, n_t3);
+    long n_pts = grid_size_kgen(K_states, n_t);
     double t0 = wall_seconds();
 
     /* For each cut, scan grid, sort by S, report top-K minima. */
@@ -349,7 +425,7 @@ int main(int argc, char **argv) {
     int *cut_sites[2] = {sites_X, sites_Y};
     int cut_nA[2] = {nA_X, nA_Y};
 
-    typedef struct { double S; double alpha[K]; } sample_t;
+    typedef struct { double S; double alpha[MAX_K]; } sample_t;
 
     sample_t *best_samples[2] = {NULL, NULL};
 
@@ -359,15 +435,15 @@ int main(int argc, char **argv) {
         fprintf(stderr, "# cut %s scanning %ld points...\n", cut_names[cut], n_pts);
         double tc0 = wall_seconds();
         for (long g = 0; g < n_pts; g++) {
-            double alpha[K];
-            grid_to_alpha((int)g, n_t1, n_t2, n_t3, alpha);
-            form_combination((const double *const*)psi, alpha, K, dim, psi_alpha);
+            double alpha[MAX_K] = {0};
+            grid_to_alpha_kgen(g, K_states, n_t, alpha);
+            form_combination((const double *const*)psi, alpha, K_states, dim, psi_alpha);
             double S = 0.0;
             int rc = entropy_of_real_state(psi_alpha, N, dim,
                                             cut_sites[cut], cut_nA[cut], &S);
             if (rc != 0) S = 1e6;
             samples[g].S = S;
-            for (int a = 0; a < K; a++) samples[g].alpha[a] = alpha[a];
+            for (int a = 0; a < K_states; a++) samples[g].alpha[a] = alpha[a];
             if ((g % 16) == 0) {
                 double dt = wall_seconds() - tc0;
                 fprintf(stderr, "#   %ld/%ld   last S = %.4f   wall=%.0f s\n",
@@ -390,11 +466,11 @@ int main(int argc, char **argv) {
         printf("    \"top_8_minima\": [\n");
         long n_top = (n_pts < 8) ? n_pts : 8;
         for (long i = 0; i < n_top; i++) {
-            printf("      {\"S\": %.6f, \"alpha\": [%.6f, %.6f, %.6f, %.6f]}%s\n",
-                   samples[i].S,
-                   samples[i].alpha[0], samples[i].alpha[1],
-                   samples[i].alpha[2], samples[i].alpha[3],
-                   (i < n_top-1) ? "," : "");
+            printf("      {\"S\": %.6f, \"alpha\": [", samples[i].S);
+            for (int a = 0; a < K_states; a++)
+                printf("%.6f%s", samples[i].alpha[a],
+                       (a < K_states-1) ? ", " : "");
+            printf("]}%s\n", (i < n_top-1) ? "," : "");
         }
         printf("    ]\n  }%s\n", (cut == 0) ? "," : "");
 
@@ -405,9 +481,9 @@ int main(int argc, char **argv) {
      * and cut Y.  This is the empirical lattice modular S matrix in
      * the MES basis (up to gauge phases). */
     printf("  ,\"empirical_modular_S_in_MES_basis\": [\n");
-    for (int i = 0; i < K; i++) {
+    for (int i = 0; i < K_states; i++) {
         printf("    [");
-        for (int j = 0; j < K; j++) {
+        for (int j = 0; j < K_states; j++) {
             /* ⟨MES_X^{(i)} | MES_Y^{(j)}⟩ — both real combinations. */
             double overlap = 0.0;
             #ifdef _OPENMP
@@ -415,7 +491,7 @@ int main(int argc, char **argv) {
             #endif
             for (long s = 0; s < dim; s++) {
                 double mes_x = 0.0, mes_y = 0.0;
-                for (int a = 0; a < K; a++) {
+                for (int a = 0; a < K_states; a++) {
                     mes_x += best_samples[0][i].alpha[a] * psi[a][s];
                     mes_y += best_samples[1][j].alpha[a] * psi[a][s];
                 }
@@ -425,17 +501,19 @@ int main(int argc, char **argv) {
              * combination is normalised iff the ψ_a are orthonormal
              * (they are — sector-projected eigvecs of an Hermitian
              * H are orthogonal across sectors, and Lanczos normalises). */
-            printf("%.6f%s", overlap, (j < K-1) ? ", " : "");
+            printf("%.6f%s", overlap, (j < K_states-1) ? ", " : "");
         }
-        printf("]%s\n", (i < K-1) ? "," : "");
+        printf("]%s\n", (i < K_states-1) ? "," : "");
     }
     printf("  ],\n");
-    printf("  \"symbolic_Z2_TC_modular_S\": [[0.5, 0.5, 0.5, 0.5], [0.5, 0.5, -0.5, -0.5], [0.5, -0.5, 0.5, -0.5], [0.5, -0.5, -0.5, 0.5]],\n");
-    printf("  \"interpretation\": \"Empirical lattice modular S = ⟨MES_X | MES_Y⟩.  For Z_2 TC, this should equal (1/2)·Hadamard_4 up to permutations and ±1 phases.  Caveat: at L=3 PBC the 4 sector states are not exactly degenerate (E spread ~0.18 J), so the MES analysis is approximate.\",\n");
+    if (K_states == 4) {
+        printf("  \"symbolic_Z2_TC_modular_S\": [[0.5, 0.5, 0.5, 0.5], [0.5, 0.5, -0.5, -0.5], [0.5, -0.5, 0.5, -0.5], [0.5, -0.5, -0.5, 0.5]],\n");
+    }
+    printf("  \"interpretation\": \"Empirical lattice modular S = ⟨MES_X | MES_Y⟩.  For Z_2 TC at K=4 this should equal (1/2)·Hadamard_4 up to permutations and ±1 phases.  At K>4 there is no canonical comparison (Z_2 TC has only 4 anyon types); use the matrix singular values + structure as the empirical observable.\",\n");
     printf("  \"total_wall_s\": %.1f\n", wall_seconds() - t0);
     printf("}\n");
 
-    for (int a = 0; a < K; a++) free(psi[a]);
+    for (int a = 0; a < K_states; a++) free(psi[a]);
     for (int cut = 0; cut < 2; cut++) free(best_samples[cut]);
     free(psi_alpha);
     return 0;

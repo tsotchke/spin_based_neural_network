@@ -550,6 +550,17 @@ research_kagome_sz_spatial: $(BIN_DIR)
 	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
 	    $(LDFLAGS) $(OMP_LDFLAGS)
 
+# Find the second partner of the (Γ, E_2, Sz=1/2) doublet at L=3 PBC
+# via orthogonal-projection penalty Lanczos.  Loads the first partner
+# and runs Lanczos on H + λ |ψ_p1⟩⟨ψ_p1| with extra explicit ortho
+# projection in the projector step.
+research_kagome_e2_p2: $(BIN_DIR)
+	$(CC) $(TEST_CFLAGS) $(OMP_FLAGS) \
+	    -o $(BIN_DIR)/research_kagome_e2_p2 \
+	    scripts/research_kagome_e2_p2.c \
+	    $(NQS_SRCS) src/nqs/nqs_lanczos.c src/mps/lanczos.c \
+	    $(LDFLAGS) $(OMP_LDFLAGS)
+
 # Empirical lattice modular S extraction via the Zhang-Grover-Vishwanath
 # 2012 minimum-entropy-state (MES) protocol.  Operates on saved
 # sector eigvecs; requires libirrep for partial-trace + entropy.
